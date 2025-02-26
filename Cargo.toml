@@ -1,5 +1,6 @@
 [workspace]
 members = ["eyelvl"]
+exclude = ["tool/antlr4-rust-target/runtime/Rust"]
 
 [package]
 name = "libsl"
@@ -7,5 +8,5 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-antlr-rust = { path = "../antlr4-rust-target/runtime/Rust" }
+antlr-rust = { path = "tool/antlr4-rust-target/runtime/Rust" }
 lazy_static = "1.5.0"

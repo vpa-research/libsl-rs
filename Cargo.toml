@@ -1,5 +1,8 @@
+[workspace]
+members = ["eyelvl"]
+
 [package]
-name = "libsl-rs"
+name = "libsl"
 version = "0.1.0"
 edition = "2024"
 

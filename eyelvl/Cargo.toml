@@ -1,0 +1,7 @@
+[package]
+name = "eyelvl"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+libsl = { path = ".." }

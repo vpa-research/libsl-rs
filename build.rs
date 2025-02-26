@@ -1,5 +1,5 @@
-use std::fmt::Write;
 use std::ffi::OsStr;
+use std::fmt::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::sync::LazyLock;
@@ -9,6 +9,7 @@ type Result<T = (), E = String> = std::result::Result<T, E>;
 
 static GRAMMAR_DIR: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("grammar/"));
 const ANTLR_PATH_ENV: &str = "ANTLR_PATH";
+const DEFAULT_ANTLR_PATH: &str = "tool/antlr4-rust-target/tool/target/antlr4-4.13.2-complete.jar";
 
 fn main() -> ExitCode {
     println!("cargo::rerun-if-changed=build.rs");
@@ -28,9 +29,22 @@ fn generate_grammar() -> Result {
     println!("cargo::rerun-if-changed={}", GRAMMAR_DIR.display());
 
     println!("cargo::rerun-if-env-changed={ANTLR_PATH_ENV}");
-    let antlr_path = PathBuf::from(env::var_os(ANTLR_PATH_ENV).ok_or_else(|| {
-        format!("environment variable `{ANTLR_PATH_ENV}` must be set before building the crate")
-    })?);
+
+    let antlr_path = if let Some(path) = env::var_os(ANTLR_PATH_ENV) {
+        let path = PathBuf::from(path);
+        eprintln!(
+            "Read `ANTLR_PATH` from the environment: `{}`",
+            path.display(),
+        );
+
+        path
+    } else {
+        let path = PathBuf::from(DEFAULT_ANTLR_PATH);
+        eprintln!("Using the default ANTLR path: `{}`", path.display());
+
+        path
+    };
+
     println!("cargo::rerun-if-changed={}", antlr_path.display());
 
     let grammar_files = find_files_with_ext(&*GRAMMAR_DIR, "g4")?;
@@ -113,7 +127,11 @@ fn generate_grammar_mod_rs(path: impl AsRef<Path>) -> Result {
         }
 
         let _ = writeln!(mod_rs, "#[allow(unused_parens)]");
-        let _ = writeln!(mod_rs, "pub mod {};", path.file_stem().unwrap().to_string_lossy());
+        let _ = writeln!(
+            mod_rs,
+            "pub mod {};",
+            path.file_stem().unwrap().to_string_lossy()
+        );
     }
 
     fs::write(&mod_rs_path, mod_rs)

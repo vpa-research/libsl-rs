@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
+use antlr_rust::token::Token;
 use antlr_rust::InputStream;
 use antlr_rust::common_token_stream::CommonTokenStream;
 use antlr_rust::tree::{ErrorNode, ParseTreeListener, TerminalNode};
@@ -28,13 +29,13 @@ impl PrintListener {
 impl<'input> ParseTreeListener<'input, LibSLParserContextType> for PrintListener {
     fn visit_terminal(&mut self, node: &TerminalNode<'input, LibSLParserContextType>) {
         self.print_indent();
-        println!("Terminal {}", node.symbol);
+        println!("Terminal {} {:?}", node.symbol, node.symbol.get_text());
     }
 
     fn enter_every_rule(&mut self, ctx: &(dyn LibSLParserContext<'input> + 'input)) {
         self.print_indent();
         println!(
-            "Entered rule {}",
+            "Entered rule `{}`",
             libsl::grammar::parser::ruleNames
                 .get(ctx.get_rule_index())
                 .copied()

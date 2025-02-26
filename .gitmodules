@@ -1,3 +1,6 @@
 [submodule "grammar"]
 	path = grammar
 	url = https://github.com/vpa-research/LibSL
+[submodule "tool/antlr4-rust-target"]
+	path = tool/antlr4-rust-target
+	url = ../antlr4-rust-target/

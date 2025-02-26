@@ -9,4 +9,3 @@ edition = "2024"
 
 [dependencies]
 antlr-rust = { path = "tool/antlr4-rust-target/runtime/Rust" }
-lazy_static = "1.5.0"

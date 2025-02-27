@@ -66,6 +66,7 @@ fn print_parse_tree(path: PathBuf) -> Result<()> {
     let token_stream = CommonTokenStream::new(lexer);
     let mut parser = LibSLParser::new(token_stream);
     parser.add_parse_listener(Box::new(PrintListener::default()));
+    parser.build_parse_trees = false;
     parser
         .file()
         .map_err(|e| eyre!("could not parse `{}`: {e}", path.display()))?;

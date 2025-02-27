@@ -1,9 +1,10 @@
+use std::fmt::Write;
 use std::fs;
 use std::path::PathBuf;
 
-use antlr_rust::token::Token;
-use antlr_rust::InputStream;
+use antlr_rust::{InputStream, Parser};
 use antlr_rust::common_token_stream::CommonTokenStream;
+use antlr_rust::token::Token;
 use antlr_rust::tree::{ErrorNode, ParseTreeListener, TerminalNode};
 use args::Command;
 use color_eyre::eyre::{Context, Result, eyre};
@@ -26,10 +27,34 @@ impl PrintListener {
     }
 }
 
+// Making it explicit so that `printer-java` would have the same format.
+fn escape_str(s: &str) -> String {
+    let mut result = "\"".to_owned();
+
+    for c in s.chars() {
+        match c {
+            '\0' => result.push_str("\\0"),
+            '\n' => result.push_str("\\n"),
+            '\r' => result.push_str("\\r"),
+            '\t' => result.push_str("\\t"),
+            '"' | '\\' => {
+                result.push('\\');
+                result.push(c);
+            }
+            '\0'..' ' | '\x7f' => write!(result, "\\x{:02x}", c as u32).unwrap(),
+            _ => result.push(c),
+        }
+    }
+
+    result.push('"');
+
+    result
+}
+
 impl<'input> ParseTreeListener<'input, LibSLParserContextType> for PrintListener {
     fn visit_terminal(&mut self, node: &TerminalNode<'input, LibSLParserContextType>) {
         self.print_indent();
-        println!("Terminal {} {:?}", node.symbol, node.symbol.get_text());
+        println!("Terminal {} {}", node.symbol, escape_str(node.symbol.get_text()));
     }
 
     fn enter_every_rule(&mut self, ctx: &(dyn LibSLParserContext<'input> + 'input)) {
@@ -66,6 +91,7 @@ fn print_parse_tree(path: PathBuf) -> Result<()> {
     let token_stream = CommonTokenStream::new(lexer);
     let mut parser = LibSLParser::new(token_stream);
     parser.add_parse_listener(Box::new(PrintListener::default()));
+    parser.remove_error_listeners();
     parser.build_parse_trees = false;
     parser
         .file()

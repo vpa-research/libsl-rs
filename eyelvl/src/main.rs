@@ -111,19 +111,14 @@ fn print_tokens(path: PathBuf) -> Result<()> {
 
     for idx in 0.. {
         let token = lexer.next_token();
-        eprintln!(
+        println!(
             "Token {idx}: channel {}, type {}, {token}",
             usize::try_from(token.get_channel())
                 .ok()
                 .and_then(|idx| libsl::grammar::lexer::channelNames.get(idx).copied())
                 .unwrap_or("[unknown]"),
-            usize::try_from(token.get_token_type())
-                .ok()
-                .and_then(|idx| libsl::grammar::lexer::_SYMBOLIC_NAMES
-                    .get(idx)
-                    .copied()
-                    .flatten())
-                .unwrap_or("[unknown]")
+            lexer.get_vocabulary().get_symbolic_name(token.get_token_type())
+                .unwrap_or("[unknown]"),
         );
 
         if token.get_token_type() == TOKEN_EOF {

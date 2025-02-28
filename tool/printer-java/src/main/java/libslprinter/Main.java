@@ -52,11 +52,12 @@ public class Main {
     private void printTokens(LibSLLexer lexer) {
         for (int idx = 0;; ++idx) {
             var token = lexer.nextToken();
+            var tokenName = lexer.getVocabulary().getSymbolicName(token.getType());
             System.out.printf(
                 "Token %d: channel %s, type %s, %s\n",
                 idx,
                 getName(lexer.getChannelNames(), token.getChannel()),
-                lexer.getVocabulary().getSymbolicName(token.getType()),
+                tokenName == null ? "[unknown]" : tokenName,
                 token
             );
 

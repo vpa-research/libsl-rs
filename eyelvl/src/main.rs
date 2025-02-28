@@ -2,13 +2,13 @@ use std::fmt::Write;
 use std::fs;
 use std::path::PathBuf;
 
-use antlr_rust::{InputStream, Parser};
 use antlr_rust::common_token_stream::CommonTokenStream;
-use antlr_rust::token::Token;
+use antlr_rust::token::{TOKEN_EOF, Token};
 use antlr_rust::tree::{ErrorNode, ParseTreeListener, TerminalNode};
+use antlr_rust::{InputStream, Parser, TokenSource};
 use args::Command;
 use color_eyre::eyre::{Context, Result, eyre};
-use libsl::grammar::lexer::{LibSLLexer, LocalTokenFactory};
+use libsl::grammar::lexer::LibSLLexer;
 use libsl::grammar::parser::{LibSLParser, LibSLParserContext, LibSLParserContextType};
 use libsl::grammar::parser_listener::LibSLParserListener;
 
@@ -54,7 +54,11 @@ fn escape_str(s: &str) -> String {
 impl<'input> ParseTreeListener<'input, LibSLParserContextType> for PrintListener {
     fn visit_terminal(&mut self, node: &TerminalNode<'input, LibSLParserContextType>) {
         self.print_indent();
-        println!("Terminal {} {}", node.symbol, escape_str(node.symbol.get_text()));
+        println!(
+            "Terminal {} {}",
+            node.symbol,
+            escape_str(node.symbol.get_text())
+        );
     }
 
     fn enter_every_rule(&mut self, ctx: &(dyn LibSLParserContext<'input> + 'input)) {
@@ -86,8 +90,7 @@ fn print_parse_tree(path: PathBuf) -> Result<()> {
     let contents = fs::read_to_string(&path)
         .with_context(|| format!("could not read `{}`", path.display()))?;
     let input_stream = InputStream::new(contents.as_str());
-    let tf = LocalTokenFactory::default();
-    let lexer = LibSLLexer::new_with_token_factory(input_stream, &tf);
+    let lexer = LibSLLexer::new(input_stream);
     let token_stream = CommonTokenStream::new(lexer);
     let mut parser = LibSLParser::new(token_stream);
     parser.add_parse_listener(Box::new(PrintListener::default()));
@@ -100,6 +103,37 @@ fn print_parse_tree(path: PathBuf) -> Result<()> {
     Ok(())
 }
 
+fn print_tokens(path: PathBuf) -> Result<()> {
+    let contents = fs::read_to_string(&path)
+        .with_context(|| format!("could not read `{}`", path.display()))?;
+    let input_stream = InputStream::new(contents.as_str());
+    let mut lexer = LibSLLexer::new(input_stream);
+
+    for idx in 0.. {
+        let token = lexer.next_token();
+        eprintln!(
+            "Token {idx}: channel {}, type {}, {token}",
+            usize::try_from(token.get_channel())
+                .ok()
+                .and_then(|idx| libsl::grammar::lexer::channelNames.get(idx).copied())
+                .unwrap_or("[unknown]"),
+            usize::try_from(token.get_token_type())
+                .ok()
+                .and_then(|idx| libsl::grammar::lexer::_SYMBOLIC_NAMES
+                    .get(idx)
+                    .copied()
+                    .flatten())
+                .unwrap_or("[unknown]")
+        );
+
+        if token.get_token_type() == TOKEN_EOF {
+            break;
+        }
+    }
+
+    Ok(())
+}
+
 fn main() -> Result<()> {
     color_eyre::install()?;
 
@@ -107,5 +141,6 @@ fn main() -> Result<()> {
 
     match args.command {
         Command::ParseTree { path } => print_parse_tree(path),
+        Command::Tokens { path } => print_tokens(path),
     }
 }

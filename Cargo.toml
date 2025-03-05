@@ -9,3 +9,4 @@ edition = "2024"
 
 [dependencies]
 antlr-rust = { path = "tool/antlr4-rust-target/runtime/Rust" }
+slotmap = "1.0.7"

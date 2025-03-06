@@ -7,6 +7,7 @@ new_key_type! {
     pub struct TyExprId;
     pub struct ExprId;
     pub struct StmtId;
+    pub struct QualifiedAccessId;
 }
 
 /// A single LibSL file.
@@ -294,7 +295,7 @@ pub struct DeclProc {
 #[derive(Debug, Clone)]
 pub struct FunctionParam {
     pub annotations: Vec<Annotation>,
-    pub name: String,
+    pub name: Name,
     pub ty_expr: TyExpr,
 }
 
@@ -367,7 +368,7 @@ pub struct Name {
 
 #[derive(Debug, Clone)]
 pub struct TyConstraint {
-    pub param: String,
+    pub param: Name,
     pub bound: TyExpr,
 }
 
@@ -493,7 +494,52 @@ pub enum ExprKind {
     // TODO
 }
 
+#[derive(Debug, Default, Clone)]
+pub struct QualifiedAccess {
+    pub id: QualifiedAccessId,
+    pub loc: Loc,
+    pub kind: QualifiedAccessKind,
+}
+
+#[derive(Debug, Default, Clone)]
+pub enum QualifiedAccessKind {
+    #[default]
+    Dummy,
+
+    /// A plain identifier, such as `foo`.
+    Name(QualifiedAccessName),
+
+    /// A freshly-created automaton's variable, such as `A(x).foo`.
+    AutomatonVar(QualifiedAccessAutomatonVar),
+
+    /// A field of an outer entity: the `.bar` in `foo.bar`.
+    Field(QualifiedAccessField),
+
+    /// An indexed element of an outer entity: the `[42]` in `foo[42]`.
+    Index(QualifiedAccessIndex),
+}
+
 #[derive(Debug, Clone)]
-pub enum QualifiedAccess {
-    // TODO
+pub struct QualifiedAccessName {
+    pub name: Name,
+}
+
+#[derive(Debug, Clone)]
+pub struct QualifiedAccessAutomatonVar {
+    pub automaton: Name,
+    pub generics: Vec<Generic>,
+    pub arg: Box<QualifiedAccess>,
+    pub variable: Name,
+}
+
+#[derive(Debug, Clone)]
+pub struct QualifiedAccessField {
+    pub base: Box<QualifiedAccess>,
+    pub field: Name,
+}
+
+#[derive(Debug, Clone)]
+pub struct QualifiedAccessIndex {
+    pub base: Box<QualifiedAccess>,
+    pub index: usize,
 }

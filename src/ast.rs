@@ -491,7 +491,225 @@ pub enum ExprKind {
     #[default]
     Dummy,
 
-    // TODO
+    /// A literal expression of a primitive type.
+    PrimitiveLit(ExprPrimitiveLit),
+
+    /// An array literal expression.
+    ArrayLit(ExprArrayLit),
+
+    /// A qualified variable/element access expression.
+    QualifiedAccess(ExprQualifiedAccess),
+
+    /// A previous-state value expression.
+    Prev(ExprPrev),
+
+    /// A procedure call.
+    ProcCall(ExprProcCall),
+
+    /// An action invocation.
+    ActionCall(ExprActionCall),
+
+    /// An automaton instantiation.
+    Instantiate(ExprInstantiate),
+
+    /// A `has`-concept expression.
+    HasConcept(ExprHasConcept),
+
+    /// A cast expression.
+    Cast(ExprCast),
+
+    /// An `is`-type expression.
+    IsTy(ExprIsTy),
+
+    /// A unary arithmetic/logical expression.
+    Unary(ExprUnary),
+
+    /// A binary arithmetic/logical expression.
+    Binary(ExprBinary),
+}
+
+#[derive(Debug, Clone)]
+pub struct ExprPrimitiveLit {
+    pub lit: PrimitiveLit,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExprArrayLit {
+    pub elems: Vec<Expr>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExprQualifiedAccess {
+    pub access: QualifiedAccess,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExprPrev {
+    pub access: QualifiedAccess,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExprProcCall {
+    pub base: QualifiedAccess,
+    pub generics: Vec<Generic>,
+    pub args: Vec<Expr>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExprActionCall {
+    pub name: Name,
+    pub generics: Vec<Generic>,
+    pub args: Vec<Expr>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExprInstantiate {
+    pub automaton: UnqualifiedTyName,
+    pub generics: Vec<Generic>,
+    pub args: Vec<ConstructorArg>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ConstructorArg {
+    State(Expr),
+    Var(Name, Expr),
+}
+
+#[derive(Debug, Clone)]
+pub struct ExprHasConcept {
+    pub access: QualifiedAccess,
+    pub concept: Name,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExprCast {
+    pub expr: Box<Expr>,
+    pub ty_expr: TyExpr,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExprIsTy {
+    pub expr: Box<Expr>,
+    pub ty_expr: TyExpr,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExprUnary {
+    pub op: UnOp,
+    pub expr: Box<Expr>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum UnOp {
+    /// Unary plus.
+    Plus,
+
+    /// Negation (unary minus).
+    Neg,
+
+    /// Bitwise negation.
+    BitNot,
+
+    /// Logical negation.
+    Not,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExprBinary {
+    pub lhs: Box<Expr>,
+    pub op: BinOp,
+    pub rhs: Box<Expr>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BinOp {
+    /// Multiplication.
+    Mul,
+
+    /// Division.
+    Div,
+
+    /// Modulus.
+    Mod,
+
+    /// Addition.
+    Add,
+
+    /// Subtraction.
+    Sub,
+
+    /// Arithmetic (signed) left shift.
+    Sal,
+
+    /// Arithmetic (signed) right shift.
+    Sar,
+
+    /// Logical (unsigned) left shift.
+    Shl,
+
+    /// Logical (unsigned) right shift.
+    Shr,
+
+    /// Bitwise or.
+    BitOr,
+
+    /// Bitwise xor.
+    BitXor,
+
+    /// Bitwise and.
+    BitAnd,
+
+    /// Less than.
+    Lt,
+
+    /// Less than or equal to.
+    Le,
+
+    /// Greater than.
+    Gt,
+
+    /// Greater than or equal to.
+    Ge,
+
+    /// Equals.
+    Eq,
+
+    /// Not equals.
+    Ne,
+
+    /// Logical or.
+    Or,
+
+    /// Logical and.
+    And,
+}
+
+#[derive(Debug, Clone)]
+pub enum PrimitiveLit {
+    Int(IntLit),
+    Float(FloatLit),
+    String(String),
+    Char(u32),
+    Bool(bool),
+    Null,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum IntLit {
+    I8(i8),
+    U8(u8),
+    I16(i16),
+    U16(u16),
+    I32(i32),
+    U32(u32),
+    I64(i64),
+    U64(u64),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum FloatLit {
+    F32(f32),
+    F64(f64),
 }
 
 #[derive(Debug, Default, Clone)]

@@ -404,7 +404,32 @@ pub enum TyExprKind {
     #[default]
     Dummy,
 
-    // TODO
+    Name(TyExprName),
+    Pointer(TyExprPointer),
+    Intersection(TyExprIntersection),
+    Union(TyExprUnion), // TODO: or is it sum?
+}
+
+#[derive(Debug, Clone)]
+pub struct TyExprName {
+    pub name: QualifiedTyName,
+}
+
+#[derive(Debug, Clone)]
+pub struct TyExprPointer {
+    pub ty_expr: Box<TyExpr>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TyExprIntersection {
+    pub lhs: Box<TyExpr>,
+    pub rhs: Box<TyExpr>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TyExprUnion {
+    pub lhs: Box<TyExpr>,
+    pub rhs: Box<TyExpr>,
 }
 
 #[derive(Debug, Default, Clone)]

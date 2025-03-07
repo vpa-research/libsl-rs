@@ -413,7 +413,8 @@ pub enum TyExprKind {
 
 #[derive(Debug, Clone)]
 pub struct TyExprName {
-    pub name: QualifiedTyName,
+    pub name: UnqualifiedTyName,
+    pub generics: Vec<TyExpr>,
 }
 
 #[derive(Debug, Clone)]
@@ -551,21 +552,21 @@ pub struct ExprPrev {
 #[derive(Debug, Clone)]
 pub struct ExprProcCall {
     pub base: QualifiedAccess,
-    pub generics: Vec<Generic>,
+    pub generics: Vec<TyExpr>,
     pub args: Vec<Expr>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ExprActionCall {
     pub name: Name,
-    pub generics: Vec<Generic>,
+    pub generics: Vec<TyExpr>,
     pub args: Vec<Expr>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ExprInstantiate {
     pub automaton: UnqualifiedTyName,
-    pub generics: Vec<Generic>,
+    pub generics: Vec<TyExpr>,
     pub args: Vec<ConstructorArg>,
 }
 
@@ -745,7 +746,7 @@ pub struct QualifiedAccessName {
 #[derive(Debug, Clone)]
 pub struct QualifiedAccessAutomatonVar {
     pub automaton: Name,
-    pub generics: Vec<Generic>,
+    pub generics: Vec<TyExpr>,
     pub arg: Box<QualifiedAccess>,
     pub variable: Name,
 }

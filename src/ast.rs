@@ -196,10 +196,10 @@ pub struct ActionParam {
 pub struct DeclAutomaton {
     pub annotations: Vec<Annotation>,
     pub is_concept: bool,
-    pub name: UnqualifiedTyName,
+    pub name: QualifiedTyName,
     pub constructor_variables: Vec<Decl>,
     pub ty_expr: TyExpr,
-    pub implemented_concepts: Vec<String>,
+    pub implemented_concepts: Vec<Name>,
     pub decls: Vec<Decl>,
 }
 
@@ -207,7 +207,7 @@ pub struct DeclAutomaton {
 pub struct DeclFunction {
     pub annotations: Vec<Annotation>,
     pub is_static: bool,
-    pub extension_for: Option<UnqualifiedTyName>,
+    pub extension_for: Option<Name>,
     pub is_method: bool,
     pub name: Name,
     pub generics: Vec<Generic>,
@@ -344,20 +344,8 @@ pub struct AnnotationArg {
 
 #[derive(Debug, Clone)]
 pub struct QualifiedTyName {
-    pub ty_name: UnqualifiedTyName,
+    pub ty_name: Name,
     pub generics: Vec<Generic>,
-}
-
-#[derive(Debug, Clone)]
-pub enum UnqualifiedTyName {
-    Unbound(Loc),
-    Bound(Name),
-}
-
-impl Default for UnqualifiedTyName {
-    fn default() -> Self {
-        Self::Unbound(Default::default())
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -413,8 +401,8 @@ pub enum TyExprKind {
 
 #[derive(Debug, Clone)]
 pub struct TyExprName {
-    pub name: UnqualifiedTyName,
-    pub generics: Vec<TyExpr>,
+    pub name: Name,
+    pub generics: Vec<TyArg>,
 }
 
 #[derive(Debug, Clone)]
@@ -439,6 +427,12 @@ pub struct Stmt {
     pub id: StmtId,
     pub loc: Loc,
     pub kind: StmtKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum TyArg {
+    TyExpr(TyExpr),
+    Wildcard(Loc),
 }
 
 #[derive(Debug, Default, Clone)]
@@ -552,21 +546,21 @@ pub struct ExprPrev {
 #[derive(Debug, Clone)]
 pub struct ExprProcCall {
     pub base: QualifiedAccess,
-    pub generics: Vec<TyExpr>,
+    pub generics: Vec<TyArg>,
     pub args: Vec<Expr>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ExprActionCall {
     pub name: Name,
-    pub generics: Vec<TyExpr>,
+    pub generics: Vec<TyArg>,
     pub args: Vec<Expr>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ExprInstantiate {
-    pub automaton: UnqualifiedTyName,
-    pub generics: Vec<TyExpr>,
+    pub automaton: Name,
+    pub generics: Vec<TyArg>,
     pub args: Vec<ConstructorArg>,
 }
 
@@ -746,7 +740,7 @@ pub struct QualifiedAccessName {
 #[derive(Debug, Clone)]
 pub struct QualifiedAccessAutomatonVar {
     pub automaton: Name,
-    pub generics: Vec<TyExpr>,
+    pub generics: Vec<TyArg>,
     pub arg: Box<QualifiedAccess>,
     pub variable: Name,
 }

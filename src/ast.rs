@@ -81,7 +81,7 @@ pub enum DeclKind {
     Function(DeclFunction),
 
     /// A variable declaration.
-    Varable(DeclVariable),
+    Variable(DeclVariable),
 
     /// An automaton state declaration.
     State(DeclState),

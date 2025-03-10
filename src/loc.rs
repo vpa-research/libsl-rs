@@ -45,6 +45,12 @@ impl Loc {
     }
 }
 
+impl From<Span> for Loc {
+    fn from(span: Span) -> Self {
+        Loc::Span(span)
+    }
+}
+
 impl From<Option<Span>> for Loc {
     fn from(span: Option<Span>) -> Self {
         span.map(Loc::Span).unwrap_or_default()

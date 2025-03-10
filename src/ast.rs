@@ -1,14 +1,5 @@
-use slotmap::new_key_type;
-
 use crate::loc::Loc;
-
-new_key_type! {
-    pub struct DeclId;
-    pub struct TyExprId;
-    pub struct ExprId;
-    pub struct StmtId;
-    pub struct QualifiedAccessId;
-}
+use crate::{DeclId, ExprId, QualifiedAccessId, StmtId, TyExprId};
 
 /// A single LibSL file.
 #[derive(Debug, Clone)]

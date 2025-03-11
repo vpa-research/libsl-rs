@@ -15,12 +15,14 @@ use thiserror::Error;
 
 use crate::grammar::lexer::LibSLLexer;
 use crate::grammar::libslparser::{
-    ActionDeclContextAll, AnnotationDeclContextAll, AutomatonDeclContextAll, EnumBlockContextAll,
+    ActionDeclContextAll, AnnotationDeclContextAll, AnnotationUsageContextAll,
+    AutomatonDeclContextAll, EnumBlockContextAll, EnumSemanticTypeContextAttrs,
+    EnumSemanticTypeEntryContextAll, EnumSemanticTypeEntryContextAttrs, ExpressionAtomicContextAll,
     FileContextAttrs, FunctionDeclContextAll, GlobalStatementContextAll,
     GlobalStatementContextAttrs, HeaderContextAll, LibSLParserContextType,
-    SemanticTypeDeclContextAll, TopLevelDeclContextAttrs, TypeDefBlockContextAll,
-    TypealiasStatementContextAll, TypesSectionContextAll, TypesSectionContextAttrs,
-    VariableDeclContextAll,
+    SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs, SimpleSemanticTypeContextAttrs,
+    TopLevelDeclContextAttrs, TypeDefBlockContextAll, TypeIdentifierContextAll,
+    TypealiasStatementContextAll, TypesSectionContextAttrs, VariableDeclContextAll,
 };
 use crate::grammar::parser::{FileContextAll, LibSLParser};
 use crate::loc::{Loc, Span};
@@ -250,7 +252,7 @@ impl<'a> AstConstructor<'a> {
                 panic!("unrecognized topLevelDecl node: {ctx:?}");
             }
         } else {
-            panic!("encountered an unrecognized globalStatement node: {ctx:?}");
+            panic!("unrecognized globalStatement node: {ctx:?}");
         }
     }
 
@@ -278,7 +280,67 @@ impl<'a> AstConstructor<'a> {
         &mut self,
         ctx: &SemanticTypeDeclContextAll<'_>,
     ) -> Result<ast::Decl> {
-        todo!()
+        if let Some(ctx) = ctx.simpleSemanticType() {
+            let annotations = ctx
+                .annotationUsage_all()
+                .into_iter()
+                .map(|a| self.process_annotation(&a))
+                .collect::<Result<Vec<_>>>()?;
+            let ty_name = self
+                .process_ty_identifier_as_qualified_ty_name(ctx.semanticName.as_ref().unwrap())?;
+            let real_ty = self.process_ty_identifier_as_ty_expr(ctx.realName.as_ref().unwrap())?;
+
+            Ok(ast::Decl {
+                id: self.libsl.decls.insert(()),
+                loc: self.get_loc(&ctx.start(), &ctx.stop()),
+                kind: ast::DeclSemanticTy {
+                    annotations,
+                    ty_name,
+                    real_ty,
+                    kind: ast::SemanticTyKind::Simple,
+                }
+                .into(),
+            })
+        } else if let Some(ctx) = ctx.enumSemanticType() {
+            let annotations = ctx
+                .annotationUsage_all()
+                .into_iter()
+                .map(|a| self.process_annotation(&a))
+                .collect::<Result<Vec<_>>>()?;
+            let ty_name = self.process_identifier_as_qualified_ty_name(&Terminal::new(
+                ctx.semanticName.clone().unwrap(),
+            ))?;
+            let real_ty = self.process_ty_identifier_as_ty_expr(ctx.realName.as_ref().unwrap())?;
+            let entries = ctx
+                .enumSemanticTypeEntry_all()
+                .into_iter()
+                .map(|entry| self.process_semantic_ty_enum_value(&entry))
+                .collect::<Result<Vec<_>>>()?;
+
+            Ok(ast::Decl {
+                id: self.libsl.decls.insert(()),
+                loc: self.get_loc(&ctx.start(), &ctx.stop()),
+                kind: ast::DeclSemanticTy {
+                    annotations,
+                    ty_name,
+                    real_ty,
+                    kind: ast::SemanticTyKind::Enumerated(entries),
+                }
+                .into(),
+            })
+        } else {
+            panic!("unrecognized semanticTypeDecl node: {ctx:?}");
+        }
+    }
+
+    fn process_semantic_ty_enum_value(
+        &mut self,
+        ctx: &EnumSemanticTypeEntryContextAll<'_>,
+    ) -> Result<ast::SemanticTyEnumValue> {
+        let name = self.process_identifier(ctx.Identifier().as_ref().unwrap())?;
+        let expr = self.process_expr_atomic(ctx.expressionAtomic().as_ref().unwrap())?;
+
+        Ok(ast::SemanticTyEnumValue { name, expr })
     }
 
     fn process_decl_ty_alias(
@@ -296,23 +358,59 @@ impl<'a> AstConstructor<'a> {
         todo!()
     }
 
-    fn process_decl_annotation(&mut self, ctx: &AnnotationDeclContextAll) -> Result<ast::Decl> {
+    fn process_decl_annotation(&mut self, ctx: &AnnotationDeclContextAll<'_>) -> Result<ast::Decl> {
         todo!()
     }
 
-    fn process_decl_action(&mut self, ctx: &ActionDeclContextAll) -> Result<ast::Decl> {
+    fn process_decl_action(&mut self, ctx: &ActionDeclContextAll<'_>) -> Result<ast::Decl> {
         todo!()
     }
 
-    fn process_decl_automaton(&mut self, ctx: &AutomatonDeclContextAll) -> Result<ast::Decl> {
+    fn process_decl_automaton(&mut self, ctx: &AutomatonDeclContextAll<'_>) -> Result<ast::Decl> {
         todo!()
     }
 
-    fn process_decl_function(&mut self, ctx: &FunctionDeclContextAll) -> Result<ast::Decl> {
+    fn process_decl_function(&mut self, ctx: &FunctionDeclContextAll<'_>) -> Result<ast::Decl> {
         todo!()
     }
 
-    fn process_decl_variable(&mut self, ctx: &VariableDeclContextAll) -> Result<ast::Decl> {
+    fn process_decl_variable(&mut self, ctx: &VariableDeclContextAll<'_>) -> Result<ast::Decl> {
+        todo!()
+    }
+
+    fn process_expr_atomic(&mut self, ctx: &ExpressionAtomicContextAll<'_>) -> Result<ast::Expr> {
+        todo!()
+    }
+
+    fn process_annotation(
+        &mut self,
+        ctx: &AnnotationUsageContextAll<'_>,
+    ) -> Result<ast::Annotation> {
+        todo!()
+    }
+
+    fn process_ty_identifier_as_qualified_ty_name(
+        &mut self,
+        ctx: &TypeIdentifierContextAll<'_>,
+    ) -> Result<ast::QualifiedTyName> {
+        todo!()
+    }
+
+    fn process_identifier_as_qualified_ty_name(
+        &mut self,
+        ctx: &Terminal<'_>,
+    ) -> Result<ast::QualifiedTyName> {
+        todo!()
+    }
+
+    fn process_ty_identifier_as_ty_expr(
+        &mut self,
+        ctx: &TypeIdentifierContextAll<'_>,
+    ) -> Result<ast::TyExpr> {
+        todo!()
+    }
+
+    fn process_identifier(&mut self, ctx: &Terminal<'_>) -> Result<ast::Name> {
         todo!()
     }
 }

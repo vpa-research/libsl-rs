@@ -1,3 +1,5 @@
+use derive_more::From;
+
 use crate::loc::Loc;
 use crate::{DeclId, ExprId, QualifiedAccessId, StmtId, TyExprId};
 
@@ -33,7 +35,7 @@ pub struct Decl {
     pub kind: DeclKind,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(From, Debug, Default, Clone)]
 pub enum DeclKind {
     /// A dummy declaration, the default value of `DeclKind`.
     ///
@@ -489,7 +491,7 @@ pub struct TyExpr {
     pub kind: TyExprKind,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(From, Debug, Default, Clone)]
 pub enum TyExprKind {
     /// A dummy type expression, the default value of `TyExprKind`.
     ///
@@ -571,7 +573,7 @@ pub struct Stmt {
     pub kind: StmtKind,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(From, Debug, Default, Clone)]
 pub enum StmtKind {
     /// A dummy statement, the default value of `StmtKind`.
     /// Allows using `mem::take` to take ownership of the value.
@@ -657,7 +659,7 @@ pub struct Expr {
     pub kind: ExprKind,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(From, Debug, Default, Clone)]
 pub enum ExprKind {
     /// A dummy expression, the default value of `ExprKind`.
     ///
@@ -933,7 +935,7 @@ pub struct QualifiedAccess {
     pub kind: QualifiedAccessKind,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(From, Debug, Default, Clone)]
 pub enum QualifiedAccessKind {
     /// A dummy qualified access, the default value of `QualifiedAccessKind`.
     ///

@@ -186,7 +186,7 @@ pub struct DeclEnum {
 #[derive(Debug, Clone)]
 pub struct EnumVariant {
     pub name: Name,
-    pub value: i64,
+    pub value: IntLit,
 }
 
 /// An annotation declaration.

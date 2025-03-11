@@ -15,16 +15,21 @@ use thiserror::Error;
 
 use crate::grammar::lexer::LibSLLexer;
 use crate::grammar::libslparser::{
-    ActionDeclContextAll, AnnotationDeclContextAll, AnnotationUsageContextAll,
-    AutomatonDeclContextAll, EnumBlockContextAll, EnumSemanticTypeContextAttrs,
+    ActionDeclContextAll, ActionDeclContextAttrs, ActionDeclParamListContextAttrs,
+    ActionParameterContextAttrs, AnnotationDeclContextAll, AnnotationDeclContextAttrs,
+    AnnotationDeclParamsContextAttrs, AnnotationDeclParamsPartContextAttrs,
+    AnnotationUsageContextAll, AutomatonDeclContextAll, EnumBlockContextAll, EnumBlockContextAttrs,
+    EnumBlockStatementContextAll, EnumBlockStatementContextAttrs, EnumSemanticTypeContextAttrs,
     EnumSemanticTypeEntryContextAll, EnumSemanticTypeEntryContextAttrs, ExpressionAtomicContextAll,
-    FileContextAttrs, FunctionDeclContextAll, GlobalStatementContextAll,
-    GlobalStatementContextAttrs, HeaderContextAll, LibSLParserContextType,
-    SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs, SimpleSemanticTypeContextAttrs,
-    TargetTypeContextAttrs, TopLevelDeclContextAttrs, TypeDefBlockContextAll,
-    TypeDefBlockContextAttrs, TypeDefBlockStatementContextAttrs, TypeIdentifierContextAll,
-    TypeListContextAttrs, TypealiasStatementContextAll, TypealiasStatementContextAttrs,
-    TypesSectionContextAttrs, VariableDeclContextAll, WhereConstraintsContextAll,
+    ExpressionContextAll, FileContextAttrs, FunctionDeclContextAll, GenericContextAll,
+    GlobalStatementContextAll, GlobalStatementContextAttrs, HeaderContextAll,
+    IntegerNumberContextAll, LibSLParserContextType, NameWithTypeContextAll,
+    NameWithTypeContextAttrs, SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs,
+    SimpleSemanticTypeContextAttrs, TargetTypeContextAttrs, TopLevelDeclContextAttrs,
+    TypeDefBlockContextAll, TypeDefBlockContextAttrs, TypeDefBlockStatementContextAttrs,
+    TypeExpressionContextAll, TypeIdentifierContextAll, TypeListContextAttrs,
+    TypealiasStatementContextAll, TypealiasStatementContextAttrs, TypesSectionContextAttrs,
+    VariableDeclContextAll, WhereConstraintsContextAll,
 };
 use crate::grammar::parser::{FileContextAll, LibSLParser};
 use crate::loc::{Loc, Span};
@@ -417,15 +422,120 @@ impl<'a> AstConstructor<'a> {
     }
 
     fn process_decl_enum(&mut self, ctx: &EnumBlockContextAll<'_>) -> Result<ast::Decl> {
-        todo!()
+        let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
+        let name =
+            self.process_ty_identifier_as_qualified_ty_name(&ctx.typeIdentifier().unwrap())?;
+
+        let variants = ctx
+            .enumBlockStatement_all()
+            .into_iter()
+            .map(|e| self.process_enum_variant(&e))
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(ast::Decl {
+            id: self.libsl.decls.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: ast::DeclEnum {
+                annotations,
+                name,
+                variants,
+            }
+            .into(),
+        })
+    }
+
+    fn process_enum_variant(
+        &mut self,
+        ctx: &EnumBlockStatementContextAll<'_>,
+    ) -> Result<ast::EnumVariant> {
+        let name = self.process_identifier(&ctx.Identifier().unwrap())?;
+        let value = self.process_integer_number(&ctx.integerNumber().unwrap())?;
+
+        Ok(ast::EnumVariant { name, value })
     }
 
     fn process_decl_annotation(&mut self, ctx: &AnnotationDeclContextAll<'_>) -> Result<ast::Decl> {
-        todo!()
+        let name = self.process_identifier(&Terminal::new(ctx.name.clone().unwrap()))?;
+
+        let params = ctx
+            .annotationDeclParams()
+            .into_iter()
+            .flat_map(|l| l.annotationDeclParamsPart_all())
+            .map(|param| {
+                let (name, ty_expr) = self.process_name_with_ty(&param.nameWithType().unwrap())?;
+                let default = param
+                    .expression()
+                    .map(|e| self.process_expr(&e))
+                    .transpose()?;
+
+                Ok(ast::AnnotationParam {
+                    name,
+                    ty_expr,
+                    default,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(ast::Decl {
+            id: self.libsl.decls.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: ast::DeclAnnotation { name, params }.into(),
+        })
     }
 
     fn process_decl_action(&mut self, ctx: &ActionDeclContextAll<'_>) -> Result<ast::Decl> {
-        todo!()
+        let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
+
+        let generics = ctx
+            .generic()
+            .map(|g| self.process_generics(&g))
+            .transpose()?
+            .unwrap_or_default();
+
+        let name = self.process_identifier(&Terminal::new(ctx.actionName.clone().unwrap()))?;
+
+        let params = ctx
+            .actionDeclParamList()
+            .into_iter()
+            .flat_map(|l| l.actionParameter_all())
+            .map(|p| {
+                let annotations = self.process_annotation_usage_list(p.annotationUsage_all())?;
+                let name = self.process_identifier(&Terminal::new(p.name.clone().unwrap()))?;
+                let ty_expr = self.process_ty_identifier_as_ty_expr(&p.r#type.clone().unwrap())?;
+
+                Ok(ast::ActionParam {
+                    annotations,
+                    name,
+                    ty_expr,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let ret_ty_expr = ctx
+            .actionType
+            .as_ref()
+            .map(|t| self.process_ty_identifier_as_ty_expr(t))
+            .transpose()?;
+
+        let ty_constraints = ctx
+            .whereConstraints()
+            .map(|c| self.process_where_constraints(&c))
+            .transpose()?
+            .unwrap_or_default();
+
+        Ok(ast::Decl {
+            id: self.libsl.decls.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: ast::DeclAction {
+                annotations,
+                generics,
+                name,
+                params,
+                ret_ty_expr,
+                ty_constraints,
+            }
+            .into(),
+        })
     }
 
     fn process_decl_automaton(&mut self, ctx: &AutomatonDeclContextAll<'_>) -> Result<ast::Decl> {
@@ -437,6 +547,14 @@ impl<'a> AstConstructor<'a> {
     }
 
     fn process_decl_variable(&mut self, ctx: &VariableDeclContextAll<'_>) -> Result<ast::Decl> {
+        todo!()
+    }
+
+    fn process_ty_expr(&mut self, ctx: &TypeExpressionContextAll<'_>) -> Result<ast::TyExpr> {
+        todo!()
+    }
+
+    fn process_expr(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ast::Expr> {
         todo!()
     }
 
@@ -486,10 +604,28 @@ impl<'a> AstConstructor<'a> {
         todo!()
     }
 
+    fn process_integer_number(&mut self, ctx: &IntegerNumberContextAll<'_>) -> Result<ast::IntLit> {
+        todo!()
+    }
+
+    fn process_name_with_ty(
+        &mut self,
+        ctx: &NameWithTypeContextAll<'_>,
+    ) -> Result<(ast::Name, ast::TyExpr)> {
+        let name = self.process_identifier(&Terminal::new(ctx.name.clone().unwrap()))?;
+        let ty_expr = self.process_ty_expr(&ctx.typeExpression().unwrap())?;
+
+        Ok((name, ty_expr))
+    }
+
     fn process_where_constraints(
         &mut self,
         ctx: &WhereConstraintsContextAll,
     ) -> Result<Vec<ast::TyConstraint>> {
+        todo!()
+    }
+
+    fn process_generics(&mut self, ctx: &GenericContextAll<'_>) -> Result<Vec<ast::Generic>> {
         todo!()
     }
 }

@@ -160,13 +160,13 @@ pub struct DeclStruct {
     pub ty_name: QualifiedTyName,
 
     // TODO: what do these two fields even mean?
-    pub is_ty: TyExpr,
+    pub is_ty: Option<TyExpr>,
     pub for_tys: Vec<TyExpr>,
 
     /// Type parameter constraints, specified in a `where`-clause.
     pub ty_constraints: Vec<TyConstraint>,
 
-    /// Entities (variables and functions) defines as members of this type.
+    /// Entities (variables and functions) defined as members of this type.
     pub decls: Vec<Decl>,
 }
 

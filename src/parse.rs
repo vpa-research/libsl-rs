@@ -21,8 +21,10 @@ use crate::grammar::libslparser::{
     FileContextAttrs, FunctionDeclContextAll, GlobalStatementContextAll,
     GlobalStatementContextAttrs, HeaderContextAll, LibSLParserContextType,
     SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs, SimpleSemanticTypeContextAttrs,
-    TopLevelDeclContextAttrs, TypeDefBlockContextAll, TypeIdentifierContextAll,
-    TypealiasStatementContextAll, TypesSectionContextAttrs, VariableDeclContextAll,
+    TargetTypeContextAttrs, TopLevelDeclContextAttrs, TypeDefBlockContextAll,
+    TypeDefBlockContextAttrs, TypeDefBlockStatementContextAttrs, TypeIdentifierContextAll,
+    TypeListContextAttrs, TypealiasStatementContextAll, TypealiasStatementContextAttrs,
+    TypesSectionContextAttrs, VariableDeclContextAll, WhereConstraintsContextAll,
 };
 use crate::grammar::parser::{FileContextAll, LibSLParser};
 use crate::loc::{Loc, Span};
@@ -281,11 +283,7 @@ impl<'a> AstConstructor<'a> {
         ctx: &SemanticTypeDeclContextAll<'_>,
     ) -> Result<ast::Decl> {
         if let Some(ctx) = ctx.simpleSemanticType() {
-            let annotations = ctx
-                .annotationUsage_all()
-                .into_iter()
-                .map(|a| self.process_annotation(&a))
-                .collect::<Result<Vec<_>>>()?;
+            let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
             let ty_name = self
                 .process_ty_identifier_as_qualified_ty_name(ctx.semanticName.as_ref().unwrap())?;
             let real_ty = self.process_ty_identifier_as_ty_expr(ctx.realName.as_ref().unwrap())?;
@@ -302,11 +300,7 @@ impl<'a> AstConstructor<'a> {
                 .into(),
             })
         } else if let Some(ctx) = ctx.enumSemanticType() {
-            let annotations = ctx
-                .annotationUsage_all()
-                .into_iter()
-                .map(|a| self.process_annotation(&a))
-                .collect::<Result<Vec<_>>>()?;
+            let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
             let ty_name = self.process_identifier_as_qualified_ty_name(&Terminal::new(
                 ctx.semanticName.clone().unwrap(),
             ))?;
@@ -347,11 +341,79 @@ impl<'a> AstConstructor<'a> {
         &mut self,
         ctx: &TypealiasStatementContextAll<'_>,
     ) -> Result<ast::Decl> {
-        todo!()
+        let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
+        let ty_name =
+            self.process_ty_identifier_as_qualified_ty_name(ctx.left.as_ref().unwrap())?;
+        let ty_expr = self.process_ty_identifier_as_ty_expr(ctx.right.as_ref().unwrap())?;
+
+        Ok(ast::Decl {
+            id: self.libsl.decls.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: ast::DeclTyAlias {
+                annotations,
+                ty_name,
+                ty_expr,
+            }
+            .into(),
+        })
     }
 
     fn process_decl_struct(&mut self, ctx: &TypeDefBlockContextAll<'_>) -> Result<ast::Decl> {
-        todo!()
+        let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
+        let ty_name =
+            self.process_ty_identifier_as_qualified_ty_name(ctx.r#type.as_ref().unwrap())?;
+
+        let (is_ty, for_tys) = if let Some(target_ty_ctx) = ctx.targetType() {
+            (
+                target_ty_ctx
+                    .typeIdentifier()
+                    .map(|t| self.process_ty_identifier_as_ty_expr(&t))
+                    .transpose()?,
+                target_ty_ctx
+                    .typeList()
+                    .unwrap()
+                    .typeIdentifier_all()
+                    .into_iter()
+                    .map(|t| self.process_ty_identifier_as_ty_expr(&t))
+                    .collect::<Result<Vec<_>>>()?,
+            )
+        } else {
+            Default::default()
+        };
+
+        let ty_constraints = ctx
+            .whereConstraints()
+            .map(|c| self.process_where_constraints(&c))
+            .transpose()?
+            .unwrap_or_default();
+
+        let decls = ctx
+            .typeDefBlockStatement_all()
+            .into_iter()
+            .map(|stmt_ctx| {
+                if let Some(decl) = stmt_ctx.variableDecl() {
+                    self.process_decl_variable(&decl)
+                } else if let Some(decl) = stmt_ctx.functionDecl() {
+                    self.process_decl_function(&decl)
+                } else {
+                    panic!("unrecognized typeDefBlockStatement node: {stmt_ctx:?}");
+                }
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(ast::Decl {
+            id: self.libsl.decls.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: ast::DeclStruct {
+                annotations,
+                ty_name,
+                is_ty,
+                for_tys,
+                ty_constraints,
+                decls,
+            }
+            .into(),
+        })
     }
 
     fn process_decl_enum(&mut self, ctx: &EnumBlockContextAll<'_>) -> Result<ast::Decl> {
@@ -380,6 +442,16 @@ impl<'a> AstConstructor<'a> {
 
     fn process_expr_atomic(&mut self, ctx: &ExpressionAtomicContextAll<'_>) -> Result<ast::Expr> {
         todo!()
+    }
+
+    fn process_annotation_usage_list(
+        &mut self,
+        annotations: Vec<Rc<AnnotationUsageContextAll<'_>>>,
+    ) -> Result<Vec<ast::Annotation>> {
+        annotations
+            .into_iter()
+            .map(|a| self.process_annotation(&a))
+            .collect()
     }
 
     fn process_annotation(
@@ -411,6 +483,13 @@ impl<'a> AstConstructor<'a> {
     }
 
     fn process_identifier(&mut self, ctx: &Terminal<'_>) -> Result<ast::Name> {
+        todo!()
+    }
+
+    fn process_where_constraints(
+        &mut self,
+        ctx: &WhereConstraintsContextAll,
+    ) -> Result<Vec<ast::TyConstraint>> {
         todo!()
     }
 }

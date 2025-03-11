@@ -336,8 +336,8 @@ impl<'a> AstConstructor<'a> {
         &mut self,
         ctx: &EnumSemanticTypeEntryContextAll<'_>,
     ) -> Result<ast::SemanticTyEnumValue> {
-        let name = self.process_identifier(ctx.Identifier().as_ref().unwrap())?;
-        let expr = self.process_expr_atomic(ctx.expressionAtomic().as_ref().unwrap())?;
+        let name = self.process_identifier(&ctx.Identifier().unwrap())?;
+        let expr = self.process_expr_atomic(&ctx.expressionAtomic().unwrap())?;
 
         Ok(ast::SemanticTyEnumValue { name, expr })
     }
@@ -501,7 +501,7 @@ impl<'a> AstConstructor<'a> {
             .map(|p| {
                 let annotations = self.process_annotation_usage_list(p.annotationUsage_all())?;
                 let name = self.process_identifier(&Terminal::new(p.name.clone().unwrap()))?;
-                let ty_expr = self.process_ty_identifier_as_ty_expr(&p.r#type.clone().unwrap())?;
+                let ty_expr = self.process_ty_identifier_as_ty_expr(p.r#type.as_ref().unwrap())?;
 
                 Ok(ast::ActionParam {
                     annotations,

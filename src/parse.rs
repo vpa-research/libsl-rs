@@ -19,24 +19,27 @@ use crate::grammar::libslparser::{
     ActionParameterContextAttrs, AnnotationDeclContextAll, AnnotationDeclContextAttrs,
     AnnotationDeclParamsContextAttrs, AnnotationDeclParamsPartContextAttrs,
     AnnotationUsageContextAll, AssignmentRightContextAttrs, AutomatonDeclContextAll,
-    AutomatonDeclContextAttrs, AutomatonShiftDeclContextAll, AutomatonStateDeclContext,
-    AutomatonStatementContextAll, AutomatonStatementContextAttrs, ConstructorDeclContextAll,
-    ConstructorVariablesContextAll, ConstructorVariablesContextAttrs, DestructorDeclContextAll,
-    EnumBlockContextAll, EnumBlockContextAttrs, EnumBlockStatementContextAll,
-    EnumBlockStatementContextAttrs, EnumSemanticTypeContextAttrs, EnumSemanticTypeEntryContextAll,
+    AutomatonDeclContextAttrs, AutomatonShiftDeclContextAll, AutomatonShiftDeclContextAttrs,
+    AutomatonStateDeclContext, AutomatonStateDeclContextAttrs, AutomatonStatementContextAll,
+    AutomatonStatementContextAttrs, ConstructorDeclContextAll, ConstructorVariablesContextAll,
+    ConstructorVariablesContextAttrs, DestructorDeclContextAll, EnumBlockContextAll,
+    EnumBlockContextAttrs, EnumBlockStatementContextAll, EnumBlockStatementContextAttrs,
+    EnumSemanticTypeContextAttrs, EnumSemanticTypeEntryContextAll,
     EnumSemanticTypeEntryContextAttrs, ExpressionAtomicContextAll, ExpressionContextAll,
     FileContextAttrs, FunctionBodyContextAll, FunctionDeclArgListContextAll,
     FunctionDeclArgListContextAttrs, FunctionDeclContextAll, FunctionDeclContextAttrs,
-    FunctionHeaderContextAttrs, GenericContextAll, GlobalStatementContextAll,
-    GlobalStatementContextAttrs, HeaderContextAll, ImplementedConceptsContextAttrs,
-    IntegerNumberContextAll, LibSLParserContextType, NameWithTypeContextAll,
-    NameWithTypeContextAttrs, ParameterContextAttrs, PeriodSeparatedFullNameContextAll,
-    ProcDeclContextAll, SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs,
-    SimpleSemanticTypeContextAttrs, TargetTypeContextAttrs, TopLevelDeclContextAttrs,
-    TypeDefBlockContextAll, TypeDefBlockContextAttrs, TypeDefBlockStatementContextAttrs,
-    TypeExpressionContextAll, TypeIdentifierContextAll, TypeListContextAttrs,
-    TypealiasStatementContextAll, TypealiasStatementContextAttrs, TypesSectionContextAttrs,
-    VariableDeclContextAll, VariableDeclContextAttrs, WhereConstraintsContextAll,
+    FunctionHeaderContextAttrs, FunctionsListContextAttrs, FunctionsListPartContextAll,
+    FunctionsListPartContextAttrs, GenericContextAll, GlobalStatementContextAll,
+    GlobalStatementContextAttrs, HeaderContextAll, IdentifierListContextAttrs,
+    ImplementedConceptsContextAttrs, IntegerNumberContextAll, LibSLParserContextType,
+    NameWithTypeContextAll, NameWithTypeContextAttrs, ParameterContextAttrs,
+    PeriodSeparatedFullNameContextAll, ProcDeclContextAll, SemanticTypeDeclContextAll,
+    SemanticTypeDeclContextAttrs, SimpleSemanticTypeContextAttrs, TargetTypeContextAttrs,
+    TopLevelDeclContextAttrs, TypeDefBlockContextAll, TypeDefBlockContextAttrs,
+    TypeDefBlockStatementContextAttrs, TypeExpressionContextAll, TypeIdentifierContextAll,
+    TypeListContextAttrs, TypealiasStatementContextAll, TypealiasStatementContextAttrs,
+    TypesSectionContextAttrs, VariableDeclContextAll, VariableDeclContextAttrs,
+    WhereConstraintsContextAll,
 };
 use crate::grammar::parser::{FileContextAll, LibSLParser};
 use crate::loc::{Loc, Span};
@@ -85,6 +88,10 @@ fn parse_import_or_include(ctx: &Terminal<'_>, kw: &str, rule_name: &str) -> Res
     } else {
         Ok(path.into())
     }
+}
+
+fn unit_vec<T>(value: T) -> Vec<T> {
+    vec![value]
 }
 
 #[derive(Error, Debug, Clone)]
@@ -232,10 +239,6 @@ impl<'a> AstConstructor<'a> {
         &mut self,
         ctx: &GlobalStatementContextAll<'_>,
     ) -> Result<Vec<ast::Decl>> {
-        fn unit_vec<T>(value: T) -> Vec<T> {
-            vec![value]
-        }
-
         if let Some(import) = ctx.ImportStatement() {
             self.process_decl_import(&import).map(unit_vec)
         } else if let Some(include) = ctx.IncludeStatement() {
@@ -578,11 +581,11 @@ impl<'a> AstConstructor<'a> {
             }
         }
 
-        let decls = ctx
-            .automatonStatement_all()
-            .into_iter()
-            .map(|d| self.process_automaton_decl(&d))
-            .collect::<Result<Vec<_>>>()?;
+        let mut decls = vec![];
+
+        for d in ctx.automatonStatement_all() {
+            decls.extend(self.process_automaton_decl(&d)?);
+        }
 
         Ok(ast::Decl {
             id: self.libsl.decls.insert(()),
@@ -631,21 +634,21 @@ impl<'a> AstConstructor<'a> {
     fn process_automaton_decl(
         &mut self,
         ctx: &AutomatonStatementContextAll<'_>,
-    ) -> Result<ast::Decl> {
+    ) -> Result<Vec<ast::Decl>> {
         if let Some(decl) = ctx.automatonStateDecl() {
             self.process_decl_state(&decl)
         } else if let Some(decl) = ctx.automatonShiftDecl() {
-            self.process_decl_shift(&decl)
+            self.process_decl_shift(&decl).map(unit_vec)
         } else if let Some(decl) = ctx.constructorDecl() {
-            self.process_decl_constructor(&decl)
+            self.process_decl_constructor(&decl).map(unit_vec)
         } else if let Some(decl) = ctx.destructorDecl() {
-            self.process_decl_destructor(&decl)
+            self.process_decl_destructor(&decl).map(unit_vec)
         } else if let Some(decl) = ctx.procDecl() {
-            self.process_decl_proc(&decl)
+            self.process_decl_proc(&decl).map(unit_vec)
         } else if let Some(decl) = ctx.functionDecl() {
-            self.process_decl_function(&decl)
+            self.process_decl_function(&decl).map(unit_vec)
         } else if let Some(decl) = ctx.variableDecl() {
-            self.process_decl_variable(&decl)
+            self.process_decl_variable(&decl).map(unit_vec)
         } else {
             panic!("unrecognized automatonStatement node: {ctx:?}");
         }
@@ -779,12 +782,90 @@ impl<'a> AstConstructor<'a> {
         })
     }
 
-    fn process_decl_state(&mut self, ctx: &AutomatonStateDeclContext<'_>) -> Result<ast::Decl> {
-        todo!()
+    fn process_decl_state(
+        &mut self,
+        ctx: &AutomatonStateDeclContext<'_>,
+    ) -> Result<Vec<ast::Decl>> {
+        let kw = ctx.keyword.as_ref().unwrap();
+        let kind = match kw.token_type {
+            grammar::parser::INITSTATE => ast::StateKind::Initial,
+            grammar::parser::STATE => ast::StateKind::Regular,
+            grammar::parser::FINISHSTATE => ast::StateKind::Final,
+            _ => panic!("unrecognized state kind: `{}`", kw.text),
+        };
+
+        ctx.identifierList()
+            .into_iter()
+            .flat_map(|l| l.Identifier_all())
+            .map(|i| {
+                self.process_identifier(&i).map(|name| ast::Decl {
+                    id: self.libsl.decls.insert(()),
+                    loc: name.loc.clone(),
+                    kind: ast::DeclState { kind, name }.into(),
+                })
+            })
+            .collect::<Result<Vec<_>>>()
     }
 
     fn process_decl_shift(&mut self, ctx: &AutomatonShiftDeclContextAll<'_>) -> Result<ast::Decl> {
-        todo!()
+        let from_token = ctx.from.as_ref().unwrap();
+
+        let from = match from_token.token_type {
+            grammar::parser::Identifier => {
+                vec![self.process_identifier(&Terminal::new(from_token.clone()))?]
+            }
+
+            grammar::parser::L_BRACKET => ctx
+                .identifierList()
+                .unwrap()
+                .Identifier_all()
+                .into_iter()
+                .map(|i| self.process_identifier(&i))
+                .collect::<Result<Vec<_>>>()?,
+
+            _ => panic!(
+                "unrecognized token for `from` field in rule `automatonShiftDecl`: `{}`",
+                from_token.text,
+            ),
+        };
+
+        let to = self.process_identifier(&Terminal::new(ctx.to.clone().unwrap()))?;
+
+        let by = if let Some(f) = ctx.functionsListPart() {
+            vec![self.process_qualified_function_name(&f)?]
+        } else {
+            ctx.functionsList()
+                .into_iter()
+                .flat_map(|l| l.functionsListPart_all())
+                .map(|f| self.process_qualified_function_name(&f))
+                .collect::<Result<Vec<_>>>()?
+        };
+
+        Ok(ast::Decl {
+            id: self.libsl.decls.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: ast::DeclShift { from, to, by }.into(),
+        })
+    }
+
+    fn process_qualified_function_name(
+        &mut self,
+        ctx: &FunctionsListPartContextAll<'_>,
+    ) -> Result<ast::QualifiedFunctionName> {
+        let name = self.process_identifier(&Terminal::new(ctx.name.clone().unwrap()))?;
+
+        let params = if ctx.L_BRACKET().is_some() {
+            Some(
+                ctx.typeIdentifier_all()
+                    .into_iter()
+                    .map(|t| self.process_ty_identifier_as_ty_expr(&t))
+                    .collect::<Result<Vec<_>>>()?,
+            )
+        } else {
+            None
+        };
+
+        Ok(ast::QualifiedFunctionName { name, params })
     }
 
     fn process_decl_constructor(

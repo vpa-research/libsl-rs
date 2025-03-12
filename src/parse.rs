@@ -18,18 +18,23 @@ use crate::grammar::libslparser::{
     ActionDeclContextAll, ActionDeclContextAttrs, ActionDeclParamListContextAttrs,
     ActionParameterContextAttrs, AnnotationDeclContextAll, AnnotationDeclContextAttrs,
     AnnotationDeclParamsContextAttrs, AnnotationDeclParamsPartContextAttrs,
-    AnnotationUsageContextAll, AutomatonDeclContextAll, EnumBlockContextAll, EnumBlockContextAttrs,
-    EnumBlockStatementContextAll, EnumBlockStatementContextAttrs, EnumSemanticTypeContextAttrs,
-    EnumSemanticTypeEntryContextAll, EnumSemanticTypeEntryContextAttrs, ExpressionAtomicContextAll,
-    ExpressionContextAll, FileContextAttrs, FunctionDeclContextAll, GenericContextAll,
-    GlobalStatementContextAll, GlobalStatementContextAttrs, HeaderContextAll,
+    AnnotationUsageContextAll, AssignmentRightContextAttrs, AutomatonDeclContextAll,
+    AutomatonDeclContextAttrs, AutomatonShiftDeclContextAll, AutomatonStateDeclContext,
+    AutomatonStatementContextAll, AutomatonStatementContextAttrs, ConstructorDeclContextAll,
+    ConstructorVariablesContextAll, ConstructorVariablesContextAttrs, DestructorDeclContextAll,
+    EnumBlockContextAll, EnumBlockContextAttrs, EnumBlockStatementContextAll,
+    EnumBlockStatementContextAttrs, EnumSemanticTypeContextAttrs, EnumSemanticTypeEntryContextAll,
+    EnumSemanticTypeEntryContextAttrs, ExpressionAtomicContextAll, ExpressionContextAll,
+    FileContextAttrs, FunctionDeclContextAll, GenericContextAll, GlobalStatementContextAll,
+    GlobalStatementContextAttrs, HeaderContextAll, ImplementedConceptsContextAttrs,
     IntegerNumberContextAll, LibSLParserContextType, NameWithTypeContextAll,
-    NameWithTypeContextAttrs, SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs,
-    SimpleSemanticTypeContextAttrs, TargetTypeContextAttrs, TopLevelDeclContextAttrs,
-    TypeDefBlockContextAll, TypeDefBlockContextAttrs, TypeDefBlockStatementContextAttrs,
-    TypeExpressionContextAll, TypeIdentifierContextAll, TypeListContextAttrs,
-    TypealiasStatementContextAll, TypealiasStatementContextAttrs, TypesSectionContextAttrs,
-    VariableDeclContextAll, WhereConstraintsContextAll,
+    NameWithTypeContextAttrs, PeriodSeparatedFullNameContextAll, ProcDeclContextAll,
+    SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs, SimpleSemanticTypeContextAttrs,
+    TargetTypeContextAttrs, TopLevelDeclContextAttrs, TypeDefBlockContextAll,
+    TypeDefBlockContextAttrs, TypeDefBlockStatementContextAttrs, TypeExpressionContextAll,
+    TypeIdentifierContextAll, TypeListContextAttrs, TypealiasStatementContextAll,
+    TypealiasStatementContextAttrs, TypesSectionContextAttrs, VariableDeclContextAll,
+    WhereConstraintsContextAll,
 };
 use crate::grammar::parser::{FileContextAll, LibSLParser};
 use crate::loc::{Loc, Span};
@@ -539,7 +544,118 @@ impl<'a> AstConstructor<'a> {
     }
 
     fn process_decl_automaton(&mut self, ctx: &AutomatonDeclContextAll<'_>) -> Result<ast::Decl> {
-        todo!()
+        let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
+        let is_concept = ctx.CONCEPT().is_some();
+        let name = self
+            .process_period_separated_full_name_as_qualified_ty_name(ctx.name.as_ref().unwrap())?;
+
+        let constructor_variables = ctx
+            .constructorVariables_all()
+            .into_iter()
+            .map(|v| self.process_constructor_variable(&v))
+            .collect::<Result<Vec<_>>>()?;
+
+        let ty_expr = self.process_ty_expr(ctx.r#type.as_ref().unwrap())?;
+
+        let mut implemented_concepts = vec![];
+
+        for c in ctx.implementedConcepts_all() {
+            let implements = c.implements.as_ref().unwrap();
+
+            if !implements.text.eq_ignore_ascii_case("implements") {
+                return Err(ParseError::SyntaxError {
+                    line: implements.line,
+                    column: implements.column,
+                    msg: format!("expected 'implements', got {}", implements.text),
+                });
+            }
+
+            for concept in c.concept_all() {
+                implemented_concepts
+                    .push(self.process_identifier(&Terminal::new(concept.name.clone().unwrap()))?);
+            }
+        }
+
+        let decls = ctx
+            .automatonStatement_all()
+            .into_iter()
+            .map(|d| self.process_automaton_decl(&d))
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(ast::Decl {
+            id: self.libsl.decls.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: ast::DeclAutomaton {
+                annotations,
+                is_concept,
+                name,
+                constructor_variables,
+                ty_expr,
+                implemented_concepts,
+                decls,
+            }
+            .into(),
+        })
+    }
+
+    fn process_constructor_variable(
+        &mut self,
+        ctx: &ConstructorVariablesContextAll<'_>,
+    ) -> Result<ast::Decl> {
+        let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
+
+        let kind = if ctx.VAR().is_some() {
+            ast::VariableKind::Var
+        } else if ctx.VAL().is_some() {
+            ast::VariableKind::Val
+        } else {
+            panic!(
+                "unrecognized token for field `keyword` in rule `constructorVariables`: {:?}",
+                ctx.keyword.as_ref().unwrap()
+            );
+        };
+
+        let (name, ty_expr) = self.process_name_with_ty(&ctx.nameWithType().unwrap())?;
+        let init = ctx
+            .assignmentRight()
+            .map(|e| self.process_expr(&e.expression().unwrap()))
+            .transpose()?;
+
+        Ok(ast::Decl {
+            id: self.libsl.decls.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: ast::DeclVariable {
+                annotations,
+                kind,
+                name,
+                ty_expr,
+                init,
+            }
+            .into(),
+        })
+    }
+
+    fn process_automaton_decl(
+        &mut self,
+        ctx: &AutomatonStatementContextAll<'_>,
+    ) -> Result<ast::Decl> {
+        if let Some(decl) = ctx.automatonStateDecl() {
+            self.process_decl_state(&decl)
+        } else if let Some(decl) = ctx.automatonShiftDecl() {
+            self.process_decl_shift(&decl)
+        } else if let Some(decl) = ctx.constructorDecl() {
+            self.process_decl_constructor(&decl)
+        } else if let Some(decl) = ctx.destructorDecl() {
+            self.process_decl_destructor(&decl)
+        } else if let Some(decl) = ctx.procDecl() {
+            self.process_decl_proc(&decl)
+        } else if let Some(decl) = ctx.functionDecl() {
+            self.process_decl_function(&decl)
+        } else if let Some(decl) = ctx.variableDecl() {
+            self.process_decl_variable(&decl)
+        } else {
+            panic!("unrecognized automatonStatement node: {ctx:?}");
+        }
     }
 
     fn process_decl_function(&mut self, ctx: &FunctionDeclContextAll<'_>) -> Result<ast::Decl> {
@@ -547,6 +663,29 @@ impl<'a> AstConstructor<'a> {
     }
 
     fn process_decl_variable(&mut self, ctx: &VariableDeclContextAll<'_>) -> Result<ast::Decl> {
+        todo!()
+    }
+
+    fn process_decl_state(&mut self, ctx: &AutomatonStateDeclContext<'_>) -> Result<ast::Decl> {
+        todo!()
+    }
+
+    fn process_decl_shift(&mut self, ctx: &AutomatonShiftDeclContextAll<'_>) -> Result<ast::Decl> {
+        todo!()
+    }
+
+    fn process_decl_constructor(
+        &mut self,
+        ctx: &ConstructorDeclContextAll<'_>,
+    ) -> Result<ast::Decl> {
+        todo!()
+    }
+
+    fn process_decl_destructor(&mut self, ctx: &DestructorDeclContextAll<'_>) -> Result<ast::Decl> {
+        todo!()
+    }
+
+    fn process_decl_proc(&mut self, ctx: &ProcDeclContextAll<'_>) -> Result<ast::Decl> {
         todo!()
     }
 
@@ -597,6 +736,13 @@ impl<'a> AstConstructor<'a> {
         &mut self,
         ctx: &TypeIdentifierContextAll<'_>,
     ) -> Result<ast::TyExpr> {
+        todo!()
+    }
+
+    fn process_period_separated_full_name_as_qualified_ty_name(
+        &mut self,
+        ctx: &PeriodSeparatedFullNameContextAll<'_>,
+    ) -> Result<ast::QualifiedTyName> {
         todo!()
     }
 

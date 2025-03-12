@@ -25,16 +25,18 @@ use crate::grammar::libslparser::{
     EnumBlockContextAll, EnumBlockContextAttrs, EnumBlockStatementContextAll,
     EnumBlockStatementContextAttrs, EnumSemanticTypeContextAttrs, EnumSemanticTypeEntryContextAll,
     EnumSemanticTypeEntryContextAttrs, ExpressionAtomicContextAll, ExpressionContextAll,
-    FileContextAttrs, FunctionDeclContextAll, GenericContextAll, GlobalStatementContextAll,
+    FileContextAttrs, FunctionBodyContextAll, FunctionDeclArgListContextAll,
+    FunctionDeclArgListContextAttrs, FunctionDeclContextAll, FunctionDeclContextAttrs,
+    FunctionHeaderContextAttrs, GenericContextAll, GlobalStatementContextAll,
     GlobalStatementContextAttrs, HeaderContextAll, ImplementedConceptsContextAttrs,
     IntegerNumberContextAll, LibSLParserContextType, NameWithTypeContextAll,
-    NameWithTypeContextAttrs, PeriodSeparatedFullNameContextAll, ProcDeclContextAll,
-    SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs, SimpleSemanticTypeContextAttrs,
-    TargetTypeContextAttrs, TopLevelDeclContextAttrs, TypeDefBlockContextAll,
-    TypeDefBlockContextAttrs, TypeDefBlockStatementContextAttrs, TypeExpressionContextAll,
-    TypeIdentifierContextAll, TypeListContextAttrs, TypealiasStatementContextAll,
-    TypealiasStatementContextAttrs, TypesSectionContextAttrs, VariableDeclContextAll,
-    WhereConstraintsContextAll,
+    NameWithTypeContextAttrs, ParameterContextAttrs, PeriodSeparatedFullNameContextAll,
+    ProcDeclContextAll, SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs,
+    SimpleSemanticTypeContextAttrs, TargetTypeContextAttrs, TopLevelDeclContextAttrs,
+    TypeDefBlockContextAll, TypeDefBlockContextAttrs, TypeDefBlockStatementContextAttrs,
+    TypeExpressionContextAll, TypeIdentifierContextAll, TypeListContextAttrs,
+    TypealiasStatementContextAll, TypealiasStatementContextAttrs, TypesSectionContextAttrs,
+    VariableDeclContextAll, WhereConstraintsContextAll,
 };
 use crate::grammar::parser::{FileContextAll, LibSLParser};
 use crate::loc::{Loc, Span};
@@ -659,6 +661,106 @@ impl<'a> AstConstructor<'a> {
     }
 
     fn process_decl_function(&mut self, ctx: &FunctionDeclContextAll<'_>) -> Result<ast::Decl> {
+        let header = ctx.functionHeader().unwrap();
+        let annotations = self.process_annotation_usage_list(header.annotationUsage_all())?;
+
+        let is_static = if let Some(modifier) = header.modifier.as_ref() {
+            match &modifier.text {
+                m if m.eq_ignore_ascii_case("static") => true,
+
+                m => {
+                    return Err(ParseError::SyntaxError {
+                        line: modifier.line,
+                        column: modifier.column,
+                        msg: format!("unknown modifier `{m}`"),
+                    });
+                }
+            }
+        } else {
+            false
+        };
+
+        let extension_for = header
+            .automatonName
+            .as_ref()
+            .map(|n| self.process_period_separated_full_name(n))
+            .transpose()?;
+
+        let is_method = header.headerWithAsterisk().is_some();
+        let name = self.process_identifier(&Terminal::new(header.functionName.clone().unwrap()))?;
+
+        let generics = header
+            .generic()
+            .map(|g| self.process_generics(&g))
+            .transpose()?
+            .unwrap_or_default();
+
+        let params = header
+            .functionDeclArgList()
+            .map(|a| self.process_function_params(&a))
+            .transpose()?
+            .unwrap_or_default();
+
+        let ret_ty_expr = header
+            .functionType
+            .as_ref()
+            .map(|t| self.process_ty_expr(t))
+            .transpose()?;
+
+        let ty_constraints = header
+            .whereConstraints()
+            .map(|w| self.process_where_constraints(&w))
+            .transpose()?
+            .unwrap_or_default();
+
+        let body = ctx
+            .functionBody()
+            .map(|b| self.process_function_body(&b))
+            .transpose()?;
+
+        Ok(ast::Decl {
+            id: self.libsl.decls.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: ast::DeclFunction {
+                annotations,
+                is_static,
+                extension_for,
+                is_method,
+                name,
+                generics,
+                params,
+                ret_ty_expr,
+                ty_constraints,
+                body,
+            }
+            .into(),
+        })
+    }
+
+    fn process_function_params(
+        &mut self,
+        ctx: &FunctionDeclArgListContextAll<'_>,
+    ) -> Result<Vec<ast::FunctionParam>> {
+        ctx.parameter_all()
+            .into_iter()
+            .map(|p| {
+                let annotations = self.process_annotation_usage_list(p.annotationUsage_all())?;
+                let name = self.process_identifier(&Terminal::new(p.name.clone().unwrap()))?;
+                let ty_expr = self.process_ty_expr(&p.typeExpression().unwrap())?;
+
+                Ok(ast::FunctionParam {
+                    annotations,
+                    name,
+                    ty_expr,
+                })
+            })
+            .collect()
+    }
+
+    fn process_function_body(
+        &mut self,
+        ctx: &FunctionBodyContextAll<'_>,
+    ) -> Result<ast::FunctionBody> {
         todo!()
     }
 
@@ -736,6 +838,13 @@ impl<'a> AstConstructor<'a> {
         &mut self,
         ctx: &TypeIdentifierContextAll<'_>,
     ) -> Result<ast::TyExpr> {
+        todo!()
+    }
+
+    fn process_period_separated_full_name(
+        &mut self,
+        ctx: &PeriodSeparatedFullNameContextAll<'_>,
+    ) -> Result<ast::Name> {
         todo!()
     }
 

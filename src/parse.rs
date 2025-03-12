@@ -36,11 +36,11 @@ use crate::grammar::libslparser::{
     TypeDefBlockContextAll, TypeDefBlockContextAttrs, TypeDefBlockStatementContextAttrs,
     TypeExpressionContextAll, TypeIdentifierContextAll, TypeListContextAttrs,
     TypealiasStatementContextAll, TypealiasStatementContextAttrs, TypesSectionContextAttrs,
-    VariableDeclContextAll, WhereConstraintsContextAll,
+    VariableDeclContextAll, VariableDeclContextAttrs, WhereConstraintsContextAll,
 };
 use crate::grammar::parser::{FileContextAll, LibSLParser};
 use crate::loc::{Loc, Span};
-use crate::{LibSl, ast};
+use crate::{LibSl, ast, grammar};
 
 pub type Result<T, E = ParseError> = std::result::Result<T, E>;
 
@@ -606,18 +606,9 @@ impl<'a> AstConstructor<'a> {
     ) -> Result<ast::Decl> {
         let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
 
-        let kind = if ctx.VAR().is_some() {
-            ast::VariableKind::Var
-        } else if ctx.VAL().is_some() {
-            ast::VariableKind::Val
-        } else {
-            panic!(
-                "unrecognized token for field `keyword` in rule `constructorVariables`: {:?}",
-                ctx.keyword.as_ref().unwrap()
-            );
-        };
-
+        let kind = self.process_var_kind(ctx.keyword.as_ref().unwrap())?;
         let (name, ty_expr) = self.process_name_with_ty(&ctx.nameWithType().unwrap())?;
+
         let init = ctx
             .assignmentRight()
             .map(|e| self.process_expr(&e.expression().unwrap()))
@@ -757,15 +748,35 @@ impl<'a> AstConstructor<'a> {
             .collect()
     }
 
-    fn process_function_body(
-        &mut self,
-        ctx: &FunctionBodyContextAll<'_>,
-    ) -> Result<ast::FunctionBody> {
-        todo!()
+    fn process_decl_variable(&mut self, ctx: &VariableDeclContextAll<'_>) -> Result<ast::Decl> {
+        let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
+        let kind = self.process_var_kind(ctx.keyword.as_ref().unwrap())?;
+        let (name, ty_expr) = self.process_name_with_ty(&ctx.nameWithType().unwrap())?;
+        let init = ctx
+            .assignmentRight()
+            .map(|e| self.process_expr(&e.expression().unwrap()))
+            .transpose()?;
+
+        Ok(ast::Decl {
+            id: self.libsl.decls.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: ast::DeclVariable {
+                annotations,
+                kind,
+                name,
+                ty_expr,
+                init,
+            }
+            .into(),
+        })
     }
 
-    fn process_decl_variable(&mut self, ctx: &VariableDeclContextAll<'_>) -> Result<ast::Decl> {
-        todo!()
+    fn process_var_kind(&mut self, ctx: &CommonToken<'_>) -> Result<ast::VariableKind> {
+        Ok(match ctx.token_type {
+            grammar::parser::VAR => ast::VariableKind::Var,
+            grammar::parser::VAL => ast::VariableKind::Val,
+            _ => panic!("unrecognized variable keyword: `{}`", ctx.text),
+        })
     }
 
     fn process_decl_state(&mut self, ctx: &AutomatonStateDeclContext<'_>) -> Result<ast::Decl> {
@@ -788,6 +799,13 @@ impl<'a> AstConstructor<'a> {
     }
 
     fn process_decl_proc(&mut self, ctx: &ProcDeclContextAll<'_>) -> Result<ast::Decl> {
+        todo!()
+    }
+
+    fn process_function_body(
+        &mut self,
+        ctx: &FunctionBodyContextAll<'_>,
+    ) -> Result<ast::FunctionBody> {
         todo!()
     }
 

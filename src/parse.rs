@@ -17,8 +17,9 @@ use crate::grammar::lexer::LibSLLexer;
 use crate::grammar::libslparser::{
     ActionDeclContextAll, ActionDeclContextAttrs, ActionDeclParamListContextAttrs,
     ActionParameterContextAttrs, ActionUsageContextAll, ActionUsageContextAttrs,
-    AnnotationDeclContextAll, AnnotationDeclContextAttrs, AnnotationDeclParamsContextAttrs,
-    AnnotationDeclParamsPartContextAttrs, AnnotationUsageContextAll, ArgPairContextAttrs,
+    AnnotationArgsContextAttrs, AnnotationDeclContextAll, AnnotationDeclContextAttrs,
+    AnnotationDeclParamsContextAttrs, AnnotationDeclParamsPartContextAttrs,
+    AnnotationUsageContextAll, AnnotationUsageContextAttrs, ArgPairContextAttrs,
     ArrayLiteralContextAll, ArrayLiteralContextAttrs, AssignmentRightContextAttrs,
     AssignsContractContextAll, AssignsContractContextAttrs, AutomatonDeclContextAll,
     AutomatonDeclContextAttrs, AutomatonShiftDeclContextAll, AutomatonShiftDeclContextAttrs,
@@ -43,17 +44,18 @@ use crate::grammar::libslparser::{
     HeaderContextAll, IdentifierListContextAttrs, IfStatementContextAll, IfStatementContextAttrs,
     ImplementedConceptsContextAttrs, IntegerNumberContextAll, LibSLParserContextType,
     NameWithTypeContextAll, NameWithTypeContextAttrs, NamedArgsContextAttrs, ParameterContextAttrs,
-    PeriodSeparatedFullNameContextAll, PrimitiveLiteralContextAll, PrimitiveLiteralContextAttrs,
-    ProcDeclContextAll, ProcDeclContextAttrs, ProcHeaderContextAttrs, ProcUsageContextAll,
-    ProcUsageContextAttrs, QualifiedAccessContextAll, RequiresContractContextAll,
-    RequiresContractContextAttrs, SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs,
-    SimpleSemanticTypeContextAttrs, TargetTypeContextAttrs, TopLevelDeclContextAttrs,
-    TypeDefBlockContextAll, TypeDefBlockContextAttrs, TypeDefBlockStatementContextAttrs,
-    TypeExpressionContextAll, TypeExpressionContextAttrs, TypeIdentifierContextAll,
-    TypeIdentifierContextAttrs, TypeIdentifierNameContextAttrs, TypeListContextAttrs,
-    TypealiasStatementContextAll, TypealiasStatementContextAttrs, TypesSectionContextAttrs,
-    VariableAssignmentContextAll, VariableAssignmentContextAttrs, VariableDeclContextAll,
-    VariableDeclContextAttrs, WhereConstraintsContextAll,
+    PeriodSeparatedFullNameContextAll, PeriodSeparatedFullNameContextAttrs,
+    PrimitiveLiteralContextAll, PrimitiveLiteralContextAttrs, ProcDeclContextAll,
+    ProcDeclContextAttrs, ProcHeaderContextAttrs, ProcUsageContextAll, ProcUsageContextAttrs,
+    QualifiedAccessContextAll, RequiresContractContextAll, RequiresContractContextAttrs,
+    SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs, SimpleSemanticTypeContextAttrs,
+    TargetTypeContextAttrs, TopLevelDeclContextAttrs, TypeDefBlockContextAll,
+    TypeDefBlockContextAttrs, TypeDefBlockStatementContextAttrs, TypeExpressionContextAll,
+    TypeExpressionContextAttrs, TypeIdentifierContextAll, TypeIdentifierContextAttrs,
+    TypeIdentifierNameContextAttrs, TypeListContextAttrs, TypealiasStatementContextAll,
+    TypealiasStatementContextAttrs, TypesSectionContextAttrs, VariableAssignmentContextAll,
+    VariableAssignmentContextAttrs, VariableDeclContextAll, VariableDeclContextAttrs,
+    WhereConstraintsContextAll,
 };
 use crate::grammar::parser::{FileContextAll, LibSLParser};
 use crate::loc::{Loc, Span};
@@ -71,9 +73,9 @@ fn strip_surrounding(s: &str, prefix: char, suffix: char) -> &str {
 
 fn hex_digit_to_u8(c: char) -> u8 {
     match c {
-        '0'..='9' => c as u8 - '0' as u8,
-        'a'..='f' => c as u8 - 'a' as u8,
-        'A'..='F' => c as u8 - 'A' as u8,
+        '0'..='9' => c as u8 - b'0',
+        'a'..='f' => c as u8 - b'a',
+        'A'..='F' => c as u8 - b'A',
         _ => panic!("not a hex digit: {c:?}"),
     }
 }
@@ -1668,21 +1670,69 @@ impl<'a> AstConstructor<'a> {
         &mut self,
         ctx: &AnnotationUsageContextAll<'_>,
     ) -> Result<ast::Annotation> {
-        todo!()
+        let name = self.process_identifier(&ctx.Identifier().unwrap())?;
+
+        let args = ctx
+            .annotationArgs_all()
+            .into_iter()
+            .map(|a| {
+                let name = a
+                    .argName()
+                    .map(|n| self.process_identifier(&Terminal::new(n.name.clone().unwrap())))
+                    .transpose()?;
+                let expr = self.process_expr(&a.expression().unwrap())?;
+
+                Ok(ast::AnnotationArg { name, expr })
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(ast::Annotation { name, args })
     }
 
     fn process_ty_identifier_as_qualified_ty_name(
         &mut self,
         ctx: &TypeIdentifierContextAll<'_>,
     ) -> Result<ast::QualifiedTyName> {
-        todo!()
+        if let Some(token) = &ctx.asterisk {
+            return Err(ParseError::SyntaxError {
+                line: token.line,
+                column: token.column,
+                msg: "unexpected token `*`".into(),
+            });
+        }
+
+        let name_ctx = ctx.typeIdentifierName().unwrap();
+        let ty_name = if let Some(name_ctx) = name_ctx.periodSeparatedFullName() {
+            self.process_period_separated_full_name(&name_ctx)?
+        } else if let Some(lit_ctx) = name_ctx.primitiveLiteral() {
+            return Err(ParseError::SyntaxError {
+                line: lit_ctx.start().line,
+                column: lit_ctx.start().line,
+                msg: "unexpected primitive literal expression".into(),
+            });
+        } else {
+            panic!("unrecognized typeIdentifierName node: {name_ctx:?}");
+        };
+
+        let generics = ctx
+            .generic()
+            .map(|g| self.process_generics(&g))
+            .transpose()?
+            .unwrap_or_default();
+
+        Ok(ast::QualifiedTyName { ty_name, generics })
     }
 
     fn process_identifier_as_qualified_ty_name(
         &mut self,
         ctx: &Terminal<'_>,
     ) -> Result<ast::QualifiedTyName> {
-        todo!()
+        let ty_name = self.process_identifier(ctx)?;
+
+        Ok(ast::QualifiedTyName {
+            ty_name,
+            generics: vec![],
+        })
     }
 
     fn process_ty_identifier_as_ty_expr(
@@ -1743,18 +1793,47 @@ impl<'a> AstConstructor<'a> {
         &mut self,
         ctx: &PeriodSeparatedFullNameContextAll<'_>,
     ) -> Result<ast::Name> {
-        todo!()
+        if let Some(token) = &ctx.UNBOUNDED() {
+            return Err(ParseError::SyntaxError {
+                line: token.symbol.line,
+                column: token.symbol.column,
+                msg: "unexpected token `?`".into(),
+            });
+        }
+
+        let mut name = String::new();
+
+        for (idx, token) in ctx.Identifier_all().into_iter().enumerate() {
+            if idx > 0 {
+                name.push('.');
+            }
+
+            name.push_str(&parse_ident(&token.symbol));
+        }
+
+        Ok(ast::Name {
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            name,
+        })
     }
 
     fn process_period_separated_full_name_as_qualified_ty_name(
         &mut self,
         ctx: &PeriodSeparatedFullNameContextAll<'_>,
     ) -> Result<ast::QualifiedTyName> {
-        todo!()
+        let ty_name = self.process_period_separated_full_name(ctx)?;
+
+        Ok(ast::QualifiedTyName {
+            ty_name,
+            generics: vec![],
+        })
     }
 
     fn process_identifier(&mut self, ctx: &Terminal<'_>) -> Result<ast::Name> {
-        todo!()
+        Ok(ast::Name {
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            name: parse_ident(&ctx.symbol),
+        })
     }
 
     fn process_int_lit(&mut self, ctx: &IntegerNumberContextAll<'_>) -> Result<ast::IntLit> {

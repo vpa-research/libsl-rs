@@ -24,26 +24,29 @@ use crate::grammar::libslparser::{
     AutomatonStateDeclContextAttrs, AutomatonStatementContextAll, AutomatonStatementContextAttrs,
     ConstructorDeclContextAll, ConstructorDeclContextAttrs, ConstructorHeaderContextAttrs,
     ConstructorVariablesContextAll, ConstructorVariablesContextAttrs, DestructorDeclContextAll,
-    DestructorDeclContextAttrs, DestructorHeaderContextAttrs, EnsuresContractContextAll,
-    EnsuresContractContextAttrs, EnumBlockContextAll, EnumBlockContextAttrs,
-    EnumBlockStatementContextAll, EnumBlockStatementContextAttrs, EnumSemanticTypeContextAttrs,
-    EnumSemanticTypeEntryContextAll, EnumSemanticTypeEntryContextAttrs, ExpressionAtomicContextAll,
-    ExpressionContextAll, FileContextAttrs, FunctionBodyContextAll, FunctionBodyContextAttrs,
-    FunctionBodyStatementContextAll, FunctionContractContextAll, FunctionContractContextAttrs,
-    FunctionDeclArgListContextAll, FunctionDeclArgListContextAttrs, FunctionDeclContextAll,
-    FunctionDeclContextAttrs, FunctionHeaderContextAttrs, FunctionsListContextAttrs,
-    FunctionsListPartContextAll, FunctionsListPartContextAttrs, GenericContextAll,
-    GlobalStatementContextAll, GlobalStatementContextAttrs, HeaderContextAll,
-    IdentifierListContextAttrs, ImplementedConceptsContextAttrs, IntegerNumberContextAll,
-    LibSLParserContextType, NameWithTypeContextAll, NameWithTypeContextAttrs,
-    ParameterContextAttrs, PeriodSeparatedFullNameContextAll, ProcDeclContextAll,
-    ProcDeclContextAttrs, ProcHeaderContextAttrs, RequiresContractContextAll,
+    DestructorDeclContextAttrs, DestructorHeaderContextAttrs, ElseStatementContextAttrs,
+    EnsuresContractContextAll, EnsuresContractContextAttrs, EnumBlockContextAll,
+    EnumBlockContextAttrs, EnumBlockStatementContextAll, EnumBlockStatementContextAttrs,
+    EnumSemanticTypeContextAttrs, EnumSemanticTypeEntryContextAll,
+    EnumSemanticTypeEntryContextAttrs, ExpressionAtomicContextAll, ExpressionContextAll,
+    FileContextAttrs, FunctionBodyContextAll, FunctionBodyContextAttrs,
+    FunctionBodyStatementContextAll, FunctionBodyStatementContextAttrs, FunctionContractContextAll,
+    FunctionContractContextAttrs, FunctionDeclArgListContextAll, FunctionDeclArgListContextAttrs,
+    FunctionDeclContextAll, FunctionDeclContextAttrs, FunctionHeaderContextAttrs,
+    FunctionsListContextAttrs, FunctionsListPartContextAll, FunctionsListPartContextAttrs,
+    GenericContextAll, GlobalStatementContextAll, GlobalStatementContextAttrs, HeaderContextAll,
+    IdentifierListContextAttrs, IfStatementContextAll, IfStatementContextAttrs,
+    ImplementedConceptsContextAttrs, IntegerNumberContextAll, LibSLParserContextType,
+    NameWithTypeContextAll, NameWithTypeContextAttrs, ParameterContextAttrs,
+    PeriodSeparatedFullNameContextAll, ProcDeclContextAll, ProcDeclContextAttrs,
+    ProcHeaderContextAttrs, QualifiedAccessContextAll, RequiresContractContextAll,
     RequiresContractContextAttrs, SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs,
     SimpleSemanticTypeContextAttrs, TargetTypeContextAttrs, TopLevelDeclContextAttrs,
     TypeDefBlockContextAll, TypeDefBlockContextAttrs, TypeDefBlockStatementContextAttrs,
     TypeExpressionContextAll, TypeIdentifierContextAll, TypeListContextAttrs,
     TypealiasStatementContextAll, TypealiasStatementContextAttrs, TypesSectionContextAttrs,
-    VariableDeclContextAll, VariableDeclContextAttrs, WhereConstraintsContextAll,
+    VariableAssignmentContextAll, VariableAssignmentContextAttrs, VariableDeclContextAll,
+    VariableDeclContextAttrs, WhereConstraintsContextAll,
 };
 use crate::grammar::parser::{FileContextAll, LibSLParser};
 use crate::loc::{Loc, Span};
@@ -1090,7 +1093,101 @@ impl<'a> AstConstructor<'a> {
     }
 
     fn process_stmt(&mut self, ctx: &FunctionBodyStatementContextAll<'_>) -> Result<ast::Stmt> {
-        todo!()
+        if let Some(stmt) = ctx.variableAssignment() {
+            self.process_stmt_assign(&stmt)
+        } else if let Some(decl) = ctx.variableDecl() {
+            self.process_stmt_decl_variable(&decl)
+        } else if let Some(stmt) = ctx.ifStatement() {
+            self.process_stmt_if(&stmt)
+        } else if let Some(expr) = ctx.expression() {
+            self.process_stmt_expr(&expr)
+        } else {
+            panic!("unrecognized funcionBodyStatement node: {ctx:?}");
+        }
+    }
+
+    fn process_stmt_decl_variable(
+        &mut self,
+        ctx: &VariableDeclContextAll<'_>,
+    ) -> Result<ast::Stmt> {
+        let decl = self.process_decl_variable(ctx)?;
+
+        Ok(ast::Stmt {
+            id: self.libsl.stmts.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: Box::new(decl).into(),
+        })
+    }
+
+    fn process_stmt_if(&mut self, ctx: &IfStatementContextAll<'_>) -> Result<ast::Stmt> {
+        let cond = self.process_expr(&ctx.expression().unwrap())?;
+
+        let then_branch = ctx
+            .functionBodyStatement_all()
+            .into_iter()
+            .map(|s| self.process_stmt(&s))
+            .collect::<Result<Vec<_>>>()?;
+
+        let else_branch = ctx
+            .elseStatement()
+            .into_iter()
+            .flat_map(|e| e.functionBodyStatement_all())
+            .map(|s| self.process_stmt(&s))
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(ast::Stmt {
+            id: self.libsl.stmts.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: ast::StmtIf {
+                cond,
+                then_branch,
+                else_branch,
+            }
+            .into(),
+        })
+    }
+
+    fn process_stmt_assign(&mut self, ctx: &VariableAssignmentContextAll<'_>) -> Result<ast::Stmt> {
+        let lhs = self.process_qualified_access(&ctx.qualifiedAccess().unwrap())?;
+
+        let op = ctx.op.as_ref().unwrap();
+        let in_place_op = match op.token_type {
+            grammar::parser::ASSIGN_OP => None,
+            grammar::parser::PLUS_EQ => Some(ast::InPlaceOp::Add),
+            grammar::parser::MINUS_EQ => Some(ast::InPlaceOp::Sub),
+            grammar::parser::ASTERISK_EQ => Some(ast::InPlaceOp::Mul),
+            grammar::parser::SLASH_EQ => Some(ast::InPlaceOp::Div),
+            grammar::parser::PERCENT_EQ => Some(ast::InPlaceOp::Mod),
+            grammar::parser::AMPERSAND_EQ => Some(ast::InPlaceOp::BitAnd),
+            grammar::parser::OR_EQ => Some(ast::InPlaceOp::BitOr),
+            grammar::parser::XOR_EQ => Some(ast::InPlaceOp::BitXor),
+            grammar::parser::R_SHIFT_EQ => Some(ast::InPlaceOp::Sar),
+            grammar::parser::L_SHIFT_EQ => Some(ast::InPlaceOp::Sal),
+            _ => panic!("unrecognized assignment operator: `{}`", op.text),
+        };
+
+        let rhs = self.process_expr(&ctx.assignmentRight().unwrap().expression().unwrap())?;
+
+        Ok(ast::Stmt {
+            id: self.libsl.stmts.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: ast::StmtAssign {
+                lhs,
+                in_place_op,
+                rhs,
+            }
+            .into(),
+        })
+    }
+
+    fn process_stmt_expr(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ast::Stmt> {
+        let expr = self.process_expr(ctx)?;
+
+        Ok(ast::Stmt {
+            id: self.libsl.stmts.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: expr.into(),
+        })
     }
 
     fn process_ty_expr(&mut self, ctx: &TypeExpressionContextAll<'_>) -> Result<ast::TyExpr> {
@@ -1102,6 +1199,13 @@ impl<'a> AstConstructor<'a> {
     }
 
     fn process_expr_atomic(&mut self, ctx: &ExpressionAtomicContextAll<'_>) -> Result<ast::Expr> {
+        todo!()
+    }
+
+    fn process_qualified_access(
+        &mut self,
+        ctx: &QualifiedAccessContextAll<'_>,
+    ) -> Result<ast::QualifiedAccess> {
         todo!()
     }
 

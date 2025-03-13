@@ -389,7 +389,7 @@ pub struct FunctionBody {
 }
 
 /// A function contract specification.
-#[derive(Debug, Clone)]
+#[derive(From, Debug, Clone)]
 pub enum Contract {
     /// A precondition specification.
     Requires(ContractRequires),

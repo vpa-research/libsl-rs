@@ -18,24 +18,27 @@ use crate::grammar::libslparser::{
     ActionDeclContextAll, ActionDeclContextAttrs, ActionDeclParamListContextAttrs,
     ActionParameterContextAttrs, AnnotationDeclContextAll, AnnotationDeclContextAttrs,
     AnnotationDeclParamsContextAttrs, AnnotationDeclParamsPartContextAttrs,
-    AnnotationUsageContextAll, AssignmentRightContextAttrs, AutomatonDeclContextAll,
-    AutomatonDeclContextAttrs, AutomatonShiftDeclContextAll, AutomatonShiftDeclContextAttrs,
-    AutomatonStateDeclContext, AutomatonStateDeclContextAttrs, AutomatonStatementContextAll,
-    AutomatonStatementContextAttrs, ConstructorDeclContextAll, ConstructorDeclContextAttrs,
-    ConstructorHeaderContextAttrs, ConstructorVariablesContextAll,
-    ConstructorVariablesContextAttrs, DestructorDeclContextAll, DestructorDeclContextAttrs,
-    DestructorHeaderContextAttrs, EnumBlockContextAll, EnumBlockContextAttrs,
+    AnnotationUsageContextAll, AssignmentRightContextAttrs, AssignsContractContextAll,
+    AssignsContractContextAttrs, AutomatonDeclContextAll, AutomatonDeclContextAttrs,
+    AutomatonShiftDeclContextAll, AutomatonShiftDeclContextAttrs, AutomatonStateDeclContext,
+    AutomatonStateDeclContextAttrs, AutomatonStatementContextAll, AutomatonStatementContextAttrs,
+    ConstructorDeclContextAll, ConstructorDeclContextAttrs, ConstructorHeaderContextAttrs,
+    ConstructorVariablesContextAll, ConstructorVariablesContextAttrs, DestructorDeclContextAll,
+    DestructorDeclContextAttrs, DestructorHeaderContextAttrs, EnsuresContractContextAll,
+    EnsuresContractContextAttrs, EnumBlockContextAll, EnumBlockContextAttrs,
     EnumBlockStatementContextAll, EnumBlockStatementContextAttrs, EnumSemanticTypeContextAttrs,
     EnumSemanticTypeEntryContextAll, EnumSemanticTypeEntryContextAttrs, ExpressionAtomicContextAll,
-    ExpressionContextAll, FileContextAttrs, FunctionBodyContextAll, FunctionDeclArgListContextAll,
-    FunctionDeclArgListContextAttrs, FunctionDeclContextAll, FunctionDeclContextAttrs,
-    FunctionHeaderContextAttrs, FunctionsListContextAttrs, FunctionsListPartContextAll,
-    FunctionsListPartContextAttrs, GenericContextAll, GlobalStatementContextAll,
-    GlobalStatementContextAttrs, HeaderContextAll, IdentifierListContextAttrs,
-    ImplementedConceptsContextAttrs, IntegerNumberContextAll, LibSLParserContextType,
-    NameWithTypeContextAll, NameWithTypeContextAttrs, ParameterContextAttrs,
-    PeriodSeparatedFullNameContextAll, ProcDeclContextAll, ProcDeclContextAttrs,
-    ProcHeaderContextAttrs, SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs,
+    ExpressionContextAll, FileContextAttrs, FunctionBodyContextAll, FunctionBodyContextAttrs,
+    FunctionBodyStatementContextAll, FunctionContractContextAll, FunctionContractContextAttrs,
+    FunctionDeclArgListContextAll, FunctionDeclArgListContextAttrs, FunctionDeclContextAll,
+    FunctionDeclContextAttrs, FunctionHeaderContextAttrs, FunctionsListContextAttrs,
+    FunctionsListPartContextAll, FunctionsListPartContextAttrs, GenericContextAll,
+    GlobalStatementContextAll, GlobalStatementContextAttrs, HeaderContextAll,
+    IdentifierListContextAttrs, ImplementedConceptsContextAttrs, IntegerNumberContextAll,
+    LibSLParserContextType, NameWithTypeContextAll, NameWithTypeContextAttrs,
+    ParameterContextAttrs, PeriodSeparatedFullNameContextAll, ProcDeclContextAll,
+    ProcDeclContextAttrs, ProcHeaderContextAttrs, RequiresContractContextAll,
+    RequiresContractContextAttrs, SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs,
     SimpleSemanticTypeContextAttrs, TargetTypeContextAttrs, TopLevelDeclContextAttrs,
     TypeDefBlockContextAll, TypeDefBlockContextAttrs, TypeDefBlockStatementContextAttrs,
     TypeExpressionContextAll, TypeIdentifierContextAll, TypeListContextAttrs,
@@ -1014,6 +1017,79 @@ impl<'a> AstConstructor<'a> {
         &mut self,
         ctx: &FunctionBodyContextAll<'_>,
     ) -> Result<ast::FunctionBody> {
+        let contracts = ctx
+            .functionContract_all()
+            .into_iter()
+            .map(|c| self.process_contract(&c))
+            .collect::<Result<Vec<_>>>()?;
+
+        let stmts = ctx
+            .functionBodyStatement_all()
+            .into_iter()
+            .map(|c| self.process_stmt(&c))
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(ast::FunctionBody { contracts, stmts })
+    }
+
+    fn process_contract(&mut self, ctx: &FunctionContractContextAll<'_>) -> Result<ast::Contract> {
+        if let Some(ctx) = ctx.requiresContract() {
+            self.process_contract_requires(&ctx)
+        } else if let Some(ctx) = ctx.ensuresContract() {
+            self.process_contract_ensures(&ctx)
+        } else if let Some(ctx) = ctx.assignsContract() {
+            self.process_contract_assigns(&ctx)
+        } else {
+            panic!("unrecognized functionContract node: {ctx:?}");
+        }
+    }
+
+    fn process_contract_requires(
+        &mut self,
+        ctx: &RequiresContractContextAll<'_>,
+    ) -> Result<ast::Contract> {
+        let name = ctx
+            .name
+            .as_ref()
+            .map(|i| self.process_identifier(&Terminal::new(i.clone())))
+            .transpose()?;
+
+        let expr = self.process_expr(&ctx.expression().unwrap())?;
+
+        Ok(ast::ContractRequires { name, expr }.into())
+    }
+
+    fn process_contract_ensures(
+        &mut self,
+        ctx: &EnsuresContractContextAll<'_>,
+    ) -> Result<ast::Contract> {
+        let name = ctx
+            .name
+            .as_ref()
+            .map(|i| self.process_identifier(&Terminal::new(i.clone())))
+            .transpose()?;
+
+        let expr = self.process_expr(&ctx.expression().unwrap())?;
+
+        Ok(ast::ContractEnsures { name, expr }.into())
+    }
+
+    fn process_contract_assigns(
+        &mut self,
+        ctx: &AssignsContractContextAll<'_>,
+    ) -> Result<ast::Contract> {
+        let name = ctx
+            .name
+            .as_ref()
+            .map(|i| self.process_identifier(&Terminal::new(i.clone())))
+            .transpose()?;
+
+        let expr = self.process_expr(&ctx.expression().unwrap())?;
+
+        Ok(ast::ContractAssigns { name, expr }.into())
+    }
+
+    fn process_stmt(&mut self, ctx: &FunctionBodyStatementContextAll<'_>) -> Result<ast::Stmt> {
         todo!()
     }
 

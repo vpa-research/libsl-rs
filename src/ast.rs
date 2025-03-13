@@ -881,7 +881,7 @@ pub enum BinOp {
 }
 
 /// A literal of a primitive type, usable in both expression and type expression contexts.
-#[derive(Debug, Clone)]
+#[derive(From, Debug, Clone)]
 pub enum PrimitiveLit {
     /// An integer literal.
     Int(IntLit),

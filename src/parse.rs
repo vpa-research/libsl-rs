@@ -16,38 +16,44 @@ use thiserror::Error;
 use crate::grammar::lexer::LibSLLexer;
 use crate::grammar::libslparser::{
     ActionDeclContextAll, ActionDeclContextAttrs, ActionDeclParamListContextAttrs,
-    ActionParameterContextAttrs, AnnotationDeclContextAll, AnnotationDeclContextAttrs,
-    AnnotationDeclParamsContextAttrs, AnnotationDeclParamsPartContextAttrs,
-    AnnotationUsageContextAll, AssignmentRightContextAttrs, AssignsContractContextAll,
-    AssignsContractContextAttrs, AutomatonDeclContextAll, AutomatonDeclContextAttrs,
-    AutomatonShiftDeclContextAll, AutomatonShiftDeclContextAttrs, AutomatonStateDeclContext,
-    AutomatonStateDeclContextAttrs, AutomatonStatementContextAll, AutomatonStatementContextAttrs,
-    ConstructorDeclContextAll, ConstructorDeclContextAttrs, ConstructorHeaderContextAttrs,
-    ConstructorVariablesContextAll, ConstructorVariablesContextAttrs, DestructorDeclContextAll,
-    DestructorDeclContextAttrs, DestructorHeaderContextAttrs, ElseStatementContextAttrs,
-    EnsuresContractContextAll, EnsuresContractContextAttrs, EnumBlockContextAll,
-    EnumBlockContextAttrs, EnumBlockStatementContextAll, EnumBlockStatementContextAttrs,
-    EnumSemanticTypeContextAttrs, EnumSemanticTypeEntryContextAll,
-    EnumSemanticTypeEntryContextAttrs, ExpressionAtomicContextAll, ExpressionContextAll,
-    FileContextAttrs, FunctionBodyContextAll, FunctionBodyContextAttrs,
-    FunctionBodyStatementContextAll, FunctionBodyStatementContextAttrs, FunctionContractContextAll,
-    FunctionContractContextAttrs, FunctionDeclArgListContextAll, FunctionDeclArgListContextAttrs,
-    FunctionDeclContextAll, FunctionDeclContextAttrs, FunctionHeaderContextAttrs,
-    FunctionsListContextAttrs, FunctionsListPartContextAll, FunctionsListPartContextAttrs,
-    GenericContextAll, GlobalStatementContextAll, GlobalStatementContextAttrs, HeaderContextAll,
-    IdentifierListContextAttrs, IfStatementContextAll, IfStatementContextAttrs,
+    ActionParameterContextAttrs, ActionUsageContextAll, ActionUsageContextAttrs,
+    AnnotationDeclContextAll, AnnotationDeclContextAttrs, AnnotationDeclParamsContextAttrs,
+    AnnotationDeclParamsPartContextAttrs, AnnotationUsageContextAll, ArgPairContextAttrs,
+    ArrayLiteralContextAll, ArrayLiteralContextAttrs, AssignmentRightContextAttrs,
+    AssignsContractContextAll, AssignsContractContextAttrs, AutomatonDeclContextAll,
+    AutomatonDeclContextAttrs, AutomatonShiftDeclContextAll, AutomatonShiftDeclContextAttrs,
+    AutomatonStateDeclContext, AutomatonStateDeclContextAttrs, AutomatonStatementContextAll,
+    AutomatonStatementContextAttrs, BitShiftOpContextAttrs,
+    CallAutomatonConstructorWithNamedArgsContextAll,
+    CallAutomatonConstructorWithNamedArgsContextAttrs, ConstructorDeclContextAll,
+    ConstructorDeclContextAttrs, ConstructorHeaderContextAttrs, ConstructorVariablesContextAll,
+    ConstructorVariablesContextAttrs, DestructorDeclContextAll, DestructorDeclContextAttrs,
+    DestructorHeaderContextAttrs, ElseStatementContextAttrs, EnsuresContractContextAll,
+    EnsuresContractContextAttrs, EnumBlockContextAll, EnumBlockContextAttrs,
+    EnumBlockStatementContextAll, EnumBlockStatementContextAttrs, EnumSemanticTypeContextAttrs,
+    EnumSemanticTypeEntryContextAll, EnumSemanticTypeEntryContextAttrs, ExpressionAtomicContextAll,
+    ExpressionAtomicContextAttrs, ExpressionContextAll, ExpressionContextAttrs,
+    ExpressionsListContextAttrs, FileContextAttrs, FloatNumberContextAll, FunctionBodyContextAll,
+    FunctionBodyContextAttrs, FunctionBodyStatementContextAll, FunctionBodyStatementContextAttrs,
+    FunctionContractContextAll, FunctionContractContextAttrs, FunctionDeclArgListContextAll,
+    FunctionDeclArgListContextAttrs, FunctionDeclContextAll, FunctionDeclContextAttrs,
+    FunctionHeaderContextAttrs, FunctionsListContextAttrs, FunctionsListPartContextAll,
+    FunctionsListPartContextAttrs, GenericContextAll, GlobalStatementContextAll,
+    GlobalStatementContextAttrs, HasAutomatonConceptContextAll, HasAutomatonConceptContextAttrs,
+    HeaderContextAll, IdentifierListContextAttrs, IfStatementContextAll, IfStatementContextAttrs,
     ImplementedConceptsContextAttrs, IntegerNumberContextAll, LibSLParserContextType,
-    NameWithTypeContextAll, NameWithTypeContextAttrs, ParameterContextAttrs,
-    PeriodSeparatedFullNameContextAll, PrimitiveLiteralContextAll, ProcDeclContextAll,
-    ProcDeclContextAttrs, ProcHeaderContextAttrs, QualifiedAccessContextAll,
-    RequiresContractContextAll, RequiresContractContextAttrs, SemanticTypeDeclContextAll,
-    SemanticTypeDeclContextAttrs, SimpleSemanticTypeContextAttrs, TargetTypeContextAttrs,
-    TopLevelDeclContextAttrs, TypeDefBlockContextAll, TypeDefBlockContextAttrs,
-    TypeDefBlockStatementContextAttrs, TypeExpressionContextAll, TypeExpressionContextAttrs,
-    TypeIdentifierContextAll, TypeIdentifierContextAttrs, TypeIdentifierNameContextAttrs,
-    TypeListContextAttrs, TypealiasStatementContextAll, TypealiasStatementContextAttrs,
-    TypesSectionContextAttrs, VariableAssignmentContextAll, VariableAssignmentContextAttrs,
-    VariableDeclContextAll, VariableDeclContextAttrs, WhereConstraintsContextAll,
+    NameWithTypeContextAll, NameWithTypeContextAttrs, NamedArgsContextAttrs, ParameterContextAttrs,
+    PeriodSeparatedFullNameContextAll, PrimitiveLiteralContextAll, PrimitiveLiteralContextAttrs,
+    ProcDeclContextAll, ProcDeclContextAttrs, ProcHeaderContextAttrs, ProcUsageContextAll,
+    ProcUsageContextAttrs, QualifiedAccessContextAll, RequiresContractContextAll,
+    RequiresContractContextAttrs, SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs,
+    SimpleSemanticTypeContextAttrs, TargetTypeContextAttrs, TopLevelDeclContextAttrs,
+    TypeDefBlockContextAll, TypeDefBlockContextAttrs, TypeDefBlockStatementContextAttrs,
+    TypeExpressionContextAll, TypeExpressionContextAttrs, TypeIdentifierContextAll,
+    TypeIdentifierContextAttrs, TypeIdentifierNameContextAttrs, TypeListContextAttrs,
+    TypealiasStatementContextAll, TypealiasStatementContextAttrs, TypesSectionContextAttrs,
+    VariableAssignmentContextAll, VariableAssignmentContextAttrs, VariableDeclContextAll,
+    VariableDeclContextAttrs, WhereConstraintsContextAll,
 };
 use crate::grammar::parser::{FileContextAll, LibSLParser};
 use crate::loc::{Loc, Span};
@@ -63,8 +69,44 @@ fn strip_surrounding(s: &str, prefix: char, suffix: char) -> &str {
         .unwrap_or(s)
 }
 
+fn hex_digit_to_u8(c: char) -> u8 {
+    match c {
+        '0'..='9' => c as u8 - '0' as u8,
+        'a'..='f' => c as u8 - 'a' as u8,
+        'A'..='F' => c as u8 - 'A' as u8,
+        _ => panic!("not a hex digit: {c:?}"),
+    }
+}
+
+fn parse_char_escape(s: &str) -> u32 {
+    // assumes the backslash was already consumed.
+
+    match s.chars().next().unwrap() {
+        'b' => 0x08, // backspace.
+        't' => '\t' as u32,
+        'n' => '\n' as u32,
+        'f' => 0x0c, // form feed.
+        'r' => '\r' as u32,
+        c @ ('"' | '\'' | '\\') => c as u32,
+
+        // unicode escape.
+        'u' => s[1..5]
+            .chars()
+            .fold(0, |acc, c| (acc << 8) | hex_digit_to_u8(c) as u32),
+
+        // octal escape.
+        '0'..='7' => s
+            .chars()
+            .take_while(|c| ('0'..='7').contains(c))
+            .fold(0, |acc, c| (acc << 3) | (c as u32 - '0' as u32)),
+
+        c => panic!("unrecognized escape sequence: \\{c}"),
+    }
+}
+
 fn parse_string_lit(token: &CommonToken<'_>) -> String {
-    strip_surrounding(&token.text, '"', '"').into()
+    // string literals allow only the \" escape sequence.
+    strip_surrounding(&token.text, '"', '"').replace("\\\'", "\'")
 }
 
 fn parse_ident(token: &CommonToken<'_>) -> String {
@@ -467,7 +509,7 @@ impl<'a> AstConstructor<'a> {
         ctx: &EnumBlockStatementContextAll<'_>,
     ) -> Result<ast::EnumVariant> {
         let name = self.process_identifier(&ctx.Identifier().unwrap())?;
-        let value = self.process_integer_number(&ctx.integerNumber().unwrap())?;
+        let value = self.process_int_lit(&ctx.integerNumber().unwrap())?;
 
         Ok(ast::EnumVariant { name, value })
     }
@@ -579,7 +621,7 @@ impl<'a> AstConstructor<'a> {
                 return Err(ParseError::SyntaxError {
                     line: implements.line,
                     column: implements.column,
-                    msg: format!("expected 'implements', got {}", implements.text),
+                    msg: format!("expected 'implements', got '{}'", implements.text),
                 });
             }
 
@@ -1226,18 +1268,383 @@ impl<'a> AstConstructor<'a> {
     }
 
     fn process_expr(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ast::Expr> {
-        todo!()
+        if let Some(expr) = ctx.expressionAtomic() {
+            self.process_expr_atomic(&expr)
+        } else if ctx.apostrophe.is_some() {
+            self.process_expr_prev(ctx)
+        } else if let Some(expr) = ctx.procUsage() {
+            self.process_expr_proc_call(&expr)
+        } else if let Some(expr) = ctx.actionUsage() {
+            self.process_expr_action_call(&expr)
+        } else if let Some(expr) = ctx.callAutomatonConstructorWithNamedArgs() {
+            self.process_expr_instantiate(&expr)
+        } else if ctx.lbracket.is_some() {
+            self.process_expr(&ctx.expression(0).unwrap())
+        } else if let Some(expr) = ctx.hasAutomatonConcept() {
+            self.process_expr_has_concept(&expr)
+        } else if ctx.unaryOp.is_some() {
+            self.process_expr_unary(ctx)
+        } else if ctx
+            .typeOp
+            .as_ref()
+            .is_some_and(|token| token.token_type == grammar::parser::AS)
+        {
+            self.process_expr_cast(ctx)
+        } else if ctx.op.is_some() {
+            self.process_expr_binary(ctx)
+        } else if ctx.bitShiftOp().is_some() {
+            self.process_expr_shift(ctx)
+        } else if ctx
+            .typeOp
+            .as_ref()
+            .is_some_and(|token| token.token_type == grammar::parser::IS)
+        {
+            self.process_expr_ty_compare(ctx)
+        } else {
+            panic!("unrecognized expression node: {ctx:?}");
+        }
     }
 
     fn process_expr_atomic(&mut self, ctx: &ExpressionAtomicContextAll<'_>) -> Result<ast::Expr> {
-        todo!()
+        if let Some(expr) = ctx.primitiveLiteral() {
+            self.process_expr_primitive_lit(&expr)
+        } else if let Some(expr) = ctx.arrayLiteral() {
+            self.process_expr_array_lit(&expr)
+        } else if let Some(expr) = ctx.qualifiedAccess() {
+            self.process_expr_qualified_access(&expr)
+        } else {
+            panic!("unrecognized expressionAtomic node: {ctx:?}");
+        }
+    }
+
+    fn process_expr_primitive_lit(
+        &mut self,
+        ctx: &PrimitiveLiteralContextAll<'_>,
+    ) -> Result<ast::Expr> {
+        let lit = self.process_primitive_lit(ctx)?;
+
+        Ok(ast::Expr {
+            id: self.libsl.exprs.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: ast::ExprPrimitiveLit { lit }.into(),
+        })
+    }
+
+    fn process_expr_array_lit(&mut self, ctx: &ArrayLiteralContextAll<'_>) -> Result<ast::Expr> {
+        let elems = ctx
+            .expressionsList()
+            .into_iter()
+            .flat_map(|e| e.expression_all())
+            .map(|e| self.process_expr(&e))
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(ast::Expr {
+            id: self.libsl.exprs.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: ast::ExprArrayLit { elems }.into(),
+        })
+    }
+
+    fn process_expr_qualified_access(
+        &mut self,
+        ctx: &QualifiedAccessContextAll<'_>,
+    ) -> Result<ast::Expr> {
+        let access = self.process_qualified_access(ctx)?;
+
+        Ok(ast::Expr {
+            id: self.libsl.exprs.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: ast::ExprQualifiedAccess { access }.into(),
+        })
+    }
+
+    fn process_expr_prev(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ast::Expr> {
+        let access = self.process_qualified_access(&ctx.qualifiedAccess().unwrap())?;
+
+        Ok(ast::Expr {
+            id: self.libsl.exprs.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: ast::ExprPrev { access }.into(),
+        })
+    }
+
+    fn process_expr_proc_call(&mut self, ctx: &ProcUsageContextAll<'_>) -> Result<ast::Expr> {
+        let callee = self.process_qualified_access(&ctx.qualifiedAccess().unwrap())?;
+
+        let generics = ctx
+            .generic()
+            .map(|g| self.process_ty_args(&g))
+            .transpose()?
+            .unwrap_or_default();
+
+        let args = ctx
+            .expressionsList()
+            .into_iter()
+            .flat_map(|e| e.expression_all())
+            .map(|e| self.process_expr(&e))
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(ast::Expr {
+            id: self.libsl.exprs.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: ast::ExprProcCall {
+                callee,
+                generics,
+                args,
+            }
+            .into(),
+        })
+    }
+
+    fn process_expr_action_call(&mut self, ctx: &ActionUsageContextAll<'_>) -> Result<ast::Expr> {
+        let name = self.process_identifier(&ctx.Identifier().unwrap())?;
+        let generics = ctx
+            .generic()
+            .map(|g| self.process_ty_args(&g))
+            .transpose()?
+            .unwrap_or_default();
+
+        let args = ctx
+            .expressionsList()
+            .into_iter()
+            .flat_map(|e| e.expression_all())
+            .map(|e| self.process_expr(&e))
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(ast::Expr {
+            id: self.libsl.exprs.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: ast::ExprActionCall {
+                name,
+                generics,
+                args,
+            }
+            .into(),
+        })
+    }
+
+    fn process_expr_instantiate(
+        &mut self,
+        ctx: &CallAutomatonConstructorWithNamedArgsContextAll<'_>,
+    ) -> Result<ast::Expr> {
+        let name =
+            self.process_period_separated_full_name(&ctx.periodSeparatedFullName().unwrap())?;
+
+        let generics = ctx
+            .generic()
+            .map(|g| self.process_ty_args(&g))
+            .transpose()?
+            .unwrap_or_default();
+
+        let args = ctx
+            .namedArgs()
+            .into_iter()
+            .flat_map(|a| a.argPair_all())
+            .map(|a| {
+                Ok(if a.STATE().is_some() {
+                    ast::ConstructorArg::State(
+                        self.process_expr_atomic(&a.expressionAtomic().unwrap())?,
+                    )
+                } else if let Some(id) = a.Identifier() {
+                    ast::ConstructorArg::Var(
+                        self.process_identifier(&id)?,
+                        self.process_expr(&a.expression().unwrap())?,
+                    )
+                } else {
+                    panic!("unrecognized argPair node: {a:?}");
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(ast::Expr {
+            id: self.libsl.exprs.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: ast::ExprInstantiate {
+                name,
+                generics,
+                args,
+            }
+            .into(),
+        })
+    }
+
+    fn process_expr_has_concept(
+        &mut self,
+        ctx: &HasAutomatonConceptContextAll<'_>,
+    ) -> Result<ast::Expr> {
+        let scrutinee = self.process_qualified_access(&ctx.qualifiedAccess().unwrap())?;
+        let has = ctx.has.as_ref().unwrap();
+
+        if !has.text.eq_ignore_ascii_case("has") {
+            return Err(ParseError::SyntaxError {
+                line: has.line,
+                column: has.column,
+                msg: format!("expected 'has', got '{}'", has.text),
+            });
+        }
+
+        let concept = self.process_identifier(&Terminal::new(ctx.name.clone().unwrap()))?;
+
+        Ok(ast::Expr {
+            id: self.libsl.exprs.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: ast::ExprHasConcept { scrutinee, concept }.into(),
+        })
+    }
+
+    fn process_expr_cast(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ast::Expr> {
+        let expr = self.process_expr(&ctx.expression(0).unwrap())?;
+        let ty_expr = self.process_ty_identifier_as_ty_expr(&ctx.typeIdentifier().unwrap())?;
+
+        Ok(ast::Expr {
+            id: self.libsl.exprs.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: ast::ExprCast {
+                expr: Box::new(expr),
+                ty_expr,
+            }
+            .into(),
+        })
+    }
+
+    fn process_expr_ty_compare(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ast::Expr> {
+        let expr = self.process_expr(&ctx.expression(0).unwrap())?;
+        let ty_expr = self.process_ty_identifier_as_ty_expr(&ctx.typeIdentifier().unwrap())?;
+
+        Ok(ast::Expr {
+            id: self.libsl.exprs.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: ast::ExprTyCompare {
+                expr: Box::new(expr),
+                ty_expr,
+            }
+            .into(),
+        })
+    }
+
+    fn process_expr_unary(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ast::Expr> {
+        let op = ctx.unaryOp.as_ref().unwrap();
+
+        let op = match op.token_type {
+            grammar::parser::PLUS => ast::UnOp::Plus,
+            grammar::parser::MINUS => ast::UnOp::Neg,
+            grammar::parser::TILDE => ast::UnOp::BitNot,
+            grammar::parser::EXCLAMATION => ast::UnOp::Not,
+            _ => panic!("unrecognized unary operator: `{}`", op.text),
+        };
+
+        let expr = self.process_expr(&ctx.expression(0).unwrap())?;
+
+        Ok(ast::Expr {
+            id: self.libsl.exprs.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: ast::ExprUnary {
+                op,
+                expr: Box::new(expr),
+            }
+            .into(),
+        })
+    }
+
+    fn process_expr_shift(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ast::Expr> {
+        let op_ctx = ctx.bitShiftOp().unwrap();
+
+        let op = if op_ctx.lShift().is_some() {
+            ast::BinOp::Sal
+        } else if op_ctx.rShift().is_some() {
+            ast::BinOp::Sar
+        } else if op_ctx.uRShift().is_some() {
+            ast::BinOp::Shl
+        } else if op_ctx.uLShift().is_some() {
+            ast::BinOp::Shr
+        } else {
+            panic!("unrecognized bitShiftOp node: {op_ctx:?}");
+        };
+
+        let lhs = self.process_expr(&ctx.expression(0).unwrap())?;
+        let rhs = self.process_expr(&ctx.expression(1).unwrap())?;
+
+        Ok(ast::Expr {
+            id: self.libsl.exprs.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: ast::ExprBinary {
+                lhs: Box::new(lhs),
+                op,
+                rhs: Box::new(rhs),
+            }
+            .into(),
+        })
+    }
+
+    fn process_expr_binary(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ast::Expr> {
+        let op_ctx = ctx.op.as_ref().unwrap();
+
+        let op = match op_ctx.token_type {
+            grammar::parser::ASTERISK => ast::BinOp::Mul,
+            grammar::parser::SLASH => ast::BinOp::Div,
+            grammar::parser::PERCENT => ast::BinOp::Mod,
+            grammar::parser::PLUS => ast::BinOp::Add,
+            grammar::parser::MINUS => ast::BinOp::Sub,
+            grammar::parser::L_ARROW => ast::BinOp::Lt,
+            grammar::parser::R_ARROW => ast::BinOp::Gt,
+            grammar::parser::L_ARROW_EQ => ast::BinOp::Le,
+            grammar::parser::R_ARROW_EQ => ast::BinOp::Ge,
+            grammar::parser::EQ => ast::BinOp::Eq,
+            grammar::parser::EXCLAMATION_EQ => ast::BinOp::Ne,
+            grammar::parser::BIT_OR => ast::BinOp::BitOr,
+            grammar::parser::XOR => ast::BinOp::BitXor,
+            grammar::parser::AMPERSAND => ast::BinOp::BitAnd,
+            grammar::parser::LOGIC_OR => ast::BinOp::Or,
+            grammar::parser::DOUBLE_AMPERSAND => ast::BinOp::And,
+            _ => panic!("unrecognized binary expression operator: `{}`", op_ctx.text),
+        };
+
+        let lhs = self.process_expr(&ctx.expression(0).unwrap())?;
+        let rhs = self.process_expr(&ctx.expression(1).unwrap())?;
+
+        Ok(ast::Expr {
+            id: self.libsl.exprs.insert(()),
+            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            kind: ast::ExprBinary {
+                lhs: Box::new(lhs),
+                op,
+                rhs: Box::new(rhs),
+            }
+            .into(),
+        })
     }
 
     fn process_primitive_lit(
         &mut self,
         ctx: &PrimitiveLiteralContextAll<'_>,
     ) -> Result<ast::PrimitiveLit> {
-        todo!()
+        if let Some(lit) = ctx.integerNumber() {
+            Ok(self.process_int_lit(&lit)?.into())
+        } else if let Some(lit) = ctx.floatNumber() {
+            Ok(self.process_float_lit(&lit)?.into())
+        } else if let Some(token) = ctx.DoubleQuotedString() {
+            Ok(ast::PrimitiveLit::String(parse_string_lit(&token.symbol)))
+        } else if let Some(token) = ctx.CHARACTER() {
+            let s = strip_surrounding(&token.symbol.text, '\'', '\'');
+
+            let c = if let Some(escape) = s.strip_prefix('\\') {
+                parse_char_escape(escape)
+            } else {
+                s.chars().next().unwrap() as u32
+            };
+
+            Ok(ast::PrimitiveLit::Char(c))
+        } else if let Some(token) = &ctx.bool {
+            Ok(ast::PrimitiveLit::Bool(match token.token_type {
+                grammar::parser::TRUE => true,
+                grammar::parser::FALSE => false,
+                _ => panic!("unrecognized boolean literal: `{}`", token.text),
+            }))
+        } else if ctx.nullLiteral.is_some() {
+            Ok(ast::PrimitiveLit::Null)
+        } else {
+            panic!("unrecognized primitiveLiteral node: {ctx:?}");
+        }
     }
 
     fn process_qualified_access(
@@ -1321,7 +1728,7 @@ impl<'a> AstConstructor<'a> {
         if let Some(token) = &ctx.asterisk {
             Ok(ast::TyExpr {
                 id: self.libsl.ty_exprs.insert(()),
-                loc: self.get_loc(&token, &ctx.stop()),
+                loc: self.get_loc(token, &ctx.stop()),
                 kind: ast::TyExprPointer {
                     base: Box::new(ty_expr),
                 }
@@ -1350,7 +1757,11 @@ impl<'a> AstConstructor<'a> {
         todo!()
     }
 
-    fn process_integer_number(&mut self, ctx: &IntegerNumberContextAll<'_>) -> Result<ast::IntLit> {
+    fn process_int_lit(&mut self, ctx: &IntegerNumberContextAll<'_>) -> Result<ast::IntLit> {
+        todo!()
+    }
+
+    fn process_float_lit(&mut self, ctx: &FloatNumberContextAll<'_>) -> Result<ast::FloatLit> {
         todo!()
     }
 

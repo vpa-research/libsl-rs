@@ -512,7 +512,7 @@ pub enum TyExprKind {
     Intersection(TyExprIntersection),
 
     /// A union type expression.
-    Union(TyExprUnion), // TODO: or is it sum?
+    Union(TyExprUnion),
 }
 
 /// A literal expression of a primitive type.

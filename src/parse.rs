@@ -38,15 +38,16 @@ use crate::grammar::libslparser::{
     IdentifierListContextAttrs, IfStatementContextAll, IfStatementContextAttrs,
     ImplementedConceptsContextAttrs, IntegerNumberContextAll, LibSLParserContextType,
     NameWithTypeContextAll, NameWithTypeContextAttrs, ParameterContextAttrs,
-    PeriodSeparatedFullNameContextAll, ProcDeclContextAll, ProcDeclContextAttrs,
-    ProcHeaderContextAttrs, QualifiedAccessContextAll, RequiresContractContextAll,
-    RequiresContractContextAttrs, SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs,
-    SimpleSemanticTypeContextAttrs, TargetTypeContextAttrs, TopLevelDeclContextAttrs,
-    TypeDefBlockContextAll, TypeDefBlockContextAttrs, TypeDefBlockStatementContextAttrs,
-    TypeExpressionContextAll, TypeIdentifierContextAll, TypeListContextAttrs,
-    TypealiasStatementContextAll, TypealiasStatementContextAttrs, TypesSectionContextAttrs,
-    VariableAssignmentContextAll, VariableAssignmentContextAttrs, VariableDeclContextAll,
-    VariableDeclContextAttrs, WhereConstraintsContextAll,
+    PeriodSeparatedFullNameContextAll, PrimitiveLiteralContextAll, ProcDeclContextAll,
+    ProcDeclContextAttrs, ProcHeaderContextAttrs, QualifiedAccessContextAll,
+    RequiresContractContextAll, RequiresContractContextAttrs, SemanticTypeDeclContextAll,
+    SemanticTypeDeclContextAttrs, SimpleSemanticTypeContextAttrs, TargetTypeContextAttrs,
+    TopLevelDeclContextAttrs, TypeDefBlockContextAll, TypeDefBlockContextAttrs,
+    TypeDefBlockStatementContextAttrs, TypeExpressionContextAll, TypeExpressionContextAttrs,
+    TypeIdentifierContextAll, TypeIdentifierContextAttrs, TypeIdentifierNameContextAttrs,
+    TypeListContextAttrs, TypealiasStatementContextAll, TypealiasStatementContextAttrs,
+    TypesSectionContextAttrs, VariableAssignmentContextAll, VariableAssignmentContextAttrs,
+    VariableDeclContextAll, VariableDeclContextAttrs, WhereConstraintsContextAll,
 };
 use crate::grammar::parser::{FileContextAll, LibSLParser};
 use crate::loc::{Loc, Span};
@@ -1191,7 +1192,37 @@ impl<'a> AstConstructor<'a> {
     }
 
     fn process_ty_expr(&mut self, ctx: &TypeExpressionContextAll<'_>) -> Result<ast::TyExpr> {
-        todo!()
+        if let Some(ty) = ctx.typeIdentifier() {
+            self.process_ty_identifier_as_ty_expr(&ty)
+        } else if ctx.AMPERSAND().is_some() {
+            let lhs = self.process_ty_expr(&ctx.typeExpression(0).unwrap())?;
+            let rhs = self.process_ty_expr(&ctx.typeExpression(1).unwrap())?;
+
+            Ok(ast::TyExpr {
+                id: self.libsl.ty_exprs.insert(()),
+                loc: self.get_loc(&ctx.start(), &ctx.stop()),
+                kind: ast::TyExprIntersection {
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                }
+                .into(),
+            })
+        } else if ctx.BIT_OR().is_some() {
+            let lhs = self.process_ty_expr(&ctx.typeExpression(0).unwrap())?;
+            let rhs = self.process_ty_expr(&ctx.typeExpression(1).unwrap())?;
+
+            Ok(ast::TyExpr {
+                id: self.libsl.ty_exprs.insert(()),
+                loc: self.get_loc(&ctx.start(), &ctx.stop()),
+                kind: ast::TyExprUnion {
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                }
+                .into(),
+            })
+        } else {
+            panic!("unrecognized typeExpression node: {ctx:?}");
+        }
     }
 
     fn process_expr(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ast::Expr> {
@@ -1199,6 +1230,13 @@ impl<'a> AstConstructor<'a> {
     }
 
     fn process_expr_atomic(&mut self, ctx: &ExpressionAtomicContextAll<'_>) -> Result<ast::Expr> {
+        todo!()
+    }
+
+    fn process_primitive_lit(
+        &mut self,
+        ctx: &PrimitiveLiteralContextAll<'_>,
+    ) -> Result<ast::PrimitiveLit> {
         todo!()
     }
 
@@ -1244,7 +1282,54 @@ impl<'a> AstConstructor<'a> {
         &mut self,
         ctx: &TypeIdentifierContextAll<'_>,
     ) -> Result<ast::TyExpr> {
-        todo!()
+        let name_ctx = ctx.typeIdentifierName().unwrap();
+
+        let ty_expr = if let Some(name_ctx) = name_ctx.periodSeparatedFullName() {
+            let name = self.process_period_separated_full_name(&name_ctx)?;
+
+            let generics = ctx
+                .generic()
+                .map(|g| self.process_ty_args(&g))
+                .transpose()?
+                .unwrap_or_default();
+
+            ast::TyExpr {
+                id: self.libsl.ty_exprs.insert(()),
+                loc: self.get_loc(&name_ctx.start(), &ctx.stop()),
+                kind: ast::TyExprName { name, generics }.into(),
+            }
+        } else if let Some(lit_ctx) = name_ctx.primitiveLiteral() {
+            let lit = self.process_primitive_lit(&lit_ctx)?;
+
+            if let Some(g) = ctx.generic() {
+                return Err(ParseError::SyntaxError {
+                    line: g.start().line,
+                    column: g.start().column,
+                    msg: "a primitive literal type expression cannot have type parameters".into(),
+                });
+            }
+
+            ast::TyExpr {
+                id: self.libsl.ty_exprs.insert(()),
+                loc: self.get_loc(&name_ctx.start(), &lit_ctx.stop()),
+                kind: ast::TyExprPrimitiveLit { lit }.into(),
+            }
+        } else {
+            panic!("unrecognized typeIdentifierName node: {name_ctx:?}");
+        };
+
+        if let Some(token) = &ctx.asterisk {
+            Ok(ast::TyExpr {
+                id: self.libsl.ty_exprs.insert(()),
+                loc: self.get_loc(&token, &ctx.stop()),
+                kind: ast::TyExprPointer {
+                    base: Box::new(ty_expr),
+                }
+                .into(),
+            })
+        } else {
+            Ok(ty_expr)
+        }
     }
 
     fn process_period_separated_full_name(
@@ -1287,6 +1372,10 @@ impl<'a> AstConstructor<'a> {
     }
 
     fn process_generics(&mut self, ctx: &GenericContextAll<'_>) -> Result<Vec<ast::Generic>> {
+        todo!()
+    }
+
+    fn process_ty_args(&mut self, ctx: &GenericContextAll<'_>) -> Result<Vec<ast::TyArg>> {
         todo!()
     }
 }

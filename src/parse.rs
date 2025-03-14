@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::fmt::Debug;
-use std::num::NonZeroUsize;
+use std::num::{NonZeroUsize, ParseFloatError, ParseIntError};
 use std::rc::Rc;
 
 use antlr_rust::common_token_stream::CommonTokenStream;
@@ -11,6 +11,7 @@ use antlr_rust::token::CommonToken;
 use antlr_rust::token_factory::TokenFactory;
 use antlr_rust::tree::TerminalNode;
 use antlr_rust::{InputStream, Parser};
+use derive_more::Display;
 use thiserror::Error;
 
 use crate::grammar::lexer::LibSLLexer;
@@ -34,15 +35,16 @@ use crate::grammar::libslparser::{
     EnumBlockStatementContextAll, EnumBlockStatementContextAttrs, EnumSemanticTypeContextAttrs,
     EnumSemanticTypeEntryContextAll, EnumSemanticTypeEntryContextAttrs, ExpressionAtomicContextAll,
     ExpressionAtomicContextAttrs, ExpressionContextAll, ExpressionContextAttrs,
-    ExpressionsListContextAttrs, FileContextAttrs, FloatNumberContextAll, FunctionBodyContextAll,
-    FunctionBodyContextAttrs, FunctionBodyStatementContextAll, FunctionBodyStatementContextAttrs,
-    FunctionContractContextAll, FunctionContractContextAttrs, FunctionDeclArgListContextAll,
-    FunctionDeclArgListContextAttrs, FunctionDeclContextAll, FunctionDeclContextAttrs,
-    FunctionHeaderContextAttrs, FunctionsListContextAttrs, FunctionsListPartContextAll,
-    FunctionsListPartContextAttrs, GenericContextAll, GlobalStatementContextAll,
-    GlobalStatementContextAttrs, HasAutomatonConceptContextAll, HasAutomatonConceptContextAttrs,
-    HeaderContextAll, IdentifierListContextAttrs, IfStatementContextAll, IfStatementContextAttrs,
-    ImplementedConceptsContextAttrs, IntegerNumberContextAll, LibSLParserContextType,
+    ExpressionsListContextAttrs, FileContextAttrs, FloatNumberContextAll, FloatNumberContextAttrs,
+    FunctionBodyContextAll, FunctionBodyContextAttrs, FunctionBodyStatementContextAll,
+    FunctionBodyStatementContextAttrs, FunctionContractContextAll, FunctionContractContextAttrs,
+    FunctionDeclArgListContextAll, FunctionDeclArgListContextAttrs, FunctionDeclContextAll,
+    FunctionDeclContextAttrs, FunctionHeaderContextAttrs, FunctionsListContextAttrs,
+    FunctionsListPartContextAll, FunctionsListPartContextAttrs, GenericContextAll,
+    GlobalStatementContextAll, GlobalStatementContextAttrs, HasAutomatonConceptContextAll,
+    HasAutomatonConceptContextAttrs, HeaderContextAll, IdentifierListContextAttrs,
+    IfStatementContextAll, IfStatementContextAttrs, ImplementedConceptsContextAttrs,
+    IntegerNumberContextAll, IntegerNumberContextAttrs, LibSLParserContextType,
     NameWithTypeContextAll, NameWithTypeContextAttrs, NamedArgsContextAttrs, ParameterContextAttrs,
     PeriodSeparatedFullNameContextAll, PeriodSeparatedFullNameContextAttrs,
     PrimitiveLiteralContextAll, PrimitiveLiteralContextAttrs, ProcDeclContextAll,
@@ -132,7 +134,7 @@ fn parse_import_or_include(ctx: &Terminal<'_>, kw: &str, rule_name: &str) -> Res
     let path = path.trim_ascii();
 
     if path.is_empty() {
-        Err(ParseError::SyntaxError {
+        Err(ParseError::Syntax {
             line: ctx.symbol.line,
             column: ctx.symbol.column,
             msg: format!("no path specified for the {kw} declaration"),
@@ -146,13 +148,64 @@ fn unit_vec<T>(value: T) -> Vec<T> {
     vec![value]
 }
 
+#[derive(Display, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Radix {
+    #[display("binary")]
+    Binary,
+
+    #[display("octal")]
+    Octal,
+
+    #[display("decimal")]
+    Decimal,
+
+    #[display("hexadecimal")]
+    Hexadecimal,
+}
+
+impl From<Radix> for u32 {
+    fn from(radix: Radix) -> Self {
+        match radix {
+            Radix::Binary => 2,
+            Radix::Octal => 8,
+            Radix::Decimal => 10,
+            Radix::Hexadecimal => 16,
+        }
+    }
+}
+
 #[derive(Error, Debug, Clone)]
 pub enum ParseError {
     #[error("encountered a syntax error at L{line}:{column}: {msg}")]
-    SyntaxError {
+    Syntax {
         line: isize,
         column: isize,
         msg: String,
+    },
+
+    #[error(
+        "could not parse {radix_article} {radix} integer literal at L{line}:{column}: {inner}",
+        radix_article = match radix {
+            Radix::Octal => "an",
+            _ => "a",
+        },
+    )]
+    Int {
+        radix: Radix,
+        line: isize,
+        column: isize,
+
+        #[source]
+        inner: ParseIntError,
+    },
+
+    #[error("could not parse a floating-point literal at L{line}:{column}: {inner}")]
+    Float {
+        line: isize,
+        column: isize,
+
+        #[source]
+        inner: ParseFloatError,
     },
 }
 
@@ -177,7 +230,7 @@ impl<'input, T: Parser<'input>> ErrorListener<'input, T> for ErrorCollector {
         msg: &str,
         _error: Option<&ANTLRError>,
     ) {
-        self.0.borrow_mut().push(ParseError::SyntaxError {
+        self.0.borrow_mut().push(ParseError::Syntax {
             line,
             column,
             msg: msg.into(),
@@ -620,7 +673,7 @@ impl<'a> AstConstructor<'a> {
             let implements = c.implements.as_ref().unwrap();
 
             if !implements.text.eq_ignore_ascii_case("implements") {
-                return Err(ParseError::SyntaxError {
+                return Err(ParseError::Syntax {
                     line: implements.line,
                     column: implements.column,
                     msg: format!("expected 'implements', got '{}'", implements.text),
@@ -715,7 +768,7 @@ impl<'a> AstConstructor<'a> {
                 m if m.eq_ignore_ascii_case("static") => true,
 
                 m => {
-                    return Err(ParseError::SyntaxError {
+                    return Err(ParseError::Syntax {
                         line: modifier.line,
                         column: modifier.column,
                         msg: format!("unknown modifier `{m}`"),
@@ -1478,7 +1531,7 @@ impl<'a> AstConstructor<'a> {
         let has = ctx.has.as_ref().unwrap();
 
         if !has.text.eq_ignore_ascii_case("has") {
-            return Err(ParseError::SyntaxError {
+            return Err(ParseError::Syntax {
                 line: has.line,
                 column: has.column,
                 msg: format!("expected 'has', got '{}'", has.text),
@@ -1694,7 +1747,7 @@ impl<'a> AstConstructor<'a> {
         ctx: &TypeIdentifierContextAll<'_>,
     ) -> Result<ast::QualifiedTyName> {
         if let Some(token) = &ctx.asterisk {
-            return Err(ParseError::SyntaxError {
+            return Err(ParseError::Syntax {
                 line: token.line,
                 column: token.column,
                 msg: "unexpected token `*`".into(),
@@ -1705,7 +1758,7 @@ impl<'a> AstConstructor<'a> {
         let ty_name = if let Some(name_ctx) = name_ctx.periodSeparatedFullName() {
             self.process_period_separated_full_name(&name_ctx)?
         } else if let Some(lit_ctx) = name_ctx.primitiveLiteral() {
-            return Err(ParseError::SyntaxError {
+            return Err(ParseError::Syntax {
                 line: lit_ctx.start().line,
                 column: lit_ctx.start().line,
                 msg: "unexpected primitive literal expression".into(),
@@ -1759,7 +1812,7 @@ impl<'a> AstConstructor<'a> {
             let lit = self.process_primitive_lit(&lit_ctx)?;
 
             if let Some(g) = ctx.generic() {
-                return Err(ParseError::SyntaxError {
+                return Err(ParseError::Syntax {
                     line: g.start().line,
                     column: g.start().column,
                     msg: "a primitive literal type expression cannot have type parameters".into(),
@@ -1794,7 +1847,7 @@ impl<'a> AstConstructor<'a> {
         ctx: &PeriodSeparatedFullNameContextAll<'_>,
     ) -> Result<ast::Name> {
         if let Some(token) = &ctx.UNBOUNDED() {
-            return Err(ParseError::SyntaxError {
+            return Err(ParseError::Syntax {
                 line: token.symbol.line,
                 column: token.symbol.column,
                 msg: "unexpected token `?`".into(),
@@ -1837,11 +1890,112 @@ impl<'a> AstConstructor<'a> {
     }
 
     fn process_int_lit(&mut self, ctx: &IntegerNumberContextAll<'_>) -> Result<ast::IntLit> {
-        todo!()
+        enum Suffix {
+            Byte,
+            UByte,
+            Short,
+            UShort,
+            Int,
+            UInt,
+            Long,
+            ULong,
+        }
+
+        let lit = ctx.IntegerLiteral().unwrap();
+        let s = &lit.symbol.text;
+
+        let (s, suffix) = if let Some(s) = s.strip_suffix('l').or_else(|| s.strip_suffix('L')) {
+            (s, Suffix::Long)
+        } else if let Some(s) = s.strip_suffix("uL") {
+            (s, Suffix::ULong)
+        } else if let Some(s) = s.strip_suffix('x') {
+            (s, Suffix::Byte)
+        } else if let Some(s) = s.strip_suffix("ux") {
+            (s, Suffix::UByte)
+        } else if let Some(s) = s.strip_suffix('s') {
+            (s, Suffix::Short)
+        } else if let Some(s) = s.strip_suffix("us") {
+            (s, Suffix::UShort)
+        } else if let Some(s) = s.strip_suffix('u') {
+            (s, Suffix::UInt)
+        } else {
+            (&**s, Suffix::Int)
+        };
+
+        let (s, radix) = if let Some(s) = s.strip_prefix("0x") {
+            (s, Radix::Hexadecimal)
+        } else if let Some(s) = s.strip_prefix("0b") {
+            (s, Radix::Binary)
+        } else if s == "0" {
+            (s, Radix::Decimal)
+        } else if let Some(s) = s.strip_prefix('0') {
+            (s, Radix::Octal)
+        } else {
+            (s, Radix::Decimal)
+        };
+
+        let s = if ctx.MINUS().is_some() {
+            format!("-{s}")
+        } else if ctx.PLUS().is_some() {
+            format!("+{s}")
+        } else {
+            s.into()
+        };
+
+        let n: Result<ast::IntLit, _> = match suffix {
+            Suffix::Byte => i8::from_str_radix(&s, radix.into()).map(Into::into),
+            Suffix::UByte => u8::from_str_radix(&s, radix.into()).map(Into::into),
+            Suffix::Short => i16::from_str_radix(&s, radix.into()).map(Into::into),
+            Suffix::UShort => u16::from_str_radix(&s, radix.into()).map(Into::into),
+            Suffix::Int => i32::from_str_radix(&s, radix.into()).map(Into::into),
+            Suffix::UInt => u32::from_str_radix(&s, radix.into()).map(Into::into),
+            Suffix::Long => i64::from_str_radix(&s, radix.into()).map(Into::into),
+            Suffix::ULong => u64::from_str_radix(&s, radix.into()).map(Into::into),
+        };
+
+        n.map_err(|inner| ParseError::Int {
+            radix,
+            line: ctx.start().line,
+            column: ctx.start().column,
+            inner,
+        })
     }
 
     fn process_float_lit(&mut self, ctx: &FloatNumberContextAll<'_>) -> Result<ast::FloatLit> {
-        todo!()
+        enum Suffix {
+            Float,
+            Double,
+        }
+
+        let lit = ctx.FloatingPointLiteral().unwrap();
+        let s = &*lit.symbol.text;
+
+        let (s, suffix) = if let Some(s) = s.strip_suffix(['f', 'F']) {
+            (s, Suffix::Float)
+        } else if let Some(s) = s.strip_suffix(['d', 'D']) {
+            (s, Suffix::Double)
+        } else {
+            (s, Suffix::Float)
+        };
+
+        let s = if ctx.MINUS().is_some() {
+            format!("-{s}")
+        } else if ctx.PLUS().is_some() {
+            format!("+{s}")
+        } else {
+            s.into()
+        };
+
+        let n = match suffix {
+            Suffix::Float => s.parse().map(ast::FloatLit::F32),
+            Suffix::Double => s.parse().map(ast::FloatLit::F64),
+        };
+
+        n.map_err(|inner| ParseError::Float {
+            line: ctx.start().line,
+            column: ctx.start().column,
+            inner,
+        })
     }
 
     fn process_name_with_ty(

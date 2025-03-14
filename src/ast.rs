@@ -903,7 +903,7 @@ pub enum PrimitiveLit {
 }
 
 /// An integer literal.
-#[derive(Debug, Clone, Copy)]
+#[derive(From, Debug, Clone, Copy)]
 pub enum IntLit {
     I8(i8),
     U8(u8),

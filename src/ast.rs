@@ -453,7 +453,7 @@ pub struct Name {
 #[derive(Debug, Clone)]
 pub struct TyConstraint {
     pub param: Name,
-    pub bound: TyExpr,
+    pub bound: TyArg,
 }
 
 /// A type parameter (generic) declaration.

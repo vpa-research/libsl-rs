@@ -41,23 +41,24 @@ use crate::grammar::libslparser::{
     FunctionDeclArgListContextAll, FunctionDeclArgListContextAttrs, FunctionDeclContextAll,
     FunctionDeclContextAttrs, FunctionHeaderContextAttrs, FunctionsListContextAttrs,
     FunctionsListPartContextAll, FunctionsListPartContextAttrs, GenericContextAll,
-    GlobalStatementContextAll, GlobalStatementContextAttrs, HasAutomatonConceptContextAll,
-    HasAutomatonConceptContextAttrs, HeaderContextAll, IdentifierListContextAttrs,
-    IfStatementContextAll, IfStatementContextAttrs, ImplementedConceptsContextAttrs,
-    IntegerNumberContextAll, IntegerNumberContextAttrs, LibSLParserContextType,
-    NameWithTypeContextAll, NameWithTypeContextAttrs, NamedArgsContextAttrs, ParameterContextAttrs,
-    PeriodSeparatedFullNameContextAll, PeriodSeparatedFullNameContextAttrs,
-    PrimitiveLiteralContextAll, PrimitiveLiteralContextAttrs, ProcDeclContextAll,
-    ProcDeclContextAttrs, ProcHeaderContextAttrs, ProcUsageContextAll, ProcUsageContextAttrs,
-    QualifiedAccessContextAll, RequiresContractContextAll, RequiresContractContextAttrs,
-    SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs, SimpleSemanticTypeContextAttrs,
-    TargetTypeContextAttrs, TopLevelDeclContextAttrs, TypeDefBlockContextAll,
+    GenericContextAttrs, GlobalStatementContextAll, GlobalStatementContextAttrs,
+    HasAutomatonConceptContextAll, HasAutomatonConceptContextAttrs, HeaderContextAll,
+    IdentifierListContextAttrs, IfStatementContextAll, IfStatementContextAttrs,
+    ImplementedConceptsContextAttrs, IntegerNumberContextAll, IntegerNumberContextAttrs,
+    LibSLParserContextType, NameWithTypeContextAll, NameWithTypeContextAttrs,
+    NamedArgsContextAttrs, ParameterContextAttrs, PeriodSeparatedFullNameContextAll,
+    PeriodSeparatedFullNameContextAttrs, PrimitiveLiteralContextAll, PrimitiveLiteralContextAttrs,
+    ProcDeclContextAll, ProcDeclContextAttrs, ProcHeaderContextAttrs, ProcUsageContextAll,
+    ProcUsageContextAttrs, QualifiedAccessContextAll, RequiresContractContextAll,
+    RequiresContractContextAttrs, SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs,
+    SimpleSemanticTypeContextAttrs, TargetTypeContextAttrs, TopLevelDeclContextAttrs,
+    TypeArgumentContextAll, TypeArgumentContextAttrs, TypeDefBlockContextAll,
     TypeDefBlockContextAttrs, TypeDefBlockStatementContextAttrs, TypeExpressionContextAll,
-    TypeExpressionContextAttrs, TypeIdentifierContextAll, TypeIdentifierContextAttrs,
-    TypeIdentifierNameContextAttrs, TypeListContextAttrs, TypealiasStatementContextAll,
-    TypealiasStatementContextAttrs, TypesSectionContextAttrs, VariableAssignmentContextAll,
-    VariableAssignmentContextAttrs, VariableDeclContextAll, VariableDeclContextAttrs,
-    WhereConstraintsContextAll,
+    TypeExpressionContextAttrs, TypeIdentifierBoundedContextAttrs, TypeIdentifierContextAll,
+    TypeIdentifierContextAttrs, TypeIdentifierNameContextAttrs, TypeListContextAttrs,
+    TypealiasStatementContextAll, TypealiasStatementContextAttrs, TypesSectionContextAttrs,
+    VariableAssignmentContextAll, VariableAssignmentContextAttrs, VariableDeclContextAll,
+    VariableDeclContextAttrs, WhereConstraintsContextAll, WhereConstraintsContextAttrs,
 };
 use crate::grammar::parser::{FileContextAll, LibSLParser};
 use crate::loc::{Loc, Span};
@@ -2012,14 +2013,111 @@ impl<'a> AstConstructor<'a> {
         &mut self,
         ctx: &WhereConstraintsContextAll,
     ) -> Result<Vec<ast::TyConstraint>> {
-        todo!()
+        ctx.typeConstraint_all()
+            .into_iter()
+            .map(|c| {
+                let param =
+                    self.process_identifier(&Terminal::new(c.paramName.clone().unwrap()))?;
+                let bound = self.process_ty_arg(c.paramConstraint.as_ref().unwrap())?;
+
+                Ok(ast::TyConstraint { param, bound })
+            })
+            .collect()
     }
 
     fn process_generics(&mut self, ctx: &GenericContextAll<'_>) -> Result<Vec<ast::Generic>> {
-        todo!()
+        ctx.typeArgument_all()
+            .into_iter()
+            .map(|t| {
+                let (ty_ident, variance) = if let Some(i) = t.typeIdentifier() {
+                    (i, None)
+                } else if let Some(i) = t.typeIdentifierBounded() {
+                    let generic_bound = i.genericBound().unwrap();
+                    let variance = generic_bound.bound.as_ref().unwrap();
+
+                    (
+                        i.typeIdentifier().unwrap(),
+                        Some(match variance.token_type {
+                            grammar::parser::IN => ast::Variance::Contravariant,
+                            grammar::parser::OUT => ast::Variance::Covariant,
+                            _ => panic!(
+                                "unrecognized token for `bound` field in rule `genericBound`: {}",
+                                variance.text,
+                            ),
+                        }),
+                    )
+                } else {
+                    panic!("unrecognized typeArgument node: {t:?}");
+                };
+
+                if let Some(token) = &ty_ident.asterisk {
+                    return Err(ParseError::Syntax {
+                        line: token.line,
+                        column: token.column,
+                        msg: "unexpected token `*`".into(),
+                    });
+                }
+
+                if let Some(g) = ty_ident.generic() {
+                    return Err(ParseError::Syntax {
+                        line: g.start().line,
+                        column: g.start().column,
+                        msg: "a generic declaration cannot have type parameters".into(),
+                    });
+                }
+
+                let name_ctx = ty_ident.name.as_ref().unwrap();
+
+                let name = if let Some(name) = name_ctx.periodSeparatedFullName() {
+                    self.process_period_separated_full_name(&name)?
+                } else if let Some(lit) = name_ctx.primitiveLiteral() {
+                    return Err(ParseError::Syntax {
+                        line: lit.start().line,
+                        column: lit.start().column,
+                        msg: "unexpected primitive literal expression".into(),
+                    });
+                } else {
+                    panic!("unrecognized typeIdentifierName node: {name_ctx:?}");
+                };
+
+                Ok(ast::Generic { variance, name })
+            })
+            .collect()
     }
 
     fn process_ty_args(&mut self, ctx: &GenericContextAll<'_>) -> Result<Vec<ast::TyArg>> {
-        todo!()
+        ctx.typeArgument_all()
+            .into_iter()
+            .map(|a| self.process_ty_arg(&a))
+            .collect()
+    }
+
+    fn process_ty_arg(&mut self, ctx: &TypeArgumentContextAll<'_>) -> Result<ast::TyArg> {
+        let ty_ident = if let Some(i) = ctx.typeIdentifier() {
+            i
+        } else if let Some(i) = ctx.typeIdentifierBounded() {
+            return Err(ParseError::Syntax {
+                line: i.start().line,
+                column: i.start().column,
+                msg: "unexpected variance specifiers".into(),
+            });
+        } else {
+            panic!("unrecognized typeArgument node: {ctx:?}");
+        };
+
+        if let Some(token) = ty_ident
+            .name
+            .as_ref()
+            .unwrap()
+            .periodSeparatedFullName()
+            .and_then(|name| name.UNBOUNDED())
+        {
+            Ok(ast::TyArg::Wildcard(
+                self.get_loc(&token.symbol, &token.symbol),
+            ))
+        } else {
+            self.process_ty_identifier_as_ty_expr(&ty_ident)
+                .map(ast::TyArg::TyExpr)
+        }
     }
 }

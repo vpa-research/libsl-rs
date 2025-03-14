@@ -49,16 +49,17 @@ use crate::grammar::libslparser::{
     NamedArgsContextAttrs, ParameterContextAttrs, PeriodSeparatedFullNameContextAll,
     PeriodSeparatedFullNameContextAttrs, PrimitiveLiteralContextAll, PrimitiveLiteralContextAttrs,
     ProcDeclContextAll, ProcDeclContextAttrs, ProcHeaderContextAttrs, ProcUsageContextAll,
-    ProcUsageContextAttrs, QualifiedAccessContextAll, RequiresContractContextAll,
-    RequiresContractContextAttrs, SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs,
-    SimpleSemanticTypeContextAttrs, TargetTypeContextAttrs, TopLevelDeclContextAttrs,
-    TypeArgumentContextAll, TypeArgumentContextAttrs, TypeDefBlockContextAll,
-    TypeDefBlockContextAttrs, TypeDefBlockStatementContextAttrs, TypeExpressionContextAll,
-    TypeExpressionContextAttrs, TypeIdentifierBoundedContextAttrs, TypeIdentifierContextAll,
-    TypeIdentifierContextAttrs, TypeIdentifierNameContextAttrs, TypeListContextAttrs,
-    TypealiasStatementContextAll, TypealiasStatementContextAttrs, TypesSectionContextAttrs,
-    VariableAssignmentContextAll, VariableAssignmentContextAttrs, VariableDeclContextAll,
-    VariableDeclContextAttrs, WhereConstraintsContextAll, WhereConstraintsContextAttrs,
+    ProcUsageContextAttrs, QualifiedAccessContextAll, QualifiedAccessContextAttrs,
+    RequiresContractContextAll, RequiresContractContextAttrs, SemanticTypeDeclContextAll,
+    SemanticTypeDeclContextAttrs, SimpleCallContextAttrs, SimpleSemanticTypeContextAttrs,
+    TargetTypeContextAttrs, TopLevelDeclContextAttrs, TypeArgumentContextAll,
+    TypeArgumentContextAttrs, TypeDefBlockContextAll, TypeDefBlockContextAttrs,
+    TypeDefBlockStatementContextAttrs, TypeExpressionContextAll, TypeExpressionContextAttrs,
+    TypeIdentifierBoundedContextAttrs, TypeIdentifierContextAll, TypeIdentifierContextAttrs,
+    TypeIdentifierNameContextAttrs, TypeListContextAttrs, TypealiasStatementContextAll,
+    TypealiasStatementContextAttrs, TypesSectionContextAttrs, VariableAssignmentContextAll,
+    VariableAssignmentContextAttrs, VariableDeclContextAll, VariableDeclContextAttrs,
+    WhereConstraintsContextAll, WhereConstraintsContextAttrs,
 };
 use crate::grammar::parser::{FileContextAll, LibSLParser};
 use crate::loc::{Loc, Span};
@@ -147,6 +148,18 @@ fn parse_import_or_include(ctx: &Terminal<'_>, kw: &str, rule_name: &str) -> Res
 
 fn unit_vec<T>(value: T) -> Vec<T> {
     vec![value]
+}
+
+enum QualifiedAccessBase {
+    None,
+
+    Automaton {
+        automaton: ast::Name,
+        generics: Vec<ast::TyArg>,
+        arg: Box<ast::QualifiedAccess>,
+    },
+
+    QualifiedAccess(ast::QualifiedAccess),
 }
 
 #[derive(Display, Debug, Clone, Copy, PartialEq, Eq)]
@@ -1707,7 +1720,133 @@ impl<'a> AstConstructor<'a> {
         &mut self,
         ctx: &QualifiedAccessContextAll<'_>,
     ) -> Result<ast::QualifiedAccess> {
-        todo!()
+        self.process_qualified_access_chain(ctx, QualifiedAccessBase::None)
+    }
+
+    fn process_qualified_access_chain(
+        &mut self,
+        ctx: &QualifiedAccessContextAll<'_>,
+        mut base: QualifiedAccessBase,
+    ) -> Result<ast::QualifiedAccess> {
+        if let Some(names) = ctx.periodSeparatedFullName() {
+            if let Some(token) = names.UNBOUNDED() {
+                return Err(ParseError::Syntax {
+                    line: token.symbol.line,
+                    column: token.symbol.column,
+                    msg: "unexpected token `?`".into(),
+                });
+            }
+
+            for id in names.Identifier_all() {
+                let name = self.process_identifier(&id)?;
+
+                base = QualifiedAccessBase::QualifiedAccess(match base {
+                    QualifiedAccessBase::None => ast::QualifiedAccess {
+                        id: self.libsl.qualified_accesses.insert(()),
+                        loc: name.loc.clone(),
+                        kind: ast::QualifiedAccessName { name }.into(),
+                    },
+
+                    QualifiedAccessBase::Automaton {
+                        automaton,
+                        generics,
+                        arg,
+                    } => ast::QualifiedAccess {
+                        id: self.libsl.qualified_accesses.insert(()),
+                        loc: automaton.loc.clone(),
+                        kind: ast::QualifiedAccessAutomatonVar {
+                            automaton,
+                            generics,
+                            arg,
+                            variable: name,
+                        }
+                        .into(),
+                    },
+
+                    QualifiedAccessBase::QualifiedAccess(base) => ast::QualifiedAccess {
+                        id: self.libsl.qualified_accesses.insert(()),
+                        loc: name.loc.clone(),
+                        kind: ast::QualifiedAccessField {
+                            base: Box::new(base),
+                            field: name,
+                        }
+                        .into(),
+                    },
+                });
+            }
+
+            let QualifiedAccessBase::QualifiedAccess(access) = base else {
+                unreachable!();
+            };
+
+            Ok(access)
+        } else if ctx.L_SQUARE_BRACKET().is_some() {
+            let base =
+                self.process_qualified_access_chain(&ctx.qualifiedAccess(0).unwrap(), base)?;
+            let index = self.process_expr(&ctx.expression().unwrap())?;
+
+            let base = ast::QualifiedAccess {
+                id: self.libsl.qualified_accesses.insert(()),
+                loc: self.get_loc(
+                    &ctx.L_SQUARE_BRACKET().unwrap().symbol,
+                    &ctx.R_SQUARE_BRACKET().unwrap().symbol,
+                ),
+                kind: ast::QualifiedAccessIndex {
+                    base: Box::new(base),
+                    index: Box::new(index),
+                }
+                .into(),
+            };
+
+            if let Some(suffix) = ctx.qualifiedAccess(1) {
+                self.process_qualified_access_chain(
+                    &suffix,
+                    QualifiedAccessBase::QualifiedAccess(base),
+                )
+            } else {
+                Ok(base)
+            }
+        } else if let Some(simple_call) = ctx.simpleCall() {
+            match base {
+                QualifiedAccessBase::None => {}
+                QualifiedAccessBase::Automaton { .. } | QualifiedAccessBase::QualifiedAccess(_) => {
+                    return Err(ParseError::Syntax {
+                        line: simple_call.start().line,
+                        column: simple_call.start().column,
+                        msg: "unexpected call".into(),
+                    });
+                }
+            }
+
+            let automaton = self.process_identifier(&simple_call.Identifier().unwrap())?;
+
+            let generics = simple_call
+                .generic()
+                .map(|g| self.process_ty_args(&g))
+                .transpose()?
+                .unwrap_or_default();
+
+            let arg = self.process_qualified_access(&simple_call.qualifiedAccess().unwrap())?;
+
+            if let Some(proc) = ctx.procUsage() {
+                return Err(ParseError::Syntax {
+                    line: proc.start().line,
+                    column: proc.start().column,
+                    msg: "unexpected procedure call".into(),
+                });
+            }
+
+            self.process_qualified_access_chain(
+                &ctx.qualifiedAccess(0).unwrap(),
+                QualifiedAccessBase::Automaton {
+                    automaton,
+                    generics,
+                    arg: Box::new(arg),
+                },
+            )
+        } else {
+            panic!("unrecognized qualifiedAccess node: {ctx:?}");
+        }
     }
 
     fn process_annotation_usage_list(

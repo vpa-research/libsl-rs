@@ -63,7 +63,7 @@ use crate::grammar::libslparser::{
 };
 use crate::grammar::parser::{FileContextAll, LibSLParser};
 use crate::loc::{Loc, Span};
-use crate::{LibSl, ast, grammar};
+use crate::{DeclId, ExprId, LibSl, QualifiedAccessId, StmtId, TyExprId, ast, grammar};
 
 pub type Result<T, E = ParseError> = std::result::Result<T, E>;
 
@@ -156,10 +156,10 @@ enum QualifiedAccessBase {
     Automaton {
         automaton: ast::Name,
         generics: Vec<ast::TyArg>,
-        arg: Box<ast::QualifiedAccess>,
+        arg: QualifiedAccessId,
     },
 
-    QualifiedAccess(ast::QualifiedAccess),
+    QualifiedAccess(QualifiedAccessId),
 }
 
 #[derive(Display, Debug, Clone, Copy, PartialEq, Eq)]
@@ -354,10 +354,7 @@ impl<'a> AstConstructor<'a> {
         })
     }
 
-    fn process_global_stmt(
-        &mut self,
-        ctx: &GlobalStatementContextAll<'_>,
-    ) -> Result<Vec<ast::Decl>> {
+    fn process_global_stmt(&mut self, ctx: &GlobalStatementContextAll<'_>) -> Result<Vec<DeclId>> {
         if let Some(import) = ctx.ImportStatement() {
             self.process_decl_import(&import).map(unit_vec)
         } else if let Some(include) = ctx.IncludeStatement() {
@@ -392,39 +389,39 @@ impl<'a> AstConstructor<'a> {
         }
     }
 
-    fn process_decl_import(&mut self, ctx: &Terminal<'_>) -> Result<ast::Decl> {
+    fn process_decl_import(&mut self, ctx: &Terminal<'_>) -> Result<DeclId> {
         let path = parse_import_or_include(ctx, "import", "ImportStatement")?;
+        let loc = self.get_loc(&ctx.symbol, &ctx.symbol);
 
-        Ok(ast::Decl {
-            id: self.libsl.decls.insert(()),
-            loc: self.get_loc(&ctx.symbol, &ctx.symbol),
+        Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
+            id,
+            loc,
             kind: ast::DeclImport { path }.into(),
-        })
+        }))
     }
 
-    fn process_decl_include(&mut self, ctx: &Terminal<'_>) -> Result<ast::Decl> {
+    fn process_decl_include(&mut self, ctx: &Terminal<'_>) -> Result<DeclId> {
         let path = parse_import_or_include(ctx, "include", "IncludeStatement")?;
+        let loc = self.get_loc(&ctx.symbol, &ctx.symbol);
 
-        Ok(ast::Decl {
-            id: self.libsl.decls.insert(()),
-            loc: self.get_loc(&ctx.symbol, &ctx.symbol),
+        Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
+            id,
+            loc,
             kind: ast::DeclInclude { path }.into(),
-        })
+        }))
     }
 
-    fn process_decl_semantic_ty(
-        &mut self,
-        ctx: &SemanticTypeDeclContextAll<'_>,
-    ) -> Result<ast::Decl> {
+    fn process_decl_semantic_ty(&mut self, ctx: &SemanticTypeDeclContextAll<'_>) -> Result<DeclId> {
         if let Some(ctx) = ctx.simpleSemanticType() {
             let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
             let ty_name = self
                 .process_ty_identifier_as_qualified_ty_name(ctx.semanticName.as_ref().unwrap())?;
             let real_ty = self.process_ty_identifier_as_ty_expr(ctx.realName.as_ref().unwrap())?;
+            let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
-            Ok(ast::Decl {
-                id: self.libsl.decls.insert(()),
-                loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
+                id,
+                loc,
                 kind: ast::DeclSemanticTy {
                     annotations,
                     ty_name,
@@ -432,7 +429,7 @@ impl<'a> AstConstructor<'a> {
                     kind: ast::SemanticTyKind::Simple,
                 }
                 .into(),
-            })
+            }))
         } else if let Some(ctx) = ctx.enumSemanticType() {
             let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
             let ty_name = self.process_identifier_as_qualified_ty_name(&Terminal::new(
@@ -444,10 +441,11 @@ impl<'a> AstConstructor<'a> {
                 .into_iter()
                 .map(|entry| self.process_semantic_ty_enum_value(&entry))
                 .collect::<Result<Vec<_>>>()?;
+            let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
-            Ok(ast::Decl {
-                id: self.libsl.decls.insert(()),
-                loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
+                id,
+                loc,
                 kind: ast::DeclSemanticTy {
                     annotations,
                     ty_name,
@@ -455,7 +453,7 @@ impl<'a> AstConstructor<'a> {
                     kind: ast::SemanticTyKind::Enumerated(entries),
                 }
                 .into(),
-            })
+            }))
         } else {
             panic!("unrecognized semanticTypeDecl node: {ctx:?}");
         }
@@ -471,28 +469,26 @@ impl<'a> AstConstructor<'a> {
         Ok(ast::SemanticTyEnumValue { name, expr })
     }
 
-    fn process_decl_ty_alias(
-        &mut self,
-        ctx: &TypealiasStatementContextAll<'_>,
-    ) -> Result<ast::Decl> {
+    fn process_decl_ty_alias(&mut self, ctx: &TypealiasStatementContextAll<'_>) -> Result<DeclId> {
         let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
         let ty_name =
             self.process_ty_identifier_as_qualified_ty_name(ctx.left.as_ref().unwrap())?;
         let ty_expr = self.process_ty_identifier_as_ty_expr(ctx.right.as_ref().unwrap())?;
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
-        Ok(ast::Decl {
-            id: self.libsl.decls.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+        Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
+            id,
+            loc,
             kind: ast::DeclTyAlias {
                 annotations,
                 ty_name,
                 ty_expr,
             }
             .into(),
-        })
+        }))
     }
 
-    fn process_decl_struct(&mut self, ctx: &TypeDefBlockContextAll<'_>) -> Result<ast::Decl> {
+    fn process_decl_struct(&mut self, ctx: &TypeDefBlockContextAll<'_>) -> Result<DeclId> {
         let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
         let ty_name =
             self.process_ty_identifier_as_qualified_ty_name(ctx.r#type.as_ref().unwrap())?;
@@ -535,9 +531,11 @@ impl<'a> AstConstructor<'a> {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        Ok(ast::Decl {
-            id: self.libsl.decls.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+
+        Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
+            id,
+            loc,
             kind: ast::DeclStruct {
                 annotations,
                 ty_name,
@@ -547,10 +545,10 @@ impl<'a> AstConstructor<'a> {
                 decls,
             }
             .into(),
-        })
+        }))
     }
 
-    fn process_decl_enum(&mut self, ctx: &EnumBlockContextAll<'_>) -> Result<ast::Decl> {
+    fn process_decl_enum(&mut self, ctx: &EnumBlockContextAll<'_>) -> Result<DeclId> {
         let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
         let name =
             self.process_ty_identifier_as_qualified_ty_name(&ctx.typeIdentifier().unwrap())?;
@@ -561,16 +559,18 @@ impl<'a> AstConstructor<'a> {
             .map(|e| self.process_enum_variant(&e))
             .collect::<Result<Vec<_>>>()?;
 
-        Ok(ast::Decl {
-            id: self.libsl.decls.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+
+        Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
+            id,
+            loc,
             kind: ast::DeclEnum {
                 annotations,
                 name,
                 variants,
             }
             .into(),
-        })
+        }))
     }
 
     fn process_enum_variant(
@@ -583,7 +583,7 @@ impl<'a> AstConstructor<'a> {
         Ok(ast::EnumVariant { name, value })
     }
 
-    fn process_decl_annotation(&mut self, ctx: &AnnotationDeclContextAll<'_>) -> Result<ast::Decl> {
+    fn process_decl_annotation(&mut self, ctx: &AnnotationDeclContextAll<'_>) -> Result<DeclId> {
         let name = self.process_identifier(&Terminal::new(ctx.name.clone().unwrap()))?;
 
         let params = ctx
@@ -605,14 +605,16 @@ impl<'a> AstConstructor<'a> {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        Ok(ast::Decl {
-            id: self.libsl.decls.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+
+        Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
+            id,
+            loc,
             kind: ast::DeclAnnotation { name, params }.into(),
-        })
+        }))
     }
 
-    fn process_decl_action(&mut self, ctx: &ActionDeclContextAll<'_>) -> Result<ast::Decl> {
+    fn process_decl_action(&mut self, ctx: &ActionDeclContextAll<'_>) -> Result<DeclId> {
         let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
 
         let generics = ctx
@@ -652,9 +654,11 @@ impl<'a> AstConstructor<'a> {
             .transpose()?
             .unwrap_or_default();
 
-        Ok(ast::Decl {
-            id: self.libsl.decls.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+
+        Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
+            id,
+            loc,
             kind: ast::DeclAction {
                 annotations,
                 generics,
@@ -664,10 +668,10 @@ impl<'a> AstConstructor<'a> {
                 ty_constraints,
             }
             .into(),
-        })
+        }))
     }
 
-    fn process_decl_automaton(&mut self, ctx: &AutomatonDeclContextAll<'_>) -> Result<ast::Decl> {
+    fn process_decl_automaton(&mut self, ctx: &AutomatonDeclContextAll<'_>) -> Result<DeclId> {
         let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
         let is_concept = ctx.CONCEPT().is_some();
         let name = self
@@ -706,9 +710,11 @@ impl<'a> AstConstructor<'a> {
             decls.extend(self.process_automaton_decl(&d)?);
         }
 
-        Ok(ast::Decl {
-            id: self.libsl.decls.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+
+        Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
+            id,
+            loc,
             kind: ast::DeclAutomaton {
                 annotations,
                 is_concept,
@@ -719,13 +725,13 @@ impl<'a> AstConstructor<'a> {
                 decls,
             }
             .into(),
-        })
+        }))
     }
 
     fn process_constructor_variable(
         &mut self,
         ctx: &ConstructorVariablesContextAll<'_>,
-    ) -> Result<ast::Decl> {
+    ) -> Result<DeclId> {
         let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
 
         let kind = self.process_var_kind(ctx.keyword.as_ref().unwrap())?;
@@ -736,9 +742,11 @@ impl<'a> AstConstructor<'a> {
             .map(|e| self.process_expr(&e.expression().unwrap()))
             .transpose()?;
 
-        Ok(ast::Decl {
-            id: self.libsl.decls.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+
+        Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
+            id,
+            loc,
             kind: ast::DeclVariable {
                 annotations,
                 kind,
@@ -747,13 +755,13 @@ impl<'a> AstConstructor<'a> {
                 init,
             }
             .into(),
-        })
+        }))
     }
 
     fn process_automaton_decl(
         &mut self,
         ctx: &AutomatonStatementContextAll<'_>,
-    ) -> Result<Vec<ast::Decl>> {
+    ) -> Result<Vec<DeclId>> {
         if let Some(decl) = ctx.automatonStateDecl() {
             self.process_decl_state(&decl)
         } else if let Some(decl) = ctx.automatonShiftDecl() {
@@ -773,7 +781,7 @@ impl<'a> AstConstructor<'a> {
         }
     }
 
-    fn process_decl_function(&mut self, ctx: &FunctionDeclContextAll<'_>) -> Result<ast::Decl> {
+    fn process_decl_function(&mut self, ctx: &FunctionDeclContextAll<'_>) -> Result<DeclId> {
         let header = ctx.functionHeader().unwrap();
         let annotations = self.process_annotation_usage_list(header.annotationUsage_all())?;
 
@@ -831,9 +839,11 @@ impl<'a> AstConstructor<'a> {
             .map(|b| self.process_function_body(&b))
             .transpose()?;
 
-        Ok(ast::Decl {
-            id: self.libsl.decls.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+
+        Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
+            id,
+            loc,
             kind: ast::DeclFunction {
                 annotations,
                 is_static,
@@ -847,7 +857,7 @@ impl<'a> AstConstructor<'a> {
                 body,
             }
             .into(),
-        })
+        }))
     }
 
     fn process_function_params(
@@ -870,7 +880,7 @@ impl<'a> AstConstructor<'a> {
             .collect()
     }
 
-    fn process_decl_variable(&mut self, ctx: &VariableDeclContextAll<'_>) -> Result<ast::Decl> {
+    fn process_decl_variable(&mut self, ctx: &VariableDeclContextAll<'_>) -> Result<DeclId> {
         let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
         let kind = self.process_var_kind(ctx.keyword.as_ref().unwrap())?;
         let (name, ty_expr) = self.process_name_with_ty(&ctx.nameWithType().unwrap())?;
@@ -878,10 +888,11 @@ impl<'a> AstConstructor<'a> {
             .assignmentRight()
             .map(|e| self.process_expr(&e.expression().unwrap()))
             .transpose()?;
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
-        Ok(ast::Decl {
-            id: self.libsl.decls.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+        Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
+            id,
+            loc,
             kind: ast::DeclVariable {
                 annotations,
                 kind,
@@ -890,7 +901,7 @@ impl<'a> AstConstructor<'a> {
                 init,
             }
             .into(),
-        })
+        }))
     }
 
     fn process_var_kind(&mut self, ctx: &CommonToken<'_>) -> Result<ast::VariableKind> {
@@ -901,10 +912,7 @@ impl<'a> AstConstructor<'a> {
         })
     }
 
-    fn process_decl_state(
-        &mut self,
-        ctx: &AutomatonStateDeclContext<'_>,
-    ) -> Result<Vec<ast::Decl>> {
+    fn process_decl_state(&mut self, ctx: &AutomatonStateDeclContext<'_>) -> Result<Vec<DeclId>> {
         let kw = ctx.keyword.as_ref().unwrap();
         let kind = match kw.token_type {
             grammar::parser::INITSTATE => ast::StateKind::Initial,
@@ -917,16 +925,18 @@ impl<'a> AstConstructor<'a> {
             .into_iter()
             .flat_map(|l| l.Identifier_all())
             .map(|i| {
-                self.process_identifier(&i).map(|name| ast::Decl {
-                    id: self.libsl.decls.insert(()),
-                    loc: name.loc.clone(),
-                    kind: ast::DeclState { kind, name }.into(),
+                self.process_identifier(&i).map(|name| {
+                    self.libsl.decls.insert_with_key(|id| ast::Decl {
+                        id,
+                        loc: name.loc.clone(),
+                        kind: ast::DeclState { kind, name }.into(),
+                    })
                 })
             })
             .collect::<Result<Vec<_>>>()
     }
 
-    fn process_decl_shift(&mut self, ctx: &AutomatonShiftDeclContextAll<'_>) -> Result<ast::Decl> {
+    fn process_decl_shift(&mut self, ctx: &AutomatonShiftDeclContextAll<'_>) -> Result<DeclId> {
         let from_token = ctx.from.as_ref().unwrap();
 
         let from = match from_token.token_type {
@@ -960,11 +970,13 @@ impl<'a> AstConstructor<'a> {
                 .collect::<Result<Vec<_>>>()?
         };
 
-        Ok(ast::Decl {
-            id: self.libsl.decls.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+
+        Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
+            id,
+            loc,
             kind: ast::DeclShift { from, to, by }.into(),
-        })
+        }))
     }
 
     fn process_qualified_function_name(
@@ -987,10 +999,7 @@ impl<'a> AstConstructor<'a> {
         Ok(ast::QualifiedFunctionName { name, params })
     }
 
-    fn process_decl_constructor(
-        &mut self,
-        ctx: &ConstructorDeclContextAll<'_>,
-    ) -> Result<ast::Decl> {
+    fn process_decl_constructor(&mut self, ctx: &ConstructorDeclContextAll<'_>) -> Result<DeclId> {
         let header = ctx.constructorHeader().unwrap();
         let annotations = self.process_annotation_usage_list(header.annotationUsage_all())?;
         let is_method = header.headerWithAsterisk().is_some();
@@ -1018,9 +1027,11 @@ impl<'a> AstConstructor<'a> {
             .map(|b| self.process_function_body(&b))
             .transpose()?;
 
-        Ok(ast::Decl {
-            id: self.libsl.decls.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+
+        Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
+            id,
+            loc,
             kind: ast::DeclConstructor {
                 annotations,
                 is_method,
@@ -1030,10 +1041,10 @@ impl<'a> AstConstructor<'a> {
                 body,
             }
             .into(),
-        })
+        }))
     }
 
-    fn process_decl_destructor(&mut self, ctx: &DestructorDeclContextAll<'_>) -> Result<ast::Decl> {
+    fn process_decl_destructor(&mut self, ctx: &DestructorDeclContextAll<'_>) -> Result<DeclId> {
         let header = ctx.destructorHeader().unwrap();
         let annotations = self.process_annotation_usage_list(header.annotationUsage_all())?;
         let is_method = header.headerWithAsterisk().is_some();
@@ -1061,9 +1072,11 @@ impl<'a> AstConstructor<'a> {
             .map(|b| self.process_function_body(&b))
             .transpose()?;
 
-        Ok(ast::Decl {
-            id: self.libsl.decls.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+
+        Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
+            id,
+            loc,
             kind: ast::DeclDestructor {
                 annotations,
                 is_method,
@@ -1073,10 +1086,10 @@ impl<'a> AstConstructor<'a> {
                 body,
             }
             .into(),
-        })
+        }))
     }
 
-    fn process_decl_proc(&mut self, ctx: &ProcDeclContextAll<'_>) -> Result<ast::Decl> {
+    fn process_decl_proc(&mut self, ctx: &ProcDeclContextAll<'_>) -> Result<DeclId> {
         let header = ctx.procHeader().unwrap();
         let annotations = self.process_annotation_usage_list(header.annotationUsage_all())?;
         let is_method = header.headerWithAsterisk().is_some();
@@ -1111,9 +1124,11 @@ impl<'a> AstConstructor<'a> {
             .map(|b| self.process_function_body(&b))
             .transpose()?;
 
-        Ok(ast::Decl {
-            id: self.libsl.decls.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+
+        Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
+            id,
+            loc,
             kind: ast::DeclProc {
                 annotations,
                 is_method,
@@ -1125,7 +1140,7 @@ impl<'a> AstConstructor<'a> {
                 body,
             }
             .into(),
-        })
+        }))
     }
 
     fn process_function_body(
@@ -1204,7 +1219,7 @@ impl<'a> AstConstructor<'a> {
         Ok(ast::ContractAssigns { name, expr }.into())
     }
 
-    fn process_stmt(&mut self, ctx: &FunctionBodyStatementContextAll<'_>) -> Result<ast::Stmt> {
+    fn process_stmt(&mut self, ctx: &FunctionBodyStatementContextAll<'_>) -> Result<StmtId> {
         if let Some(stmt) = ctx.variableAssignment() {
             self.process_stmt_assign(&stmt)
         } else if let Some(decl) = ctx.variableDecl() {
@@ -1218,20 +1233,18 @@ impl<'a> AstConstructor<'a> {
         }
     }
 
-    fn process_stmt_decl_variable(
-        &mut self,
-        ctx: &VariableDeclContextAll<'_>,
-    ) -> Result<ast::Stmt> {
+    fn process_stmt_decl_variable(&mut self, ctx: &VariableDeclContextAll<'_>) -> Result<StmtId> {
         let decl = self.process_decl_variable(ctx)?;
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
-        Ok(ast::Stmt {
-            id: self.libsl.stmts.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
-            kind: Box::new(decl).into(),
-        })
+        Ok(self.libsl.stmts.insert_with_key(|id| ast::Stmt {
+            id,
+            loc,
+            kind: decl.into(),
+        }))
     }
 
-    fn process_stmt_if(&mut self, ctx: &IfStatementContextAll<'_>) -> Result<ast::Stmt> {
+    fn process_stmt_if(&mut self, ctx: &IfStatementContextAll<'_>) -> Result<StmtId> {
         let cond = self.process_expr(&ctx.expression().unwrap())?;
 
         let then_branch = ctx
@@ -1247,19 +1260,21 @@ impl<'a> AstConstructor<'a> {
             .map(|s| self.process_stmt(&s))
             .collect::<Result<Vec<_>>>()?;
 
-        Ok(ast::Stmt {
-            id: self.libsl.stmts.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+
+        Ok(self.libsl.stmts.insert_with_key(|id| ast::Stmt {
+            id,
+            loc,
             kind: ast::StmtIf {
                 cond,
                 then_branch,
                 else_branch,
             }
             .into(),
-        })
+        }))
     }
 
-    fn process_stmt_assign(&mut self, ctx: &VariableAssignmentContextAll<'_>) -> Result<ast::Stmt> {
+    fn process_stmt_assign(&mut self, ctx: &VariableAssignmentContextAll<'_>) -> Result<StmtId> {
         let lhs = self.process_qualified_access(&ctx.qualifiedAccess().unwrap())?;
 
         let op = ctx.op.as_ref().unwrap();
@@ -1279,64 +1294,60 @@ impl<'a> AstConstructor<'a> {
         };
 
         let rhs = self.process_expr(&ctx.assignmentRight().unwrap().expression().unwrap())?;
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
-        Ok(ast::Stmt {
-            id: self.libsl.stmts.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+        Ok(self.libsl.stmts.insert_with_key(|id| ast::Stmt {
+            id,
+            loc,
             kind: ast::StmtAssign {
                 lhs,
                 in_place_op,
                 rhs,
             }
             .into(),
-        })
+        }))
     }
 
-    fn process_stmt_expr(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ast::Stmt> {
+    fn process_stmt_expr(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<StmtId> {
         let expr = self.process_expr(ctx)?;
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
-        Ok(ast::Stmt {
-            id: self.libsl.stmts.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+        Ok(self.libsl.stmts.insert_with_key(|id| ast::Stmt {
+            id,
+            loc,
             kind: expr.into(),
-        })
+        }))
     }
 
-    fn process_ty_expr(&mut self, ctx: &TypeExpressionContextAll<'_>) -> Result<ast::TyExpr> {
+    fn process_ty_expr(&mut self, ctx: &TypeExpressionContextAll<'_>) -> Result<TyExprId> {
         if let Some(ty) = ctx.typeIdentifier() {
             self.process_ty_identifier_as_ty_expr(&ty)
         } else if ctx.AMPERSAND().is_some() {
             let lhs = self.process_ty_expr(&ctx.typeExpression(0).unwrap())?;
             let rhs = self.process_ty_expr(&ctx.typeExpression(1).unwrap())?;
+            let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
-            Ok(ast::TyExpr {
-                id: self.libsl.ty_exprs.insert(()),
-                loc: self.get_loc(&ctx.start(), &ctx.stop()),
-                kind: ast::TyExprIntersection {
-                    lhs: Box::new(lhs),
-                    rhs: Box::new(rhs),
-                }
-                .into(),
-            })
+            Ok(self.libsl.ty_exprs.insert_with_key(|id| ast::TyExpr {
+                id,
+                loc,
+                kind: ast::TyExprIntersection { lhs, rhs }.into(),
+            }))
         } else if ctx.BIT_OR().is_some() {
             let lhs = self.process_ty_expr(&ctx.typeExpression(0).unwrap())?;
             let rhs = self.process_ty_expr(&ctx.typeExpression(1).unwrap())?;
+            let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
-            Ok(ast::TyExpr {
-                id: self.libsl.ty_exprs.insert(()),
-                loc: self.get_loc(&ctx.start(), &ctx.stop()),
-                kind: ast::TyExprUnion {
-                    lhs: Box::new(lhs),
-                    rhs: Box::new(rhs),
-                }
-                .into(),
-            })
+            Ok(self.libsl.ty_exprs.insert_with_key(|id| ast::TyExpr {
+                id,
+                loc,
+                kind: ast::TyExprUnion { lhs, rhs }.into(),
+            }))
         } else {
             panic!("unrecognized typeExpression node: {ctx:?}");
         }
     }
 
-    fn process_expr(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ast::Expr> {
+    fn process_expr(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ExprId> {
         if let Some(expr) = ctx.expressionAtomic() {
             self.process_expr_atomic(&expr)
         } else if ctx.apostrophe.is_some() {
@@ -1374,7 +1385,7 @@ impl<'a> AstConstructor<'a> {
         }
     }
 
-    fn process_expr_atomic(&mut self, ctx: &ExpressionAtomicContextAll<'_>) -> Result<ast::Expr> {
+    fn process_expr_atomic(&mut self, ctx: &ExpressionAtomicContextAll<'_>) -> Result<ExprId> {
         if let Some(expr) = ctx.primitiveLiteral() {
             self.process_expr_primitive_lit(&expr)
         } else if let Some(expr) = ctx.arrayLiteral() {
@@ -1389,17 +1400,18 @@ impl<'a> AstConstructor<'a> {
     fn process_expr_primitive_lit(
         &mut self,
         ctx: &PrimitiveLiteralContextAll<'_>,
-    ) -> Result<ast::Expr> {
+    ) -> Result<ExprId> {
         let lit = self.process_primitive_lit(ctx)?;
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
-        Ok(ast::Expr {
-            id: self.libsl.exprs.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
             kind: ast::ExprPrimitiveLit { lit }.into(),
-        })
+        }))
     }
 
-    fn process_expr_array_lit(&mut self, ctx: &ArrayLiteralContextAll<'_>) -> Result<ast::Expr> {
+    fn process_expr_array_lit(&mut self, ctx: &ArrayLiteralContextAll<'_>) -> Result<ExprId> {
         let elems = ctx
             .expressionsList()
             .into_iter()
@@ -1407,37 +1419,41 @@ impl<'a> AstConstructor<'a> {
             .map(|e| self.process_expr(&e))
             .collect::<Result<Vec<_>>>()?;
 
-        Ok(ast::Expr {
-            id: self.libsl.exprs.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
             kind: ast::ExprArrayLit { elems }.into(),
-        })
+        }))
     }
 
     fn process_expr_qualified_access(
         &mut self,
         ctx: &QualifiedAccessContextAll<'_>,
-    ) -> Result<ast::Expr> {
+    ) -> Result<ExprId> {
         let access = self.process_qualified_access(ctx)?;
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
-        Ok(ast::Expr {
-            id: self.libsl.exprs.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
             kind: ast::ExprQualifiedAccess { access }.into(),
-        })
+        }))
     }
 
-    fn process_expr_prev(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ast::Expr> {
+    fn process_expr_prev(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ExprId> {
         let access = self.process_qualified_access(&ctx.qualifiedAccess().unwrap())?;
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
-        Ok(ast::Expr {
-            id: self.libsl.exprs.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
             kind: ast::ExprPrev { access }.into(),
-        })
+        }))
     }
 
-    fn process_expr_proc_call(&mut self, ctx: &ProcUsageContextAll<'_>) -> Result<ast::Expr> {
+    fn process_expr_proc_call(&mut self, ctx: &ProcUsageContextAll<'_>) -> Result<ExprId> {
         let callee = self.process_qualified_access(&ctx.qualifiedAccess().unwrap())?;
 
         let generics = ctx
@@ -1453,19 +1469,21 @@ impl<'a> AstConstructor<'a> {
             .map(|e| self.process_expr(&e))
             .collect::<Result<Vec<_>>>()?;
 
-        Ok(ast::Expr {
-            id: self.libsl.exprs.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
             kind: ast::ExprProcCall {
                 callee,
                 generics,
                 args,
             }
             .into(),
-        })
+        }))
     }
 
-    fn process_expr_action_call(&mut self, ctx: &ActionUsageContextAll<'_>) -> Result<ast::Expr> {
+    fn process_expr_action_call(&mut self, ctx: &ActionUsageContextAll<'_>) -> Result<ExprId> {
         let name = self.process_identifier(&ctx.Identifier().unwrap())?;
         let generics = ctx
             .generic()
@@ -1480,22 +1498,24 @@ impl<'a> AstConstructor<'a> {
             .map(|e| self.process_expr(&e))
             .collect::<Result<Vec<_>>>()?;
 
-        Ok(ast::Expr {
-            id: self.libsl.exprs.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
             kind: ast::ExprActionCall {
                 name,
                 generics,
                 args,
             }
             .into(),
-        })
+        }))
     }
 
     fn process_expr_instantiate(
         &mut self,
         ctx: &CallAutomatonConstructorWithNamedArgsContextAll<'_>,
-    ) -> Result<ast::Expr> {
+    ) -> Result<ExprId> {
         let name =
             self.process_period_separated_full_name(&ctx.periodSeparatedFullName().unwrap())?;
 
@@ -1525,22 +1545,24 @@ impl<'a> AstConstructor<'a> {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        Ok(ast::Expr {
-            id: self.libsl.exprs.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
             kind: ast::ExprInstantiate {
                 name,
                 generics,
                 args,
             }
             .into(),
-        })
+        }))
     }
 
     fn process_expr_has_concept(
         &mut self,
         ctx: &HasAutomatonConceptContextAll<'_>,
-    ) -> Result<ast::Expr> {
+    ) -> Result<ExprId> {
         let scrutinee = self.process_qualified_access(&ctx.qualifiedAccess().unwrap())?;
         let has = ctx.has.as_ref().unwrap();
 
@@ -1553,45 +1575,40 @@ impl<'a> AstConstructor<'a> {
         }
 
         let concept = self.process_identifier(&Terminal::new(ctx.name.clone().unwrap()))?;
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
-        Ok(ast::Expr {
-            id: self.libsl.exprs.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
             kind: ast::ExprHasConcept { scrutinee, concept }.into(),
-        })
+        }))
     }
 
-    fn process_expr_cast(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ast::Expr> {
+    fn process_expr_cast(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ExprId> {
         let expr = self.process_expr(&ctx.expression(0).unwrap())?;
         let ty_expr = self.process_ty_identifier_as_ty_expr(&ctx.typeIdentifier().unwrap())?;
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
-        Ok(ast::Expr {
-            id: self.libsl.exprs.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
-            kind: ast::ExprCast {
-                expr: Box::new(expr),
-                ty_expr,
-            }
-            .into(),
-        })
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprCast { expr, ty_expr }.into(),
+        }))
     }
 
-    fn process_expr_ty_compare(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ast::Expr> {
+    fn process_expr_ty_compare(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ExprId> {
         let expr = self.process_expr(&ctx.expression(0).unwrap())?;
         let ty_expr = self.process_ty_identifier_as_ty_expr(&ctx.typeIdentifier().unwrap())?;
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
-        Ok(ast::Expr {
-            id: self.libsl.exprs.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
-            kind: ast::ExprTyCompare {
-                expr: Box::new(expr),
-                ty_expr,
-            }
-            .into(),
-        })
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprTyCompare { expr, ty_expr }.into(),
+        }))
     }
 
-    fn process_expr_unary(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ast::Expr> {
+    fn process_expr_unary(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ExprId> {
         let op = ctx.unaryOp.as_ref().unwrap();
 
         let op = match op.token_type {
@@ -1603,19 +1620,16 @@ impl<'a> AstConstructor<'a> {
         };
 
         let expr = self.process_expr(&ctx.expression(0).unwrap())?;
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
-        Ok(ast::Expr {
-            id: self.libsl.exprs.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
-            kind: ast::ExprUnary {
-                op,
-                expr: Box::new(expr),
-            }
-            .into(),
-        })
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprUnary { op, expr }.into(),
+        }))
     }
 
-    fn process_expr_shift(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ast::Expr> {
+    fn process_expr_shift(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ExprId> {
         let op_ctx = ctx.bitShiftOp().unwrap();
 
         let op = if op_ctx.lShift().is_some() {
@@ -1632,20 +1646,16 @@ impl<'a> AstConstructor<'a> {
 
         let lhs = self.process_expr(&ctx.expression(0).unwrap())?;
         let rhs = self.process_expr(&ctx.expression(1).unwrap())?;
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
-        Ok(ast::Expr {
-            id: self.libsl.exprs.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
-            kind: ast::ExprBinary {
-                lhs: Box::new(lhs),
-                op,
-                rhs: Box::new(rhs),
-            }
-            .into(),
-        })
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprBinary { lhs, op, rhs }.into(),
+        }))
     }
 
-    fn process_expr_binary(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ast::Expr> {
+    fn process_expr_binary(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ExprId> {
         let op_ctx = ctx.op.as_ref().unwrap();
 
         let op = match op_ctx.token_type {
@@ -1670,17 +1680,13 @@ impl<'a> AstConstructor<'a> {
 
         let lhs = self.process_expr(&ctx.expression(0).unwrap())?;
         let rhs = self.process_expr(&ctx.expression(1).unwrap())?;
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
-        Ok(ast::Expr {
-            id: self.libsl.exprs.insert(()),
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
-            kind: ast::ExprBinary {
-                lhs: Box::new(lhs),
-                op,
-                rhs: Box::new(rhs),
-            }
-            .into(),
-        })
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprBinary { lhs, op, rhs }.into(),
+        }))
     }
 
     fn process_primitive_lit(
@@ -1719,7 +1725,7 @@ impl<'a> AstConstructor<'a> {
     fn process_qualified_access(
         &mut self,
         ctx: &QualifiedAccessContextAll<'_>,
-    ) -> Result<ast::QualifiedAccess> {
+    ) -> Result<QualifiedAccessId> {
         self.process_qualified_access_chain(ctx, QualifiedAccessBase::None)
     }
 
@@ -1727,7 +1733,7 @@ impl<'a> AstConstructor<'a> {
         &mut self,
         ctx: &QualifiedAccessContextAll<'_>,
         mut base: QualifiedAccessBase,
-    ) -> Result<ast::QualifiedAccess> {
+    ) -> Result<QualifiedAccessId> {
         if let Some(names) = ctx.periodSeparatedFullName() {
             if let Some(token) = names.UNBOUNDED() {
                 return Err(ParseError::Syntax {
@@ -1741,37 +1747,43 @@ impl<'a> AstConstructor<'a> {
                 let name = self.process_identifier(&id)?;
 
                 base = QualifiedAccessBase::QualifiedAccess(match base {
-                    QualifiedAccessBase::None => ast::QualifiedAccess {
-                        id: self.libsl.qualified_accesses.insert(()),
-                        loc: name.loc.clone(),
-                        kind: ast::QualifiedAccessName { name }.into(),
-                    },
+                    QualifiedAccessBase::None => {
+                        self.libsl
+                            .qualified_accesses
+                            .insert_with_key(|id| ast::QualifiedAccess {
+                                id,
+                                loc: name.loc.clone(),
+                                kind: ast::QualifiedAccessName { name }.into(),
+                            })
+                    }
 
                     QualifiedAccessBase::Automaton {
                         automaton,
                         generics,
                         arg,
-                    } => ast::QualifiedAccess {
-                        id: self.libsl.qualified_accesses.insert(()),
-                        loc: automaton.loc.clone(),
-                        kind: ast::QualifiedAccessAutomatonVar {
-                            automaton,
-                            generics,
-                            arg,
-                            variable: name,
-                        }
-                        .into(),
-                    },
+                    } => self
+                        .libsl
+                        .qualified_accesses
+                        .insert_with_key(|id| ast::QualifiedAccess {
+                            id,
+                            loc: automaton.loc.clone(),
+                            kind: ast::QualifiedAccessAutomatonVar {
+                                automaton,
+                                generics,
+                                arg,
+                                variable: name,
+                            }
+                            .into(),
+                        }),
 
-                    QualifiedAccessBase::QualifiedAccess(base) => ast::QualifiedAccess {
-                        id: self.libsl.qualified_accesses.insert(()),
-                        loc: name.loc.clone(),
-                        kind: ast::QualifiedAccessField {
-                            base: Box::new(base),
-                            field: name,
-                        }
-                        .into(),
-                    },
+                    QualifiedAccessBase::QualifiedAccess(base) => self
+                        .libsl
+                        .qualified_accesses
+                        .insert_with_key(|id| ast::QualifiedAccess {
+                            id,
+                            loc: name.loc.clone(),
+                            kind: ast::QualifiedAccessField { base, field: name }.into(),
+                        }),
                 });
             }
 
@@ -1785,18 +1797,19 @@ impl<'a> AstConstructor<'a> {
                 self.process_qualified_access_chain(&ctx.qualifiedAccess(0).unwrap(), base)?;
             let index = self.process_expr(&ctx.expression().unwrap())?;
 
-            let base = ast::QualifiedAccess {
-                id: self.libsl.qualified_accesses.insert(()),
-                loc: self.get_loc(
-                    &ctx.L_SQUARE_BRACKET().unwrap().symbol,
-                    &ctx.R_SQUARE_BRACKET().unwrap().symbol,
-                ),
-                kind: ast::QualifiedAccessIndex {
-                    base: Box::new(base),
-                    index: Box::new(index),
-                }
-                .into(),
-            };
+            let loc = self.get_loc(
+                &ctx.L_SQUARE_BRACKET().unwrap().symbol,
+                &ctx.R_SQUARE_BRACKET().unwrap().symbol,
+            );
+
+            let base = self
+                .libsl
+                .qualified_accesses
+                .insert_with_key(|id| ast::QualifiedAccess {
+                    id,
+                    loc,
+                    kind: ast::QualifiedAccessIndex { base, index }.into(),
+                });
 
             if let Some(suffix) = ctx.qualifiedAccess(1) {
                 self.process_qualified_access_chain(
@@ -1841,7 +1854,7 @@ impl<'a> AstConstructor<'a> {
                 QualifiedAccessBase::Automaton {
                     automaton,
                     generics,
-                    arg: Box::new(arg),
+                    arg,
                 },
             )
         } else {
@@ -1931,7 +1944,7 @@ impl<'a> AstConstructor<'a> {
     fn process_ty_identifier_as_ty_expr(
         &mut self,
         ctx: &TypeIdentifierContextAll<'_>,
-    ) -> Result<ast::TyExpr> {
+    ) -> Result<TyExprId> {
         let name_ctx = ctx.typeIdentifierName().unwrap();
 
         let ty_expr = if let Some(name_ctx) = name_ctx.periodSeparatedFullName() {
@@ -1943,11 +1956,13 @@ impl<'a> AstConstructor<'a> {
                 .transpose()?
                 .unwrap_or_default();
 
-            ast::TyExpr {
-                id: self.libsl.ty_exprs.insert(()),
-                loc: self.get_loc(&name_ctx.start(), &ctx.stop()),
+            let loc = self.get_loc(&name_ctx.start(), &ctx.stop());
+
+            self.libsl.ty_exprs.insert_with_key(|id| ast::TyExpr {
+                id,
+                loc,
                 kind: ast::TyExprName { name, generics }.into(),
-            }
+            })
         } else if let Some(lit_ctx) = name_ctx.primitiveLiteral() {
             let lit = self.process_primitive_lit(&lit_ctx)?;
 
@@ -1959,24 +1974,25 @@ impl<'a> AstConstructor<'a> {
                 });
             }
 
-            ast::TyExpr {
-                id: self.libsl.ty_exprs.insert(()),
-                loc: self.get_loc(&name_ctx.start(), &lit_ctx.stop()),
+            let loc = self.get_loc(&name_ctx.start(), &lit_ctx.stop());
+
+            self.libsl.ty_exprs.insert_with_key(|id| ast::TyExpr {
+                id,
+                loc,
                 kind: ast::TyExprPrimitiveLit { lit }.into(),
-            }
+            })
         } else {
             panic!("unrecognized typeIdentifierName node: {name_ctx:?}");
         };
 
         if let Some(token) = &ctx.asterisk {
-            Ok(ast::TyExpr {
-                id: self.libsl.ty_exprs.insert(()),
-                loc: self.get_loc(token, &ctx.stop()),
-                kind: ast::TyExprPointer {
-                    base: Box::new(ty_expr),
-                }
-                .into(),
-            })
+            let loc = self.get_loc(token, &ctx.stop());
+
+            Ok(self.libsl.ty_exprs.insert_with_key(|id| ast::TyExpr {
+                id,
+                loc,
+                kind: ast::TyExprPointer { base: ty_expr }.into(),
+            }))
         } else {
             Ok(ty_expr)
         }
@@ -2141,7 +2157,7 @@ impl<'a> AstConstructor<'a> {
     fn process_name_with_ty(
         &mut self,
         ctx: &NameWithTypeContextAll<'_>,
-    ) -> Result<(ast::Name, ast::TyExpr)> {
+    ) -> Result<(ast::Name, TyExprId)> {
         let name = self.process_identifier(&Terminal::new(ctx.name.clone().unwrap()))?;
         let ty_expr = self.process_ty_expr(&ctx.typeExpression().unwrap())?;
 

@@ -16,9 +16,9 @@ new_key_type! {
 #[derive(Clone)]
 pub struct LibSl {
     file_names: Vec<String>,
-    decls: SlotMap<DeclId, ()>,
-    ty_exprs: SlotMap<TyExprId, ()>,
-    exprs: SlotMap<ExprId, ()>,
-    stmts: SlotMap<StmtId, ()>,
-    qualified_accesses: SlotMap<QualifiedAccessId, ()>,
+    pub decls: SlotMap<DeclId, ast::Decl>,
+    pub ty_exprs: SlotMap<TyExprId, ast::TyExpr>,
+    pub exprs: SlotMap<ExprId, ast::Expr>,
+    pub stmts: SlotMap<StmtId, ast::Stmt>,
+    pub qualified_accesses: SlotMap<QualifiedAccessId, ast::QualifiedAccess>,
 }

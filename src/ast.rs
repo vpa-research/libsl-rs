@@ -8,7 +8,7 @@ use crate::{DeclId, ExprId, QualifiedAccessId, StmtId, TyExprId};
 pub struct File {
     pub loc: Loc,
     pub header: Option<Header>,
-    pub decls: Vec<Decl>,
+    pub decls: Vec<DeclId>,
 }
 
 /// A LibSL header declaration.
@@ -115,7 +115,7 @@ pub struct DeclSemanticTy {
     pub ty_name: QualifiedTyName,
 
     /// The underlying type representation.
-    pub real_ty: TyExpr,
+    pub real_ty: TyExprId,
 
     pub kind: SemanticTyKind,
 }
@@ -136,7 +136,7 @@ pub struct SemanticTyEnumValue {
     pub name: Name,
 
     /// The underlying value represented by this entry.
-    pub expr: Expr,
+    pub expr: ExprId,
 }
 
 /// A type alias declaration.
@@ -148,7 +148,7 @@ pub struct DeclTyAlias {
     pub ty_name: QualifiedTyName,
 
     /// The type represented by this alias.
-    pub ty_expr: TyExpr,
+    pub ty_expr: TyExprId,
 }
 
 /// A structure type declaration.
@@ -160,14 +160,14 @@ pub struct DeclStruct {
     pub ty_name: QualifiedTyName,
 
     // TODO: what do these two fields even mean?
-    pub is_ty: Option<TyExpr>,
-    pub for_tys: Vec<TyExpr>,
+    pub is_ty: Option<TyExprId>,
+    pub for_tys: Vec<TyExprId>,
 
     /// Type parameter constraints, specified in a `where`-clause.
     pub ty_constraints: Vec<TyConstraint>,
 
     /// Entities (variables and functions) defined as members of this type.
-    pub decls: Vec<Decl>,
+    pub decls: Vec<DeclId>,
 }
 
 /// An enum type declaration.
@@ -199,10 +199,10 @@ pub struct DeclAnnotation {
 #[derive(Debug, Clone)]
 pub struct AnnotationParam {
     pub name: Name,
-    pub ty_expr: TyExpr,
+    pub ty_expr: TyExprId,
 
     /// The default value for the parameter.
-    pub default: Option<Expr>,
+    pub default: Option<ExprId>,
 }
 
 /// An action declaration.
@@ -212,7 +212,7 @@ pub struct DeclAction {
     pub generics: Vec<Generic>,
     pub name: Name,
     pub params: Vec<ActionParam>,
-    pub ret_ty_expr: Option<TyExpr>,
+    pub ret_ty_expr: Option<TyExprId>,
 
     /// Type parameter constraints, specified in a `where`-clause.
     pub ty_constraints: Vec<TyConstraint>,
@@ -222,7 +222,7 @@ pub struct DeclAction {
 pub struct ActionParam {
     pub annotations: Vec<Annotation>,
     pub name: Name,
-    pub ty_expr: TyExpr,
+    pub ty_expr: TyExprId,
 }
 
 /// An automaton declaration.
@@ -233,15 +233,15 @@ pub struct DeclAutomaton {
     pub name: QualifiedTyName,
 
     /// Automaton constructor declarations.
-    pub constructor_variables: Vec<Decl>,
+    pub constructor_variables: Vec<DeclId>,
 
     /// The type modelled by this automaton.
-    pub ty_expr: TyExpr,
+    pub ty_expr: TyExprId,
 
     pub implemented_concepts: Vec<Name>,
 
     /// Entities defines as members of this automaton.
-    pub decls: Vec<Decl>,
+    pub decls: Vec<DeclId>,
 }
 
 /// A function declaration.
@@ -257,7 +257,7 @@ pub struct DeclFunction {
     pub name: Name,
     pub generics: Vec<Generic>,
     pub params: Vec<FunctionParam>,
-    pub ret_ty_expr: Option<TyExpr>,
+    pub ret_ty_expr: Option<TyExprId>,
 
     /// Type parameter constraints, specified in a `where`-clause.
     pub ty_constraints: Vec<TyConstraint>,
@@ -278,10 +278,10 @@ pub struct DeclVariable {
     pub annotations: Vec<Annotation>,
     pub kind: VariableKind,
     pub name: Name,
-    pub ty_expr: TyExpr,
+    pub ty_expr: TyExprId,
 
     /// An optional variable initializer expression.
-    pub init: Option<Expr>,
+    pub init: Option<ExprId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -333,7 +333,7 @@ pub struct QualifiedFunctionName {
     pub name: Name,
 
     /// Optional parameter type qualification to disambiguate overloads.
-    pub params: Option<Vec<TyExpr>>,
+    pub params: Option<Vec<TyExprId>>,
 }
 
 /// An automaton constructor declaration.
@@ -343,7 +343,7 @@ pub struct DeclConstructor {
     pub is_method: bool,
     pub name: Option<Name>,
     pub params: Vec<FunctionParam>,
-    pub ret_ty_expr: Option<TyExpr>,
+    pub ret_ty_expr: Option<TyExprId>,
     pub body: Option<FunctionBody>,
 }
 
@@ -354,7 +354,7 @@ pub struct DeclDestructor {
     pub is_method: bool,
     pub name: Option<Name>,
     pub params: Vec<FunctionParam>,
-    pub ret_ty_expr: Option<TyExpr>,
+    pub ret_ty_expr: Option<TyExprId>,
     pub body: Option<FunctionBody>,
 }
 
@@ -366,7 +366,7 @@ pub struct DeclProc {
     pub name: Name,
     pub generics: Vec<Generic>,
     pub params: Vec<FunctionParam>,
-    pub ret_ty_expr: Option<TyExpr>,
+    pub ret_ty_expr: Option<TyExprId>,
 
     /// Type parameter constraints, specified in a `where`-clause.
     pub ty_constraints: Vec<TyConstraint>,
@@ -377,7 +377,7 @@ pub struct DeclProc {
 pub struct FunctionParam {
     pub annotations: Vec<Annotation>,
     pub name: Name,
-    pub ty_expr: TyExpr,
+    pub ty_expr: TyExprId,
 }
 
 #[derive(Debug, Clone)]
@@ -385,7 +385,7 @@ pub struct FunctionBody {
     /// The function's contract specifications.
     pub contracts: Vec<Contract>,
 
-    pub stmts: Vec<Stmt>,
+    pub stmts: Vec<StmtId>,
 }
 
 /// A function contract specification.
@@ -405,21 +405,21 @@ pub enum Contract {
 #[derive(Debug, Clone)]
 pub struct ContractRequires {
     pub name: Option<Name>,
-    pub expr: Expr,
+    pub expr: ExprId,
 }
 
 /// A postcondition specification.
 #[derive(Debug, Clone)]
 pub struct ContractEnsures {
     pub name: Option<Name>,
-    pub expr: Expr,
+    pub expr: ExprId,
 }
 
 /// A write set specification.
 #[derive(Debug, Clone)]
 pub struct ContractAssigns {
     pub name: Option<Name>,
-    pub expr: Expr,
+    pub expr: ExprId,
 }
 
 /// An annotation use.
@@ -432,7 +432,7 @@ pub struct Annotation {
 #[derive(Debug, Clone)]
 pub struct AnnotationArg {
     pub name: Option<Name>,
-    pub expr: Expr,
+    pub expr: ExprId,
 }
 
 /// A type name qualified with type parameter declarations.
@@ -532,28 +532,28 @@ pub struct TyExprName {
 #[derive(Debug, Clone)]
 pub struct TyExprPointer {
     /// A base type the pointer refers to.
-    pub base: Box<TyExpr>,
+    pub base: TyExprId,
 }
 
 /// An intersection type expression.
 #[derive(Debug, Clone)]
 pub struct TyExprIntersection {
-    pub lhs: Box<TyExpr>,
-    pub rhs: Box<TyExpr>,
+    pub lhs: TyExprId,
+    pub rhs: TyExprId,
 }
 
 /// A union type expression.
 #[derive(Debug, Clone)]
 pub struct TyExprUnion {
-    pub lhs: Box<TyExpr>,
-    pub rhs: Box<TyExpr>,
+    pub lhs: TyExprId,
+    pub rhs: TyExprId,
 }
 
 /// A type argument applied to a generic type's type parameter.
 #[derive(Debug, Clone)]
 pub enum TyArg {
     /// An arbitrary type expression.
-    TyExpr(TyExpr),
+    TyExpr(TyExprId),
 
     /// A type wildcard, useful in situations where the exact type for the parameter is not
     /// required.
@@ -581,7 +581,7 @@ pub enum StmtKind {
     Dummy,
 
     /// A variable declaration.
-    Decl(Box<Decl>),
+    Decl(DeclId),
 
     /// A conditional statement.
     If(StmtIf),
@@ -590,26 +590,26 @@ pub enum StmtKind {
     Assign(StmtAssign),
 
     /// An expression statement.
-    Expr(Expr),
+    Expr(ExprId),
 }
 
 /// A conditional statement.
 #[derive(Debug, Clone)]
 pub struct StmtIf {
-    pub cond: Expr,
-    pub then_branch: Vec<Stmt>,
-    pub else_branch: Vec<Stmt>,
+    pub cond: ExprId,
+    pub then_branch: Vec<StmtId>,
+    pub else_branch: Vec<StmtId>,
 }
 
 /// A variable assignment statement.
 #[derive(Debug, Clone)]
 pub struct StmtAssign {
-    pub lhs: QualifiedAccess,
+    pub lhs: QualifiedAccessId,
 
     /// An optional in-place update operator.
     pub in_place_op: Option<InPlaceOp>,
 
-    pub rhs: Expr,
+    pub rhs: ExprId,
 }
 
 /// An in-place update operator.
@@ -713,27 +713,27 @@ pub struct ExprPrimitiveLit {
 /// An array literal expression.
 #[derive(Debug, Clone)]
 pub struct ExprArrayLit {
-    pub elems: Vec<Expr>,
+    pub elems: Vec<ExprId>,
 }
 
 /// A qualified variable/element access expression.
 #[derive(Debug, Clone)]
 pub struct ExprQualifiedAccess {
-    pub access: QualifiedAccess,
+    pub access: QualifiedAccessId,
 }
 
 /// A previous-state value expression.
 #[derive(Debug, Clone)]
 pub struct ExprPrev {
-    pub access: QualifiedAccess,
+    pub access: QualifiedAccessId,
 }
 
 /// A procedure call expression.
 #[derive(Debug, Clone)]
 pub struct ExprProcCall {
-    pub callee: QualifiedAccess,
+    pub callee: QualifiedAccessId,
     pub generics: Vec<TyArg>,
-    pub args: Vec<Expr>,
+    pub args: Vec<ExprId>,
 }
 
 /// An action invocation expression.
@@ -741,7 +741,7 @@ pub struct ExprProcCall {
 pub struct ExprActionCall {
     pub name: Name,
     pub generics: Vec<TyArg>,
-    pub args: Vec<Expr>,
+    pub args: Vec<ExprId>,
 }
 
 /// An automaton instantiation expression.
@@ -758,17 +758,17 @@ pub struct ExprInstantiate {
 #[derive(Debug, Clone)]
 pub enum ConstructorArg {
     /// An automaton state assignment.
-    State(Expr),
+    State(ExprId),
 
     /// A value for a constructor variable.
-    Var(Name, Expr),
+    Var(Name, ExprId),
 }
 
 /// A `has`-concept expression.
 #[derive(Debug, Clone)]
 pub struct ExprHasConcept {
     /// The entity this expression tests for.
-    pub scrutinee: QualifiedAccess,
+    pub scrutinee: QualifiedAccessId,
 
     pub concept: Name,
 }
@@ -776,22 +776,22 @@ pub struct ExprHasConcept {
 /// A cast expression.
 #[derive(Debug, Clone)]
 pub struct ExprCast {
-    pub expr: Box<Expr>,
-    pub ty_expr: TyExpr,
+    pub expr: ExprId,
+    pub ty_expr: TyExprId,
 }
 
 /// An type comparison expression.
 #[derive(Debug, Clone)]
 pub struct ExprTyCompare {
-    pub expr: Box<Expr>,
-    pub ty_expr: TyExpr,
+    pub expr: ExprId,
+    pub ty_expr: TyExprId,
 }
 
 /// A unary arithmetic or logical expression.
 #[derive(Debug, Clone)]
 pub struct ExprUnary {
     pub op: UnOp,
-    pub expr: Box<Expr>,
+    pub expr: ExprId,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -812,9 +812,9 @@ pub enum UnOp {
 /// A binary arithmetic or logical expression.
 #[derive(Debug, Clone)]
 pub struct ExprBinary {
-    pub lhs: Box<Expr>,
+    pub lhs: ExprId,
     pub op: BinOp,
-    pub rhs: Box<Expr>,
+    pub rhs: ExprId,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -967,20 +967,20 @@ pub struct QualifiedAccessName {
 pub struct QualifiedAccessAutomatonVar {
     pub automaton: Name,
     pub generics: Vec<TyArg>,
-    pub arg: Box<QualifiedAccess>,
+    pub arg: QualifiedAccessId,
     pub variable: Name,
 }
 
 /// An access referring to a field of a base entity, such as `foo.bar`.
 #[derive(Debug, Clone)]
 pub struct QualifiedAccessField {
-    pub base: Box<QualifiedAccess>,
+    pub base: QualifiedAccessId,
     pub field: Name,
 }
 
 /// An access referring to an element of an indexed collection, such as `foo[42]`.
 #[derive(Debug, Clone)]
 pub struct QualifiedAccessIndex {
-    pub base: Box<QualifiedAccess>,
-    pub index: Box<Expr>,
+    pub base: QualifiedAccessId,
+    pub index: ExprId,
 }

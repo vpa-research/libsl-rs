@@ -1,5 +1,8 @@
 use std::num::NonZeroUsize;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FileId(pub(crate) usize);
+
 /// A contiguous range of bytes in a source file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Span {
@@ -10,7 +13,7 @@ pub struct Span {
     pub len: usize,
 
     /// A file index.
-    pub file: usize,
+    pub file_id: FileId,
 
     /// A line number, counted from 1.
     pub line: Option<NonZeroUsize>,

@@ -176,7 +176,7 @@ pub struct DeclEnum {
     pub annotations: Vec<Annotation>,
 
     /// The declared type's name.
-    pub name: QualifiedTyName,
+    pub ty_name: QualifiedTyName,
 
     /// Possibles values of the type.
     pub variants: Vec<EnumVariant>,

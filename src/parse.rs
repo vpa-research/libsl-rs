@@ -62,7 +62,7 @@ use crate::grammar::libslparser::{
     WhereConstraintsContextAll, WhereConstraintsContextAttrs,
 };
 use crate::grammar::parser::{FileContextAll, LibSLParser};
-use crate::loc::{Loc, Span};
+use crate::loc::{FileId, Loc, Span};
 use crate::{DeclId, ExprId, LibSl, QualifiedAccessId, StmtId, TyExprId, ast, grammar};
 
 pub type Result<T, E = ParseError> = std::result::Result<T, E>;
@@ -286,7 +286,7 @@ impl LibSl {
 
 struct AstConstructor<'a> {
     libsl: &'a mut LibSl,
-    file_idx: usize,
+    file_id: FileId,
 }
 
 impl<'a> AstConstructor<'a> {
@@ -294,7 +294,10 @@ impl<'a> AstConstructor<'a> {
         let file_idx = libsl.file_names.len();
         libsl.file_names.push(file_name);
 
-        Self { libsl, file_idx }
+        Self {
+            libsl,
+            file_id: FileId(file_idx),
+        }
     }
 
     fn get_loc(&self, start: &CommonToken<'_>, stop: &CommonToken<'_>) -> Loc {
@@ -304,7 +307,7 @@ impl<'a> AstConstructor<'a> {
         Span {
             start: start.start as usize,
             len: (stop.stop as usize).saturating_sub(start.start as usize),
-            file: self.file_idx,
+            file_id: self.file_id,
             line,
             col,
         }
@@ -550,7 +553,7 @@ impl<'a> AstConstructor<'a> {
 
     fn process_decl_enum(&mut self, ctx: &EnumBlockContextAll<'_>) -> Result<DeclId> {
         let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
-        let name =
+        let ty_name =
             self.process_ty_identifier_as_qualified_ty_name(&ctx.typeIdentifier().unwrap())?;
 
         let variants = ctx
@@ -566,7 +569,7 @@ impl<'a> AstConstructor<'a> {
             loc,
             kind: ast::DeclEnum {
                 annotations,
-                name,
+                ty_name,
                 variants,
             }
             .into(),

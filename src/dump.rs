@@ -1,6 +1,6 @@
 //! Implements dumping the AST nodes back as LibSL source text.
 //!
-//! The AST built by [parsing](LibSL::parse_file) can always by converted to a syntactically correct
+//! The AST built by [parsing](LibSl::parse_file) can always by converted to a syntactically correct
 //! LibSL source. However, the module performs no additional checks to ensure that, and invalid text
 //! may still be emitted if you, for instance, put an illegal identifier as the name for a type or
 //! insert a wrong node into the AST (such as a state declaration in the global scope).
@@ -10,6 +10,32 @@ use std::fmt::{self, Display, Write as _};
 use crate::{DeclId, LibSl, ast};
 
 const INDENT: &str = "    ";
+
+macro_rules! make_display_struct {
+    ($name:ident { $field:ident } for $ast:ty) => {
+        impl $ast {
+            #[doc = concat!(
+                "Returns an object that implements [Display] to convert the [",
+                stringify!($ast),
+                "] back to LibSL source text.",
+            )]
+            pub fn display<'a>(&'a self, libsl: &'a LibSl) -> $name<'a> {
+                $name { $field: self, libsl }
+            }
+        }
+
+        #[doc = concat!(
+            "A helper struct that writes the [",
+            stringify!($ast),
+            "] out as LibSL source text."
+        )]
+        #[derive(Debug, Clone, Copy)]
+        pub struct $name<'a> {
+            $field: &'a $ast,
+            libsl: &'a LibSl,
+        }
+    };
+}
 
 /// A wrapper [writer](fmt::Write) type that indents all lines written to the inner writer.
 ///
@@ -71,12 +97,29 @@ impl<W: fmt::Write> fmt::Write for IndentedWriter<'_, W> {
 
 /// A wrapper type that formats a string by enclosing it in double quotes and escaping characters if
 /// necessary according to LibSL's rules.
+///
+/// If the string contains a `\n` or a `\r` character, the result will not be a legal LibSL string.
 #[derive(Debug, Clone, Copy)]
 pub struct QuotedString<'a>(&'a str);
 
 impl Display for QuotedString<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        write!(f, "\"")?;
+
+        let mut remaining = self.0;
+
+        while !remaining.is_empty() {
+            if let Some((s, rest)) = remaining.split_once('"') {
+                write!(f, "{s}\\\"")?;
+                remaining = rest;
+            } else {
+                write!(f, "{remaining}")?;
+
+                break;
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -89,24 +132,19 @@ pub struct Identifier<'a>(&'a str);
 
 impl Display for Identifier<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        let needs_escaping = self.0.chars().enumerate().any(|(idx, c)| {
+            !c.is_ascii_alphabetic() && !"_$".contains(c) && (idx == 0 || !c.is_ascii_digit())
+        });
+
+        if needs_escaping {
+            write!(f, "`{}`", self.0)
+        } else {
+            write!(f, "{}", self.0)
+        }
     }
 }
 
-impl ast::File {
-    /// Returns an object that implements [Display] to convert the [ast::File] back to LibSL source
-    /// text.
-    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> FileDisplay<'a> {
-        FileDisplay { f: self, libsl }
-    }
-}
-
-/// A helper struct that writes the [ast::File] out as LibSL source text.
-#[derive(Debug, Clone, Copy)]
-pub struct FileDisplay<'a> {
-    f: &'a ast::File,
-    libsl: &'a LibSl,
-}
+make_display_struct!(FileDisplay { f } for ast::File);
 
 enum GlobalDeclDisplay<'a> {
     Decl { d: &'a ast::Decl, libsl: &'a LibSl },
@@ -209,20 +247,7 @@ impl Display for FileDisplay<'_> {
     }
 }
 
-impl ast::Header {
-    /// Returns an object that implements [Display] to convert the [ast::Header] back to LibSL
-    /// source text.
-    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> HeaderDisplay<'a> {
-        HeaderDisplay { h: self, libsl }
-    }
-}
-
-/// A helper struct that writes the [ast::Header] out as LibSL source text.
-#[derive(Debug, Clone, Copy)]
-pub struct HeaderDisplay<'a> {
-    h: &'a ast::Header,
-    libsl: &'a LibSl,
-}
+make_display_struct!(HeaderDisplay { h } for ast::Header);
 
 impl Display for HeaderDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -245,20 +270,7 @@ impl Display for HeaderDisplay<'_> {
     }
 }
 
-impl ast::Decl {
-    /// Returns an object that implements [Display] to convert the [ast::Decl] back to LibSL source
-    /// text.
-    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> DeclDisplay<'a> {
-        DeclDisplay { d: self, libsl }
-    }
-}
-
-/// A helper struct that writes the [ast::Decl] out as LibSL source text.
-#[derive(Debug, Clone, Copy)]
-pub struct DeclDisplay<'a> {
-    d: &'a ast::Decl,
-    libsl: &'a LibSl,
-}
+make_display_struct!(DeclDisplay { d } for ast::Decl);
 
 impl Display for DeclDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -284,20 +296,7 @@ impl Display for DeclDisplay<'_> {
     }
 }
 
-impl ast::DeclImport {
-    /// Returns an object that implements [Display] to convert the [ast::DeclImport] back to LibSL
-    /// source text.
-    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> DeclImportDisplay<'a> {
-        DeclImportDisplay { d: self, libsl }
-    }
-}
-
-/// A helper struct that writes the [ast::DeclImport] out as LibSL source text.
-#[derive(Debug, Clone, Copy)]
-pub struct DeclImportDisplay<'a> {
-    d: &'a ast::DeclImport,
-    libsl: &'a LibSl,
-}
+make_display_struct!(DeclImportDisplay { d } for ast::DeclImport);
 
 impl Display for DeclImportDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -305,20 +304,7 @@ impl Display for DeclImportDisplay<'_> {
     }
 }
 
-impl ast::DeclInclude {
-    /// Returns an object that implements [Display] to convert the [ast::DeclInclude] back to LibSL
-    /// source text.
-    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> DeclIncludeDisplay<'a> {
-        DeclIncludeDisplay { d: self, libsl }
-    }
-}
-
-/// A helper struct that writes the [ast::DeclInclude] out as LibSL source text.
-#[derive(Debug, Clone, Copy)]
-pub struct DeclIncludeDisplay<'a> {
-    d: &'a ast::DeclInclude,
-    libsl: &'a LibSl,
-}
+make_display_struct!(DeclIncludeDisplay { d } for ast::DeclInclude);
 
 impl Display for DeclIncludeDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -326,20 +312,7 @@ impl Display for DeclIncludeDisplay<'_> {
     }
 }
 
-impl ast::DeclSemanticTy {
-    /// Returns an object that implements [Display] to convert the [ast::DeclSemanticTy] back to
-    /// LibSL source text.
-    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> DeclSemanticTyDisplay<'a> {
-        DeclSemanticTyDisplay { d: self, libsl }
-    }
-}
-
-/// A helper struct that writes the [ast::DeclSemanticTy] out as LibSL source text.
-#[derive(Debug, Clone, Copy)]
-pub struct DeclSemanticTyDisplay<'a> {
-    d: &'a ast::DeclSemanticTy,
-    libsl: &'a LibSl,
-}
+make_display_struct!(DeclSemanticTyDisplay { d } for ast::DeclSemanticTy);
 
 impl Display for DeclSemanticTyDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -379,20 +352,7 @@ impl Display for DeclSemanticTyDisplay<'_> {
     }
 }
 
-impl ast::DeclTyAlias {
-    /// Returns an object that implements [Display] to convert the [ast::DeclTyAlias] back to LibSL
-    /// source text.
-    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> DeclTyAliasDisplay<'a> {
-        DeclTyAliasDisplay { d: self, libsl }
-    }
-}
-
-/// A helper struct that writes the [ast::DeclTyAlias] out as LibSL source text.
-#[derive(Debug, Clone, Copy)]
-pub struct DeclTyAliasDisplay<'a> {
-    d: &'a ast::DeclTyAlias,
-    libsl: &'a LibSl,
-}
+make_display_struct!(DeclTyAliasDisplay { d } for ast::DeclTyAlias);
 
 impl Display for DeclTyAliasDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -409,20 +369,7 @@ impl Display for DeclTyAliasDisplay<'_> {
     }
 }
 
-impl ast::DeclStruct {
-    /// Returns an object that implements [Display] to convert the [ast::DeclStruct] back to LibSL
-    /// source text.
-    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> DeclStructDisplay<'a> {
-        DeclStructDisplay { d: self, libsl }
-    }
-}
-
-/// A helper struct that writes the [ast::DeclStruct] out as LibSL source text.
-#[derive(Debug, Clone, Copy)]
-pub struct DeclStructDisplay<'a> {
-    d: &'a ast::DeclStruct,
-    libsl: &'a LibSl,
-}
+make_display_struct!(DeclStructDisplay { d } for ast::DeclStruct);
 
 impl Display for DeclStructDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -486,20 +433,7 @@ impl Display for DeclStructDisplay<'_> {
     }
 }
 
-impl ast::DeclEnum {
-    /// Returns an object that implements [Display] to convert the [ast::DeclEnum] back to LibSL
-    /// source text.
-    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> DeclEnumDisplay<'a> {
-        DeclEnumDisplay { d: self, libsl }
-    }
-}
-
-/// A helper struct that writes the [ast::DeclEnum] out as LibSL source text.
-#[derive(Debug, Clone, Copy)]
-pub struct DeclEnumDisplay<'a> {
-    d: &'a ast::DeclEnum,
-    libsl: &'a LibSl,
-}
+make_display_struct!(DeclEnumDisplay { d } for ast::DeclEnum);
 
 impl Display for DeclEnumDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -522,27 +456,14 @@ impl Display for DeclEnumDisplay<'_> {
     }
 }
 
-impl ast::DeclAnnotation {
-    /// Returns an object that implements [Display] to convert the [ast::DeclAnnotation] back to
-    /// LibSL source text.
-    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> DeclAnnotationDisplay<'a> {
-        DeclAnnotationDisplay { d: self, libsl }
-    }
-}
-
-/// A helper struct that writes the [ast::DeclAnnotation] out as LibSL source text.
-#[derive(Debug, Clone, Copy)]
-pub struct DeclAnnotationDisplay<'a> {
-    d: &'a ast::DeclAnnotation,
-    libsl: &'a LibSl,
-}
+make_display_struct!(DeclAnnotationDisplay { d } for ast::DeclAnnotation);
 
 impl Display for DeclAnnotationDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "annotation {}(", self.d.name.display(self.libsl))?;
 
         if !self.d.params.is_empty() {
-            writeln!(f);
+            writeln!(f)?;
         }
 
         for param in &self.d.params {
@@ -558,20 +479,7 @@ impl Display for DeclAnnotationDisplay<'_> {
     }
 }
 
-impl ast::DeclAction {
-    /// Returns an object that implements [Display] to convert the [ast::DeclAction] back to LibSL
-    /// source text.
-    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> DeclActionDisplay<'a> {
-        DeclActionDisplay { d: self, libsl }
-    }
-}
-
-/// A helper struct that writes the [ast::DeclAction] out as LibSL source text.
-#[derive(Debug, Clone, Copy)]
-pub struct DeclActionDisplay<'a> {
-    d: &'a ast::DeclAction,
-    libsl: &'a LibSl,
-}
+make_display_struct!(DeclActionDisplay { d } for ast::DeclAction);
 
 impl Display for DeclActionDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -636,20 +544,7 @@ impl Display for DeclActionDisplay<'_> {
     }
 }
 
-impl ast::DeclAutomaton {
-    /// Returns an object that implements [Display] to convert the [ast::DeclAutomaton] back to
-    /// LibSL source text.
-    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> DeclAutomatonDisplay<'a> {
-        DeclAutomatonDisplay { d: self, libsl }
-    }
-}
-
-/// A helper struct that writes the [ast::DeclAutomaton] out as LibSL source text.
-#[derive(Debug, Clone, Copy)]
-pub struct DeclAutomatonDisplay<'a> {
-    d: &'a ast::DeclAutomaton,
-    libsl: &'a LibSl,
-}
+make_display_struct!(DeclAutomatonDisplay { d } for ast::DeclAutomaton);
 
 impl Display for DeclAutomatonDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -657,20 +552,7 @@ impl Display for DeclAutomatonDisplay<'_> {
     }
 }
 
-impl ast::DeclFunction {
-    /// Returns an object that implements [Display] to convert the [ast::DeclFunction] back to LibSL
-    /// source text.
-    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> DeclFunctionDisplay<'a> {
-        DeclFunctionDisplay { d: self, libsl }
-    }
-}
-
-/// A helper struct that writes the [ast::DeclFunction] out as LibSL source text.
-#[derive(Debug, Clone, Copy)]
-pub struct DeclFunctionDisplay<'a> {
-    d: &'a ast::DeclFunction,
-    libsl: &'a LibSl,
-}
+make_display_struct!(DeclFunctionDisplay { d } for ast::DeclFunction);
 
 impl Display for DeclFunctionDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -678,20 +560,7 @@ impl Display for DeclFunctionDisplay<'_> {
     }
 }
 
-impl ast::DeclVariable {
-    /// Returns an object that implements [Display] to convert the [ast::DeclVariable] back to LibSL
-    /// source text.
-    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> DeclVariableDisplay<'a> {
-        DeclVariableDisplay { d: self, libsl }
-    }
-}
-
-/// A helper struct that writes the [ast::DeclVariable] out as LibSL source text.
-#[derive(Debug, Clone, Copy)]
-pub struct DeclVariableDisplay<'a> {
-    d: &'a ast::DeclVariable,
-    libsl: &'a LibSl,
-}
+make_display_struct!(DeclVariableDisplay { d } for ast::DeclVariable);
 
 impl Display for DeclVariableDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -699,20 +568,7 @@ impl Display for DeclVariableDisplay<'_> {
     }
 }
 
-impl ast::DeclState {
-    /// Returns an object that implements [Display] to convert the [ast::DeclState] back to LibSL
-    /// source text.
-    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> DeclStateDisplay<'a> {
-        DeclStateDisplay { d: self, libsl }
-    }
-}
-
-/// A helper struct that writes the [ast::DeclState] out as LibSL source text.
-#[derive(Debug, Clone, Copy)]
-pub struct DeclStateDisplay<'a> {
-    d: &'a ast::DeclState,
-    libsl: &'a LibSl,
-}
+make_display_struct!(DeclStateDisplay { d } for ast::DeclState);
 
 impl Display for DeclStateDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -720,20 +576,7 @@ impl Display for DeclStateDisplay<'_> {
     }
 }
 
-impl ast::DeclShift {
-    /// Returns an object that implements [Display] to convert the [ast::DeclShift] back to LibSL
-    /// source text.
-    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> DeclShiftDisplay<'a> {
-        DeclShiftDisplay { d: self, libsl }
-    }
-}
-
-/// A helper struct that writes the [ast::DeclShift] out as LibSL source text.
-#[derive(Debug, Clone, Copy)]
-pub struct DeclShiftDisplay<'a> {
-    d: &'a ast::DeclShift,
-    libsl: &'a LibSl,
-}
+make_display_struct!(DeclShiftDisplay { d } for ast::DeclShift);
 
 impl Display for DeclShiftDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -741,20 +584,7 @@ impl Display for DeclShiftDisplay<'_> {
     }
 }
 
-impl ast::DeclConstructor {
-    /// Returns an object that implements [Display] to convert the [ast::DeclConstructor] back to
-    /// LibSL source text.
-    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> DeclConstructorDisplay<'a> {
-        DeclConstructorDisplay { d: self, libsl }
-    }
-}
-
-/// A helper struct that writes the [ast::DeclConstructor] out as LibSL source text.
-#[derive(Debug, Clone, Copy)]
-pub struct DeclConstructorDisplay<'a> {
-    d: &'a ast::DeclConstructor,
-    libsl: &'a LibSl,
-}
+make_display_struct!(DeclConstructorDisplay { d } for ast::DeclConstructor);
 
 impl Display for DeclConstructorDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -762,20 +592,7 @@ impl Display for DeclConstructorDisplay<'_> {
     }
 }
 
-impl ast::DeclDestructor {
-    /// Returns an object that implements [Display] to convert the [ast::DeclDestructor] back to
-    /// LibSL source text.
-    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> DeclDestructorDisplay<'a> {
-        DeclDestructorDisplay { d: self, libsl }
-    }
-}
-
-/// A helper struct that writes the [ast::DeclDestructor] out as LibSL source text.
-#[derive(Debug, Clone, Copy)]
-pub struct DeclDestructorDisplay<'a> {
-    d: &'a ast::DeclDestructor,
-    libsl: &'a LibSl,
-}
+make_display_struct!(DeclDestructorDisplay { d } for ast::DeclDestructor);
 
 impl Display for DeclDestructorDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -783,20 +600,7 @@ impl Display for DeclDestructorDisplay<'_> {
     }
 }
 
-impl ast::DeclProc {
-    /// Returns an object that implements [Display] to convert the [ast::DeclProc] back to LibSL
-    /// source text.
-    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> DeclProcDisplay<'a> {
-        DeclProcDisplay { d: self, libsl }
-    }
-}
-
-/// A helper struct that writes the [ast::DeclProc] out as LibSL source text.
-#[derive(Debug, Clone, Copy)]
-pub struct DeclProcDisplay<'a> {
-    d: &'a ast::DeclProc,
-    libsl: &'a LibSl,
-}
+make_display_struct!(DeclProcDisplay { d } for ast::DeclProc);
 
 impl Display for DeclProcDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -804,20 +608,7 @@ impl Display for DeclProcDisplay<'_> {
     }
 }
 
-impl ast::TyExpr {
-    /// Returns an object that implements [Display] to convert the [ast::TyExpr] back to LibSL
-    /// source text.
-    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> TyExprDisplay<'a> {
-        TyExprDisplay { t: self, libsl }
-    }
-}
-
-/// A helper struct that writes the [ast::TyExpr] out as LibSL source text.
-#[derive(Debug, Clone, Copy)]
-pub struct TyExprDisplay<'a> {
-    t: &'a ast::TyExpr,
-    libsl: &'a LibSl,
-}
+make_display_struct!(TyExprDisplay { t } for ast::TyExpr);
 
 impl Display for TyExprDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -825,20 +616,7 @@ impl Display for TyExprDisplay<'_> {
     }
 }
 
-impl ast::Expr {
-    /// Returns an object that implements [Display] to convert the [ast::Expr] back to LibSL source
-    /// text.
-    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> ExprDisplay<'a> {
-        ExprDisplay { e: self, libsl }
-    }
-}
-
-/// A helper struct that writes the [ast::Expr] out as LibSL source text.
-#[derive(Debug, Clone, Copy)]
-pub struct ExprDisplay<'a> {
-    e: &'a ast::Expr,
-    libsl: &'a LibSl,
-}
+make_display_struct!(ExprDisplay { e } for ast::Expr);
 
 impl Display for ExprDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -846,19 +624,7 @@ impl Display for ExprDisplay<'_> {
     }
 }
 
-impl ast::Annotation {
-    /// Returns an object that implements [Display] to convert the [ast::Annotation] back to LibSL
-    /// source text.
-    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> AnnotationDisplay<'a> {
-        AnnotationDisplay { a: self, libsl }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct AnnotationDisplay<'a> {
-    a: &'a ast::Annotation,
-    libsl: &'a LibSl,
-}
+make_display_struct!(AnnotationDisplay { a } for ast::Annotation);
 
 impl Display for AnnotationDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -904,19 +670,7 @@ impl Display for GenericsDisplay<'_> {
     }
 }
 
-impl ast::Generic {
-    /// Returns an object that implements [Display] to convert the [ast::Generic] back to LibSL
-    /// source text.
-    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> GenericDisplay<'a> {
-        GenericDisplay { g: self, libsl }
-    }
-}
-
-/// A helper struct that writes the [ast::Generic] out as LibSL source text.
-pub struct GenericDisplay<'a> {
-    g: &'a ast::Generic,
-    libsl: &'a LibSl,
-}
+make_display_struct!(GenericDisplay { g } for ast::Generic);
 
 impl Display for GenericDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -924,20 +678,7 @@ impl Display for GenericDisplay<'_> {
     }
 }
 
-impl ast::TyConstraint {
-    /// Returns an object that implements [Display] to convert the [ast::TyConstraint] back to LibSL
-    /// source text.
-    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> TyConstraintDisplay<'a> {
-        TyConstraintDisplay { t: self, libsl }
-    }
-}
-
-/// A helper struct that writes the [ast::QualifiedTyName] out as LibSL source text.
-#[derive(Debug, Clone, Copy)]
-pub struct TyConstraintDisplay<'a> {
-    t: &'a ast::TyConstraint,
-    libsl: &'a LibSl,
-}
+make_display_struct!(TyConstraintDisplay { t } for ast::TyConstraint);
 
 impl Display for TyConstraintDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -951,20 +692,7 @@ impl Display for ast::IntLit {
     }
 }
 
-impl ast::QualifiedTyName {
-    /// Returns an object that implements [Display] to convert the [ast::QualifiedTyName] back to
-    /// LibSL source text.
-    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> QualifiedTyNameDisplay<'a> {
-        QualifiedTyNameDisplay { t: self, libsl }
-    }
-}
-
-/// A helper struct that writes the [ast::QualifiedTyName] out as LibSL source text.
-#[derive(Debug, Clone, Copy)]
-pub struct QualifiedTyNameDisplay<'a> {
-    t: &'a ast::QualifiedTyName,
-    libsl: &'a LibSl,
-}
+make_display_struct!(QualifiedTyNameDisplay { t } for ast::QualifiedTyName);
 
 impl Display for QualifiedTyNameDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -972,20 +700,7 @@ impl Display for QualifiedTyNameDisplay<'_> {
     }
 }
 
-impl ast::Name {
-    /// Returns an object that implements [Display] to convert the [ast::Name] back to LibSL source
-    /// text.
-    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> NameDisplay<'a> {
-        NameDisplay { n: self, libsl }
-    }
-}
-
-/// A helper struct that writes the [ast::Name] out as LibSL source text.
-#[derive(Debug, Clone, Copy)]
-pub struct NameDisplay<'a> {
-    n: &'a ast::Name,
-    libsl: &'a LibSl,
-}
+make_display_struct!(NameDisplay { n } for ast::Name);
 
 impl Display for NameDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

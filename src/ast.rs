@@ -251,7 +251,7 @@ pub struct DeclFunction {
     pub is_static: bool,
 
     /// If present, signifies an extension function for an automaton with the specified name.
-    pub extension_for: Option<Name>,
+    pub extension_for: Option<FullName>,
 
     pub is_method: bool,
     pub name: Name,
@@ -438,7 +438,7 @@ pub struct AnnotationArg {
 /// A type name qualified with type parameter declarations.
 #[derive(Debug, Clone)]
 pub struct QualifiedTyName {
-    pub ty_name: Name,
+    pub ty_name: FullName,
     pub generics: Vec<Generic>,
 }
 
@@ -447,6 +447,12 @@ pub struct QualifiedTyName {
 pub struct Name {
     pub loc: Loc,
     pub name: String,
+}
+
+/// A full name to an entity, consisting of several components separated with a period.
+#[derive(Debug, Clone)]
+pub struct FullName {
+    pub components: Vec<Name>,
 }
 
 /// A constraint on a type parameter.
@@ -524,7 +530,7 @@ pub struct TyExprPrimitiveLit {
 /// A type name expression.
 #[derive(Debug, Clone)]
 pub struct TyExprName {
-    pub name: Name,
+    pub ty_name: FullName,
     pub generics: Vec<TyArg>,
 }
 
@@ -748,7 +754,7 @@ pub struct ExprActionCall {
 #[derive(Debug, Clone)]
 pub struct ExprInstantiate {
     /// The name of an automaton.
-    pub name: Name,
+    pub name: FullName,
 
     pub generics: Vec<TyArg>,
     pub args: Vec<ConstructorArg>,

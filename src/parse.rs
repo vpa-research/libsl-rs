@@ -1939,7 +1939,9 @@ impl<'a> AstConstructor<'a> {
         let ty_name = self.process_identifier(ctx)?;
 
         Ok(ast::QualifiedTyName {
-            ty_name,
+            ty_name: ast::FullName {
+                components: vec![ty_name],
+            },
             generics: vec![],
         })
     }
@@ -1951,7 +1953,7 @@ impl<'a> AstConstructor<'a> {
         let name_ctx = ctx.typeIdentifierName().unwrap();
 
         let ty_expr = if let Some(name_ctx) = name_ctx.periodSeparatedFullName() {
-            let name = self.process_period_separated_full_name(&name_ctx)?;
+            let ty_name = self.process_period_separated_full_name(&name_ctx)?;
 
             let generics = ctx
                 .generic()
@@ -1964,7 +1966,7 @@ impl<'a> AstConstructor<'a> {
             self.libsl.ty_exprs.insert_with_key(|id| ast::TyExpr {
                 id,
                 loc,
-                kind: ast::TyExprName { name, generics }.into(),
+                kind: ast::TyExprName { ty_name, generics }.into(),
             })
         } else if let Some(lit_ctx) = name_ctx.primitiveLiteral() {
             let lit = self.process_primitive_lit(&lit_ctx)?;
@@ -2004,7 +2006,7 @@ impl<'a> AstConstructor<'a> {
     fn process_period_separated_full_name(
         &mut self,
         ctx: &PeriodSeparatedFullNameContextAll<'_>,
-    ) -> Result<ast::Name> {
+    ) -> Result<ast::FullName> {
         if let Some(token) = &ctx.UNBOUNDED() {
             return Err(ParseError::Syntax {
                 line: token.symbol.line,
@@ -2013,20 +2015,13 @@ impl<'a> AstConstructor<'a> {
             });
         }
 
-        let mut name = String::new();
+        let components = ctx
+            .Identifier_all()
+            .into_iter()
+            .map(|id| self.process_identifier(&id))
+            .collect::<Result<Vec<_>>>()?;
 
-        for (idx, token) in ctx.Identifier_all().into_iter().enumerate() {
-            if idx > 0 {
-                name.push('.');
-            }
-
-            name.push_str(&parse_ident(&token.symbol));
-        }
-
-        Ok(ast::Name {
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
-            name,
-        })
+        Ok(ast::FullName { components })
     }
 
     fn process_period_separated_full_name_as_qualified_ty_name(
@@ -2039,6 +2034,31 @@ impl<'a> AstConstructor<'a> {
             ty_name,
             generics: vec![],
         })
+    }
+
+    fn process_period_separated_full_name_as_plain_name(
+        &mut self,
+        ctx: &PeriodSeparatedFullNameContextAll<'_>,
+    ) -> Result<ast::Name> {
+        if let Some(token) = &ctx.UNBOUNDED() {
+            return Err(ParseError::Syntax {
+                line: token.symbol.line,
+                column: token.symbol.column,
+                msg: "unexpected token `?`".into(),
+            });
+        }
+
+        if let Some(token) = ctx.DOT(0) {
+            return Err(ParseError::Syntax {
+                line: token.symbol.line,
+                column: token.symbol.column,
+                msg: "unexpected token `.`".into(),
+            });
+        }
+
+        let id = ctx.Identifier(0).unwrap();
+
+        self.process_identifier(&id)
     }
 
     fn process_identifier(&mut self, ctx: &Terminal<'_>) -> Result<ast::Name> {
@@ -2227,7 +2247,7 @@ impl<'a> AstConstructor<'a> {
                 let name_ctx = ty_ident.name.as_ref().unwrap();
 
                 let name = if let Some(name) = name_ctx.periodSeparatedFullName() {
-                    self.process_period_separated_full_name(&name)?
+                    self.process_period_separated_full_name_as_plain_name(&name)?
                 } else if let Some(lit) = name_ctx.primitiveLiteral() {
                     return Err(ParseError::Syntax {
                         line: lit.start().line,

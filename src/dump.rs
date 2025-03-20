@@ -7,7 +7,7 @@
 
 use std::fmt::{self, Display, Write as _};
 
-use crate::{DeclId, LibSl, ast};
+use crate::{ast, DeclId, LibSl, StmtId};
 
 const INDENT: &str = "    ";
 
@@ -98,6 +98,49 @@ impl<W: fmt::Write> fmt::Write for IndentedWriter<'_, W> {
     }
 }
 
+fn display_list<W: fmt::Write, F>(
+    w: &mut W,
+    (left, sep, right): (&str, &str, &str),
+    blank_line_between_items: bool,
+    trailing_sep: bool,
+    mut items: impl Iterator<Item = F>,
+) -> fmt::Result
+where
+    F: FnOnce(&mut dyn fmt::Write) -> fmt::Result,
+{
+    write!(w, "{left}")?;
+
+    {
+        let mut w = IndentedWriter::new(INDENT, w);
+        let mut next_item = items.next();
+        let mut first = true;
+
+        if next_item.is_some() {
+            writeln!(w)?;
+        }
+
+        while let Some(item) = next_item {
+            next_item = items.next();
+
+            if first {
+                first = false;
+            } else if blank_line_between_items {
+                writeln!(w)?;
+            }
+
+            item(&mut w)?;
+
+            if next_item.is_some() || trailing_sep {
+                writeln!(w, "{sep}")?;
+            } else {
+                writeln!(w)?;
+            }
+        }
+    }
+
+    write!(w, "{right}")
+}
+
 /// A wrapper type that formats a string by enclosing it in double quotes and escaping characters if
 /// necessary according to LibSL's rules.
 ///
@@ -171,21 +214,18 @@ struct SemanticTyGroupDisplay<'a> {
 
 impl Display for SemanticTyGroupDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "types {{")?;
-
-        {
-            let mut f = IndentedWriter::new(INDENT, f);
-
-            for (idx, &decl_id) in self.decls.iter().enumerate() {
-                if idx > 0 {
-                    writeln!(f)?;
+        writeln!(f, "types ")?;
+        display_list(
+            f,
+            ("{", "", "}"),
+            true,
+            false,
+            self.decls.iter().map(|&decl_id| {
+                move |f: &mut dyn fmt::Write| {
+                    write!(f, "{}", self.libsl.decls[decl_id].display(self.libsl))
                 }
-
-                writeln!(f, "{}", self.libsl.decls[decl_id].display(self.libsl))?;
-            }
-        }
-
-        write!(f, "}}")
+            }),
+        )
     }
 }
 
@@ -334,22 +374,23 @@ impl Display for DeclSemanticTyDisplay<'_> {
             ast::SemanticTyKind::Simple => write!(f, ";"),
 
             ast::SemanticTyKind::Enumerated(values) => {
-                writeln!(f, " {{")?;
-
-                {
-                    let mut f = IndentedWriter::new(INDENT, f);
-
-                    for entry in values {
-                        writeln!(
-                            f,
-                            "{name}: {value};",
-                            name = entry.name.display(self.libsl),
-                            value = self.libsl.exprs[entry.expr].display(self.libsl),
-                        )?;
-                    }
-                }
-
-                write!(f, "}}")
+                writeln!(f, " ")?;
+                display_list(
+                    f,
+                    ("{", ";", "}"),
+                    false,
+                    true,
+                    values.iter().map(|entry| {
+                        move |f: &mut dyn fmt::Write| {
+                            write!(
+                                f,
+                                "{name}: {value}",
+                                name = entry.name.display(self.libsl),
+                                value = self.libsl.exprs[entry.expr].display(self.libsl),
+                            )
+                        }
+                    }),
+                )
             }
         }
     }
@@ -416,20 +457,22 @@ impl Display for DeclStructDisplay<'_> {
                 && self.d.for_tys.is_empty()
                 && self.d.ty_constraints.is_empty()
             {
-                writeln!(f, " {{")?;
+                write!(f, " ")?;
             } else {
-                writeln!(f, "\n{{")?;
+                writeln!(f)?;
             }
 
-            {
-                let mut f = IndentedWriter::new(INDENT, f);
-
-                for &decl_id in &self.d.decls {
-                    writeln!(f, "{}", self.libsl.decls[decl_id].display(self.libsl))?;
-                }
-            }
-
-            write!(f, "}}")?;
+            display_list(
+                f,
+                ("{", "", "}"),
+                true,
+                false,
+                self.d.decls.iter().map(|&decl_id| {
+                    move |f: &mut dyn fmt::Write| {
+                        write!(f, "{}", self.libsl.decls[decl_id].display(self.libsl))
+                    }
+                }),
+            )?;
         }
 
         Ok(())
@@ -444,18 +487,24 @@ impl Display for DeclEnumDisplay<'_> {
             writeln!(f, "{}", annotation.display(self.libsl))?;
         }
 
-        write!(f, "enum {} {{", self.d.ty_name.display(self.libsl))?;
+        write!(f, "enum {} ", self.d.ty_name.display(self.libsl))?;
 
-        for variant in &self.d.variants {
-            write!(
-                f,
-                "\n{INDENT}{name} = {value};",
-                name = variant.name.display(self.libsl),
-                value = variant.value,
-            )?;
-        }
-
-        write!(f, "}}")
+        display_list(
+            f,
+            ("{", ";", "}"),
+            false,
+            true,
+            self.d.variants.iter().map(|variant| {
+                move |f: &mut dyn fmt::Write| {
+                    write!(
+                        f,
+                        "{name} = {value}",
+                        name = variant.name.display(self.libsl),
+                        value = variant.value,
+                    )
+                }
+            }),
+        )
     }
 }
 
@@ -463,22 +512,26 @@ make_display_struct!(DeclAnnotationDisplay { d } for ast::DeclAnnotation);
 
 impl Display for DeclAnnotationDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "annotation {}(", self.d.name.display(self.libsl))?;
+        write!(f, "annotation {}", self.d.name.display(self.libsl))?;
 
-        if !self.d.params.is_empty() {
-            writeln!(f)?;
-        }
+        display_list(
+            f,
+            ("(", ",", ")"),
+            false,
+            true,
+            self.d.params.iter().map(|param| {
+                move |f: &mut dyn fmt::Write| {
+                    write!(
+                        f,
+                        "{name}: {ty_expr}",
+                        name = param.name.display(self.libsl),
+                        ty_expr = self.libsl.ty_exprs[param.ty_expr].display(self.libsl),
+                    )
+                }
+            }),
+        )?;
 
-        for param in &self.d.params {
-            writeln!(
-                f,
-                "{INDENT}{name}: {ty_expr},",
-                name = param.name.display(self.libsl),
-                ty_expr = self.libsl.ty_exprs[param.ty_expr].display(self.libsl),
-            )?;
-        }
-
-        write!(f, ");")
+        write!(f, ";")
     }
 }
 
@@ -503,26 +556,28 @@ impl Display for DeclActionDisplay<'_> {
             )?;
         }
 
-        write!(f, "{}(", self.d.name.display(self.libsl))?;
+        write!(f, "{}", self.d.name.display(self.libsl))?;
 
-        if !self.d.params.is_empty() {
-            writeln!(f)?;
-        }
+        display_list(
+            f,
+            ("(", ",", ")"),
+            false,
+            true,
+            self.d.params.iter().map(|param| {
+                move |f: &mut dyn fmt::Write| {
+                    for annotation in &self.d.annotations {
+                        writeln!(f, "{}", annotation.display(self.libsl))?;
+                    }
 
-        for param in &self.d.params {
-            for annotation in &self.d.annotations {
-                writeln!(f, "{}", annotation.display(self.libsl))?;
-            }
-
-            writeln!(
-                f,
-                "{INDENT}{name}: {ty_expr}",
-                name = param.name.display(self.libsl),
-                ty_expr = self.libsl.ty_exprs[param.ty_expr].display(self.libsl),
-            )?;
-        }
-
-        write!(f, ")")?;
+                    writeln!(
+                        f,
+                        "{INDENT}{name}: {ty_expr}",
+                        name = param.name.display(self.libsl),
+                        ty_expr = self.libsl.ty_exprs[param.ty_expr].display(self.libsl),
+                    )
+                }
+            }),
+        )?;
 
         if let Some(ty_expr_id) = self.d.ret_ty_expr {
             write!(
@@ -564,17 +619,17 @@ impl Display for DeclAutomatonDisplay<'_> {
         write!(f, "{}", self.d.name.display(self.libsl))?;
 
         if !self.d.constructor_variables.is_empty() {
-            writeln!(f, "(")?;
-
-            {
-                let mut f = IndentedWriter::new(INDENT, f);
-
-                for &decl_id in &self.d.constructor_variables {
-                    writeln!(f, "{},", self.libsl.decls[decl_id].display(self.libsl))?;
-                }
-            }
-
-            write!(f, ")")?;
+            display_list(
+                f,
+                ("(", ",", ")"),
+                false,
+                true,
+                self.d.constructor_variables.iter().map(|&decl_id| {
+                    move |f: &mut dyn fmt::Write| {
+                        write!(f, "{}", self.libsl.decls[decl_id].display(self.libsl))
+                    }
+                }),
+            )?;
         }
 
         write!(
@@ -601,18 +656,17 @@ impl Display for DeclAutomatonDisplay<'_> {
             writeln!(f)?;
         }
 
-        write!(f, "{{")?;
-
-        {
-            let mut f = IndentedWriter::new(INDENT, f);
-
-            for &decl_id in &self.d.decls {
-                writeln!(f)?;
-                writeln!(f, "{}", self.libsl.decls[decl_id].display(self.libsl))?;
-            }
-        }
-
-        write!(f, "}}")
+        display_list(
+            f,
+            ("{", "", "}"),
+            true,
+            false,
+            self.d.decls.iter().map(|&decl_id| {
+                move |f: &mut dyn fmt::Write| {
+                    write!(f, "{}", self.libsl.decls[decl_id].display(self.libsl))
+                }
+            }),
+        )
     }
 }
 
@@ -651,26 +705,15 @@ impl Display for DeclFunctionDisplay<'_> {
             )?;
         }
 
-        write!(f, "(")?;
-
-        {
-            let mut f = IndentedWriter::new(INDENT, f);
-
-            for (idx, param) in self.d.params.iter().enumerate() {
-                writeln!(
-                    f,
-                    "{}{}",
-                    param.display(self.libsl),
-                    if idx + 1 == self.d.params.len() {
-                        ""
-                    } else {
-                        ","
-                    }
-                )?;
-            }
-        }
-
-        write!(f, ")")?;
+        display_list(
+            f,
+            ("(", ",", ")"),
+            false,
+            false,
+            self.d.params.iter().map(|param| {
+                move |f: &mut dyn fmt::Write| write!(f, "{}", param.display(self.libsl))
+            }),
+        )?;
 
         if let Some(ty_expr_id) = self.d.ret_ty_expr {
             write!(
@@ -786,29 +829,35 @@ make_display_struct!(FunctionBodyDisplay { b } for ast::FunctionBody);
 
 impl Display for FunctionBodyDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{{")?;
-
-        if !self.b.contracts.is_empty() || !self.b.stmts.is_empty() {
-            writeln!(f)?;
+        enum Item<'a> {
+            Contract(&'a ast::Contract),
+            Empty,
+            Stmt(StmtId),
         }
 
-        {
-            let mut f = IndentedWriter::new(INDENT, f);
-
-            for contract in &self.b.contracts {
-                writeln!(f, "{}", contract.display(self.libsl))?;
-            }
-
-            if !self.b.contracts.is_empty() && !self.b.stmts.is_empty() {
-                writeln!(f)?;
-            }
-
-            for &stmt_id in &self.b.stmts {
-                writeln!(f, "{}", self.libsl.stmts[stmt_id].display(self.libsl))?;
-            }
-        }
-
-        write!(f, "}}")
+        display_list(
+            f,
+            ("{", "", "}"),
+            false,
+            false,
+            self.b
+                .contracts
+                .iter()
+                .map(Item::Contract)
+                .chain(
+                    (self.b.contracts.is_empty() && self.b.stmts.is_empty()).then_some(Item::Empty),
+                )
+                .chain(self.b.stmts.iter().copied().map(Item::Stmt))
+                .map(|item| {
+                    move |f: &mut dyn fmt::Write| match item {
+                        Item::Contract(c) => write!(f, "{}", c.display(self.libsl)),
+                        Item::Empty => Ok(()),
+                        Item::Stmt(stmt_id) => {
+                            write!(f, "{}", self.libsl.stmts[stmt_id].display(self.libsl))
+                        }
+                    }
+                }),
+        )
     }
 }
 

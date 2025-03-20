@@ -15,20 +15,23 @@ macro_rules! make_display_struct {
     ($name:ident { $field:ident } for $ast:ty) => {
         impl $ast {
             #[doc = concat!(
-                "Returns an object that implements [Display] to convert the [",
-                stringify!($ast),
-                "] back to LibSL source text.",
-            )]
+                                "Returns an object that implements [Display] to convert the [",
+                                stringify!($ast),
+                                "] back to LibSL source text.",
+                            )]
             pub fn display<'a>(&'a self, libsl: &'a LibSl) -> $name<'a> {
-                $name { $field: self, libsl }
+                $name {
+                    $field: self,
+                    libsl,
+                }
             }
         }
 
         #[doc = concat!(
-            "A helper struct that writes the [",
-            stringify!($ast),
-            "] out as LibSL source text."
-        )]
+                            "A helper struct that writes the [",
+                            stringify!($ast),
+                            "] out as LibSL source text."
+                        )]
         #[derive(Debug, Clone, Copy)]
         pub struct $name<'a> {
             $field: &'a $ast,
@@ -421,7 +424,7 @@ impl Display for DeclStructDisplay<'_> {
             {
                 let mut f = IndentedWriter::new(INDENT, f);
 
-                for (idx, &decl_id) in self.d.decls.iter().enumerate() {
+                for &decl_id in &self.d.decls {
                     writeln!(f, "{}", self.libsl.decls[decl_id].display(self.libsl))?;
                 }
             }
@@ -548,7 +551,68 @@ make_display_struct!(DeclAutomatonDisplay { d } for ast::DeclAutomaton);
 
 impl Display for DeclAutomatonDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        for annotation in &self.d.annotations {
+            writeln!(f, "{}", annotation.display(self.libsl))?;
+        }
+
+        write!(f, "automaton ")?;
+
+        if self.d.is_concept {
+            write!(f, "concept ")?;
+        }
+
+        write!(f, "{}", self.d.name.display(self.libsl))?;
+
+        if !self.d.constructor_variables.is_empty() {
+            writeln!(f, "(")?;
+
+            {
+                let mut f = IndentedWriter::new(INDENT, f);
+
+                for &decl_id in &self.d.constructor_variables {
+                    writeln!(f, "{},", self.libsl.decls[decl_id].display(self.libsl))?;
+                }
+            }
+
+            write!(f, ")")?;
+        }
+
+        write!(
+            f,
+            " : {}",
+            self.libsl.ty_exprs[self.d.ty_expr].display(self.libsl)
+        )?;
+
+        if self.d.implemented_concepts.is_empty() {
+            write!(f, " ")?;
+        } else {
+            writeln!(f)?;
+
+            for (idx, concept) in self.d.implemented_concepts.iter().enumerate() {
+                if idx == 0 {
+                    write!(f, "{INDENT}implements ")?;
+                } else {
+                    write!(f, ", ")?;
+                }
+
+                write!(f, "{}", concept.display(self.libsl))?;
+            }
+
+            writeln!(f)?;
+        }
+
+        write!(f, "{{")?;
+
+        {
+            let mut f = IndentedWriter::new(INDENT, f);
+
+            for &decl_id in &self.d.decls {
+                writeln!(f)?;
+                writeln!(f, "{}", self.libsl.decls[decl_id].display(self.libsl))?;
+            }
+        }
+
+        write!(f, "}}")
     }
 }
 
@@ -556,7 +620,100 @@ make_display_struct!(DeclFunctionDisplay { d } for ast::DeclFunction);
 
 impl Display for DeclFunctionDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        for annotation in &self.d.annotations {
+            writeln!(f, "{}", annotation.display(self.libsl))?;
+        }
+
+        if self.d.is_static {
+            write!(f, "static ")?;
+        }
+
+        write!(f, "fun ")?;
+
+        if let Some(automaton_name) = &self.d.extension_for {
+            write!(f, "{}.", automaton_name.display(self.libsl))?;
+        }
+
+        if self.d.is_method {
+            write!(f, "*.")?;
+        }
+
+        write!(f, "{}", self.d.name.display(self.libsl))?;
+
+        if !self.d.generics.is_empty() {
+            write!(
+                f,
+                "{}",
+                GenericsDisplay {
+                    generics: &self.d.generics,
+                    libsl: self.libsl,
+                }
+            )?;
+        }
+
+        write!(f, "(")?;
+
+        {
+            let mut f = IndentedWriter::new(INDENT, f);
+
+            for (idx, param) in self.d.params.iter().enumerate() {
+                writeln!(
+                    f,
+                    "{}{}",
+                    param.display(self.libsl),
+                    if idx + 1 == self.d.params.len() {
+                        ""
+                    } else {
+                        ","
+                    }
+                )?;
+            }
+        }
+
+        write!(f, ")")?;
+
+        if let Some(ty_expr_id) = self.d.ret_ty_expr {
+            write!(
+                f,
+                " : {}",
+                self.libsl.ty_exprs[ty_expr_id].display(self.libsl)
+            )?;
+        }
+
+        if !self.d.ty_constraints.is_empty() {
+            let mut f = if self.d.ret_ty_expr.is_some() || self.d.params.is_empty() {
+                writeln!(f)?;
+
+                IndentedWriter::new(INDENT, f)
+            } else {
+                write!(f, " ")?;
+
+                IndentedWriter::new_skipping_first_indent(INDENT, f)
+            };
+
+            write!(
+                f,
+                "{}",
+                WhereClauseDisplay {
+                    ty_constraints: &self.d.ty_constraints,
+                    libsl: self.libsl,
+                }
+            )?;
+        }
+
+        if let Some(body) = &self.d.body {
+            if self.d.ty_constraints.is_empty() {
+                write!(f, " ")?;
+            } else {
+                writeln!(f)?;
+            }
+
+            write!(f, "{}", body.display(self.libsl))?;
+        } else {
+            write!(f, ";")?;
+        }
+
+        Ok(())
     }
 }
 
@@ -608,9 +765,72 @@ impl Display for DeclProcDisplay<'_> {
     }
 }
 
+make_display_struct!(FunctionParamDisplay { p } for ast::FunctionParam);
+
+impl Display for FunctionParamDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for annotation in &self.p.annotations {
+            writeln!(f, "{}", annotation.display(self.libsl))?;
+        }
+
+        write!(
+            f,
+            "{name}: {ty_expr}",
+            name = self.p.name.display(self.libsl),
+            ty_expr = self.libsl.ty_exprs[self.p.ty_expr].display(self.libsl),
+        )
+    }
+}
+
+make_display_struct!(FunctionBodyDisplay { b } for ast::FunctionBody);
+
+impl Display for FunctionBodyDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{{")?;
+
+        if !self.b.contracts.is_empty() || !self.b.stmts.is_empty() {
+            writeln!(f)?;
+        }
+
+        {
+            let mut f = IndentedWriter::new(INDENT, f);
+
+            for contract in &self.b.contracts {
+                writeln!(f, "{}", contract.display(self.libsl))?;
+            }
+
+            if !self.b.contracts.is_empty() && !self.b.stmts.is_empty() {
+                writeln!(f)?;
+            }
+
+            for &stmt_id in &self.b.stmts {
+                writeln!(f, "{}", self.libsl.stmts[stmt_id].display(self.libsl))?;
+            }
+        }
+
+        write!(f, "}}")
+    }
+}
+
+make_display_struct!(ContractDisplay { c } for ast::Contract);
+
+impl Display for ContractDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        todo!()
+    }
+}
+
 make_display_struct!(TyExprDisplay { t } for ast::TyExpr);
 
 impl Display for TyExprDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        todo!()
+    }
+}
+
+make_display_struct!(StmtDisplay { s } for ast::Stmt);
+
+impl Display for StmtDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         todo!()
     }
@@ -695,6 +915,14 @@ impl Display for ast::IntLit {
 make_display_struct!(QualifiedTyNameDisplay { t } for ast::QualifiedTyName);
 
 impl Display for QualifiedTyNameDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        todo!()
+    }
+}
+
+make_display_struct!(FullNameDisplay { n } for ast::FullName);
+
+impl Display for FullNameDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         todo!()
     }

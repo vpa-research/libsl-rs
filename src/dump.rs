@@ -718,7 +718,7 @@ impl Display for DeclFunctionDisplay<'_> {
         if let Some(ty_expr_id) = self.d.ret_ty_expr {
             write!(
                 f,
-                " : {}",
+                ": {}",
                 self.libsl.ty_exprs[ty_expr_id].display(self.libsl)
             )?;
         }
@@ -751,12 +751,10 @@ impl Display for DeclFunctionDisplay<'_> {
                 writeln!(f)?;
             }
 
-            write!(f, "{}", body.display(self.libsl))?;
+            write!(f, "{}", body.display(self.libsl))
         } else {
-            write!(f, ";")?;
+            write!(f, ";")
         }
-
-        Ok(())
     }
 }
 
@@ -872,7 +870,58 @@ make_display_struct!(DeclConstructorDisplay { d } for ast::DeclConstructor);
 
 impl Display for DeclConstructorDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        for annotation in &self.d.annotations {
+            writeln!(f, "{}", annotation.display(self.libsl))?;
+        }
+
+        write!(f, "constructor")?;
+        let mut have_space = false;
+
+        if self.d.is_method {
+            if !have_space {
+                write!(f, " ")?;
+                have_space = true;
+            }
+
+            write!(f, "*.")?;
+        }
+
+        if let Some(name) = &self.d.name {
+            #[expect(
+                unused_assignments,
+                reason = "the last assignment to `have_space` is there for consistency"
+            )]
+            if !have_space {
+                write!(f, " ")?;
+                have_space = true;
+            }
+
+            write!(f, "{}", name.display(self.libsl))?;
+        }
+
+        display_list(
+            f,
+            ("(", ",", ")"),
+            false,
+            false,
+            self.d.params.iter().map(|param| {
+                move |f: &mut dyn fmt::Write| write!(f, "{}", param.display(self.libsl))
+            }),
+        )?;
+
+        if let Some(ty_expr_id) = self.d.ret_ty_expr {
+            write!(
+                f,
+                " : {}",
+                self.libsl.ty_exprs[ty_expr_id].display(self.libsl)
+            )?;
+        }
+
+        if let Some(body) = &self.d.body {
+            write!(f, " {}", body.display(self.libsl))
+        } else {
+            write!(f, ";")
+        }
     }
 }
 
@@ -880,7 +929,58 @@ make_display_struct!(DeclDestructorDisplay { d } for ast::DeclDestructor);
 
 impl Display for DeclDestructorDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        for annotation in &self.d.annotations {
+            writeln!(f, "{}", annotation.display(self.libsl))?;
+        }
+
+        write!(f, "destructor")?;
+        let mut have_space = false;
+
+        if self.d.is_method {
+            if !have_space {
+                write!(f, " ")?;
+                have_space = true;
+            }
+
+            write!(f, "*.")?;
+        }
+
+        if let Some(name) = &self.d.name {
+            #[expect(
+                unused_assignments,
+                reason = "the last assignment to `have_space` is there for consistency"
+            )]
+            if !have_space {
+                write!(f, " ")?;
+                have_space = true;
+            }
+
+            write!(f, "{}", name.display(self.libsl))?;
+        }
+
+        display_list(
+            f,
+            ("(", ",", ")"),
+            false,
+            false,
+            self.d.params.iter().map(|param| {
+                move |f: &mut dyn fmt::Write| write!(f, "{}", param.display(self.libsl))
+            }),
+        )?;
+
+        if let Some(ty_expr_id) = self.d.ret_ty_expr {
+            write!(
+                f,
+                " : {}",
+                self.libsl.ty_exprs[ty_expr_id].display(self.libsl)
+            )?;
+        }
+
+        if let Some(body) = &self.d.body {
+            write!(f, " {}", body.display(self.libsl))
+        } else {
+            write!(f, ";")
+        }
     }
 }
 
@@ -888,7 +988,79 @@ make_display_struct!(DeclProcDisplay { d } for ast::DeclProc);
 
 impl Display for DeclProcDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        for annotation in &self.d.annotations {
+            writeln!(f, "{}", annotation.display(self.libsl))?;
+        }
+
+        write!(f, "proc ")?;
+
+        if self.d.is_method {
+            write!(f, "*.")?;
+        }
+
+        write!(f, "{}", self.d.name.display(self.libsl))?;
+
+        if !self.d.generics.is_empty() {
+            write!(
+                f,
+                "{}",
+                GenericsDisplay {
+                    generics: &self.d.generics,
+                    libsl: self.libsl,
+                },
+            )?;
+        }
+
+        display_list(
+            f,
+            ("(", ",", ")"),
+            false,
+            false,
+            self.d.params.iter().map(|param| {
+                move |f: &mut dyn fmt::Write| write!(f, "{}", param.display(self.libsl))
+            }),
+        )?;
+
+        if let Some(ty_expr_id) = self.d.ret_ty_expr {
+            write!(
+                f,
+                ": {}",
+                self.libsl.ty_exprs[ty_expr_id].display(self.libsl)
+            )?;
+        }
+
+        if !self.d.ty_constraints.is_empty() {
+            let mut f = if self.d.ret_ty_expr.is_some() || self.d.params.is_empty() {
+                writeln!(f)?;
+
+                IndentedWriter::new(INDENT, f)
+            } else {
+                write!(f, " ")?;
+
+                IndentedWriter::new_skipping_first_indent(INDENT, f)
+            };
+
+            write!(
+                f,
+                "{}",
+                WhereClauseDisplay {
+                    ty_constraints: &self.d.ty_constraints,
+                    libsl: self.libsl,
+                }
+            )?;
+        }
+
+        if let Some(body) = &self.d.body {
+            if self.d.ty_constraints.is_empty() {
+                write!(f, " ")?;
+            } else {
+                writeln!(f)?;
+            }
+
+            write!(f, "{}", body.display(self.libsl))
+        } else {
+            write!(f, ";")
+        }
     }
 }
 

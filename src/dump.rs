@@ -7,7 +7,7 @@
 
 use std::fmt::{self, Display, Write as _};
 
-use crate::{ast, DeclId, LibSl, StmtId};
+use crate::{DeclId, LibSl, StmtId, ast};
 
 const INDENT: &str = "    ";
 
@@ -764,7 +764,27 @@ make_display_struct!(DeclVariableDisplay { d } for ast::DeclVariable);
 
 impl Display for DeclVariableDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        for annotation in &self.d.annotations {
+            writeln!(f, "{}", annotation.display(self.libsl))?;
+        }
+
+        match self.d.kind {
+            ast::VariableKind::Var => write!(f, "var ")?,
+            ast::VariableKind::Val => write!(f, "val ")?,
+        }
+
+        write!(
+            f,
+            "{name}: {ty_expr}",
+            name = self.d.name.display(self.libsl),
+            ty_expr = self.libsl.ty_exprs[self.d.ty_expr].display(self.libsl),
+        )?;
+
+        if let Some(expr_id) = self.d.init {
+            write!(f, " = {}", self.libsl.exprs[expr_id].display(self.libsl))?;
+        }
+
+        write!(f, ";")
     }
 }
 
@@ -772,7 +792,13 @@ make_display_struct!(DeclStateDisplay { d } for ast::DeclState);
 
 impl Display for DeclStateDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        match self.d.kind {
+            ast::StateKind::Initial => write!(f, "initstate ")?,
+            ast::StateKind::Regular => write!(f, "state ")?,
+            ast::StateKind::Final => write!(f, "finishstate ")?,
+        }
+
+        write!(f, "{};", self.d.name.display(self.libsl))
     }
 }
 
@@ -780,7 +806,65 @@ make_display_struct!(DeclShiftDisplay { d } for ast::DeclShift);
 
 impl Display for DeclShiftDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        write!(f, "shift ")?;
+
+        if self.d.from.len() == 1 {
+            write!(f, "{}", self.d.from[0].display(self.libsl))?;
+        } else {
+            write!(f, "(")?;
+
+            for (idx, state) in self.d.from.iter().enumerate() {
+                if idx > 0 {
+                    write!(f, ", ")?;
+                }
+
+                write!(f, "{}", state.display(self.libsl))?;
+            }
+
+            write!(f, ")")?;
+        }
+
+        write!(f, " -> {} by ", self.d.to.display(self.libsl))?;
+
+        if self.d.by.len() == 1 {
+            write!(f, "{}", self.d.by[0].display(self.libsl))?;
+        } else {
+            display_list(
+                f,
+                ("[", ",", "]"),
+                false,
+                true,
+                self.d.by.iter().map(|fn_name| {
+                    move |f: &mut dyn fmt::Write| write!(f, "{}", fn_name.display(self.libsl))
+                }),
+            )?;
+        }
+
+        write!(f, ";")
+    }
+}
+
+make_display_struct!(QualifiedFunctionNameDisplay { f } for ast::QualifiedFunctionName);
+
+impl Display for QualifiedFunctionNameDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.f.name.display(self.libsl))?;
+
+        if let Some(params) = &self.f.params {
+            write!(f, "(")?;
+
+            for (idx, &ty_expr_id) in params.iter().enumerate() {
+                if idx > 0 {
+                    write!(f, ", ")?;
+                }
+
+                write!(f, "{}", self.libsl.ty_exprs[ty_expr_id].display(self.libsl))?;
+            }
+
+            write!(f, ")")?;
+        }
+
+        Ok(())
     }
 }
 

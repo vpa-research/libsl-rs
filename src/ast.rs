@@ -442,17 +442,17 @@ pub struct QualifiedTyName {
     pub generics: Vec<Generic>,
 }
 
+/// A full name to an entity, consisting of several components separated with a period.
+#[derive(Debug, Clone)]
+pub struct FullName {
+    pub components: Vec<Name>,
+}
+
 /// A name in the source file paired with its location information.
 #[derive(Debug, Clone)]
 pub struct Name {
     pub loc: Loc,
     pub name: String,
-}
-
-/// A full name to an entity, consisting of several components separated with a period.
-#[derive(Debug, Clone)]
-pub struct FullName {
-    pub components: Vec<Name>,
 }
 
 /// A constraint on a type parameter.

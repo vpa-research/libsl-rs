@@ -14,11 +14,7 @@ const INDENT: &str = "    ";
 macro_rules! make_display_struct {
     ($name:ident { $field:ident } for $ast:ty) => {
         impl $ast {
-            #[doc = concat!(
-                                "Returns an object that implements [Display] to convert the [",
-                                stringify!($ast),
-                                "] back to LibSL source text.",
-                            )]
+            #[doc = concat!("Returns an object that implements [Display] to convert the [", stringify!($ast), "] back to LibSL source text.")]
             pub fn display<'a>(&'a self, libsl: &'a LibSl) -> $name<'a> {
                 $name {
                     $field: self,
@@ -27,15 +23,52 @@ macro_rules! make_display_struct {
             }
         }
 
-        #[doc = concat!(
-                            "A helper struct that writes the [",
-                            stringify!($ast),
-                            "] out as LibSL source text."
-                        )]
+        #[doc = concat!("A helper struct that writes the [", stringify!($ast), "] out as LibSL source text.")]
         #[derive(Debug, Clone, Copy)]
         pub struct $name<'a> {
             $field: &'a $ast,
             libsl: &'a LibSl,
+        }
+    };
+
+    ($name:ident { $field:ident } for $ast:ty where precedence = $prec:expr) => {
+        impl $ast {
+            /// The precedence level of this expression.
+            ///
+            /// See [`display_prec`][Self::display_prec] for more details.
+            pub const fn precedence(&self) -> u8 {
+                #[allow(unused)]
+                let $field = self;
+
+                $prec
+            }
+
+            #[doc = concat!("Returns an object that implements [Display] to convert the [", stringify!($ast), "] back to LibSL source text.")]
+            ///
+            /// This is analogous to calling [`display_prec`][Self::display_prec] with the precedence of zero.
+            pub fn display<'a>(&'a self, libsl: &'a LibSl) -> $name<'a> {
+                self.display_prec(libsl, 0)
+            }
+
+            #[doc = concat!("Returns an object that implements [Display] to convert the [", stringify!($ast), "] back to LibSL source text.")]
+            ///
+            /// The parameter `prec` provides the precedence level of the outer context. If it's
+            /// greater than [Self::precedence], parentheses will be printed around the expression.
+            pub fn display_prec<'a>(&'a self, libsl: &'a LibSl, prec: u8) -> $name<'a> {
+                $name {
+                    $field: self,
+                    libsl,
+                    prec,
+                }
+            }
+        }
+
+        #[doc = concat!("A helper struct that writes the [", stringify!($ast), "] out as LibSL source text.")]
+        #[derive(Debug, Clone, Copy)]
+        pub struct $name<'a> {
+            $field: &'a $ast,
+            libsl: &'a LibSl,
+            prec: u8,
         }
     };
 }
@@ -141,12 +174,34 @@ where
     write!(w, "{right}")
 }
 
+fn display_parens<W: fmt::Write, F>(
+    w: &mut W,
+    self_prec: u8,
+    outer_prec: u8,
+    fmt_inner: F,
+) -> fmt::Result
+where
+    F: FnOnce(&mut dyn fmt::Write) -> fmt::Result,
+{
+    if self_prec < outer_prec {
+        write!(w, "(")?;
+    }
+
+    fmt_inner(w)?;
+
+    if self_prec < outer_prec {
+        write!(w, ")")?;
+    }
+
+    Ok(())
+}
+
 /// A wrapper type that formats a string by enclosing it in double quotes and escaping characters if
 /// necessary according to LibSL's rules.
 ///
 /// If the string contains a `\n` or a `\r` character, the result will not be a legal LibSL string.
 #[derive(Debug, Clone, Copy)]
-pub struct QuotedString<'a>(&'a str);
+pub struct QuotedString<'a>(pub &'a str);
 
 impl Display for QuotedString<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -174,7 +229,7 @@ impl Display for QuotedString<'_> {
 ///
 /// If the string already contains a backtick, the result will not be a legal identifier.
 #[derive(Debug, Clone, Copy)]
-pub struct Identifier<'a>(&'a str);
+pub struct Identifier<'a>(pub &'a str);
 
 impl Display for Identifier<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -385,7 +440,7 @@ impl Display for DeclSemanticTyDisplay<'_> {
                             write!(
                                 f,
                                 "{name}: {value}",
-                                name = entry.name.display(self.libsl),
+                                name = entry.name,
                                 value = self.libsl.exprs[entry.expr].display(self.libsl),
                             )
                         }
@@ -499,7 +554,7 @@ impl Display for DeclEnumDisplay<'_> {
                     write!(
                         f,
                         "{name} = {value}",
-                        name = variant.name.display(self.libsl),
+                        name = variant.name,
                         value = variant.value,
                     )
                 }
@@ -512,7 +567,7 @@ make_display_struct!(DeclAnnotationDisplay { d } for ast::DeclAnnotation);
 
 impl Display for DeclAnnotationDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "annotation {}", self.d.name.display(self.libsl))?;
+        write!(f, "annotation {}", self.d.name)?;
 
         display_list(
             f,
@@ -524,7 +579,7 @@ impl Display for DeclAnnotationDisplay<'_> {
                     write!(
                         f,
                         "{name}: {ty_expr}",
-                        name = param.name.display(self.libsl),
+                        name = param.name,
                         ty_expr = self.libsl.ty_exprs[param.ty_expr].display(self.libsl),
                     )
                 }
@@ -551,12 +606,11 @@ impl Display for DeclActionDisplay<'_> {
                 "{} ",
                 GenericsDisplay {
                     generics: &self.d.generics,
-                    libsl: self.libsl,
                 }
             )?;
         }
 
-        write!(f, "{}", self.d.name.display(self.libsl))?;
+        write!(f, "{}", self.d.name)?;
 
         display_list(
             f,
@@ -572,7 +626,7 @@ impl Display for DeclActionDisplay<'_> {
                     writeln!(
                         f,
                         "{INDENT}{name}: {ty_expr}",
-                        name = param.name.display(self.libsl),
+                        name = param.name,
                         ty_expr = self.libsl.ty_exprs[param.ty_expr].display(self.libsl),
                     )
                 }
@@ -650,7 +704,7 @@ impl Display for DeclAutomatonDisplay<'_> {
                     write!(f, ", ")?;
                 }
 
-                write!(f, "{}", concept.display(self.libsl))?;
+                write!(f, "{concept}")?;
             }
 
             writeln!(f)?;
@@ -685,14 +739,14 @@ impl Display for DeclFunctionDisplay<'_> {
         write!(f, "fun ")?;
 
         if let Some(automaton_name) = &self.d.extension_for {
-            write!(f, "{}.", automaton_name.display(self.libsl))?;
+            write!(f, "{automaton_name}.")?;
         }
 
         if self.d.is_method {
             write!(f, "*.")?;
         }
 
-        write!(f, "{}", self.d.name.display(self.libsl))?;
+        write!(f, "{}", self.d.name)?;
 
         if !self.d.generics.is_empty() {
             write!(
@@ -700,7 +754,6 @@ impl Display for DeclFunctionDisplay<'_> {
                 "{}",
                 GenericsDisplay {
                     generics: &self.d.generics,
-                    libsl: self.libsl,
                 }
             )?;
         }
@@ -774,7 +827,7 @@ impl Display for DeclVariableDisplay<'_> {
         write!(
             f,
             "{name}: {ty_expr}",
-            name = self.d.name.display(self.libsl),
+            name = self.d.name,
             ty_expr = self.libsl.ty_exprs[self.d.ty_expr].display(self.libsl),
         )?;
 
@@ -796,7 +849,7 @@ impl Display for DeclStateDisplay<'_> {
             ast::StateKind::Final => write!(f, "finishstate ")?,
         }
 
-        write!(f, "{};", self.d.name.display(self.libsl))
+        write!(f, "{};", self.d.name)
     }
 }
 
@@ -807,7 +860,7 @@ impl Display for DeclShiftDisplay<'_> {
         write!(f, "shift ")?;
 
         if self.d.from.len() == 1 {
-            write!(f, "{}", self.d.from[0].display(self.libsl))?;
+            write!(f, "{}", self.d.from[0])?;
         } else {
             write!(f, "(")?;
 
@@ -816,13 +869,13 @@ impl Display for DeclShiftDisplay<'_> {
                     write!(f, ", ")?;
                 }
 
-                write!(f, "{}", state.display(self.libsl))?;
+                write!(f, "{state}")?;
             }
 
             write!(f, ")")?;
         }
 
-        write!(f, " -> {} by ", self.d.to.display(self.libsl))?;
+        write!(f, " -> {} by ", self.d.to)?;
 
         if self.d.by.len() == 1 {
             write!(f, "{}", self.d.by[0].display(self.libsl))?;
@@ -846,7 +899,7 @@ make_display_struct!(QualifiedFunctionNameDisplay { f } for ast::QualifiedFuncti
 
 impl Display for QualifiedFunctionNameDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.f.name.display(self.libsl))?;
+        write!(f, "{}", self.f.name)?;
 
         if let Some(params) = &self.f.params {
             write!(f, "(")?;
@@ -896,7 +949,7 @@ impl Display for DeclConstructorDisplay<'_> {
                 have_space = true;
             }
 
-            write!(f, "{}", name.display(self.libsl))?;
+            write!(f, "{name}")?;
         }
 
         display_list(
@@ -955,7 +1008,7 @@ impl Display for DeclDestructorDisplay<'_> {
                 have_space = true;
             }
 
-            write!(f, "{}", name.display(self.libsl))?;
+            write!(f, "{name}")?;
         }
 
         display_list(
@@ -998,7 +1051,7 @@ impl Display for DeclProcDisplay<'_> {
             write!(f, "*.")?;
         }
 
-        write!(f, "{}", self.d.name.display(self.libsl))?;
+        write!(f, "{}", self.d.name)?;
 
         if !self.d.generics.is_empty() {
             write!(
@@ -1006,7 +1059,6 @@ impl Display for DeclProcDisplay<'_> {
                 "{}",
                 GenericsDisplay {
                     generics: &self.d.generics,
-                    libsl: self.libsl,
                 },
             )?;
         }
@@ -1075,7 +1127,7 @@ impl Display for FunctionParamDisplay<'_> {
         write!(
             f,
             "{name}: {ty_expr}",
-            name = self.p.name.display(self.libsl),
+            name = self.p.name,
             ty_expr = self.libsl.ty_exprs[self.p.ty_expr].display(self.libsl),
         )
     }
@@ -1121,15 +1173,209 @@ make_display_struct!(ContractDisplay { c } for ast::Contract);
 
 impl Display for ContractDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        match self.c {
+            ast::Contract::Requires(c) => write!(f, "{}", c.display(self.libsl)),
+            ast::Contract::Ensures(c) => write!(f, "{}", c.display(self.libsl)),
+            ast::Contract::Assigns(c) => write!(f, "{}", c.display(self.libsl)),
+        }
     }
 }
 
-make_display_struct!(TyExprDisplay { t } for ast::TyExpr);
+make_display_struct!(ContractRequiresDisplay { c } for ast::ContractRequires);
+
+impl Display for ContractRequiresDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "requires ")?;
+
+        if let Some(name) = &self.c.name {
+            write!(f, "{name}: ")?;
+        }
+
+        write!(f, "{};", self.libsl.exprs[self.c.expr].display(self.libsl))
+    }
+}
+
+make_display_struct!(ContractEnsuresDisplay { c } for ast::ContractEnsures);
+
+impl Display for ContractEnsuresDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ensures ")?;
+
+        if let Some(name) = &self.c.name {
+            write!(f, "{name}: ")?;
+        }
+
+        write!(f, "{};", self.libsl.exprs[self.c.expr].display(self.libsl))
+    }
+}
+
+make_display_struct!(ContractAssignsDisplay { c } for ast::ContractAssigns);
+
+impl Display for ContractAssignsDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "assigns ")?;
+
+        if let Some(name) = &self.c.name {
+            write!(f, "{name}: ")?;
+        }
+
+        write!(f, "{};", self.libsl.exprs[self.c.expr].display(self.libsl))
+    }
+}
+
+make_display_struct!(AnnotationDisplay { a } for ast::Annotation);
+
+impl Display for AnnotationDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "@{}", self.a.name)?;
+
+        if !self.a.args.is_empty() {
+            display_list(
+                f,
+                ("(", ",", ")"),
+                false,
+                true,
+                self.a.args.iter().map(|arg| {
+                    move |f: &mut dyn fmt::Write| {
+                        if let Some(name) = &arg.name {
+                            write!(f, "{name} = ")?;
+                        }
+
+                        write!(f, "{}", self.libsl.exprs[arg.expr].display(self.libsl))
+                    }
+                }),
+            )?;
+        }
+
+        Ok(())
+    }
+}
+
+make_display_struct!(
+    TyExprDisplay { t } for ast::TyExpr
+    where precedence = match &t.kind {
+        ast::TyExprKind::Dummy => u8::MAX,
+        ast::TyExprKind::PrimitiveLit(t) => t.precedence(),
+        ast::TyExprKind::Name(t) => t.precedence(),
+        ast::TyExprKind::Pointer(t) => t.precedence(),
+        ast::TyExprKind::Intersection(t) => t.precedence(),
+        ast::TyExprKind::Union(t) => t.precedence(),
+    }
+);
 
 impl Display for TyExprDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        match &self.t.kind {
+            ast::TyExprKind::Dummy => Ok(()),
+            ast::TyExprKind::PrimitiveLit(t) => {
+                write!(f, "{}", t.display_prec(self.libsl, self.prec))
+            }
+            ast::TyExprKind::Name(t) => write!(f, "{}", t.display_prec(self.libsl, self.prec)),
+            ast::TyExprKind::Pointer(t) => write!(f, "{}", t.display_prec(self.libsl, self.prec)),
+            ast::TyExprKind::Intersection(t) => {
+                write!(f, "{}", t.display_prec(self.libsl, self.prec))
+            }
+            ast::TyExprKind::Union(t) => write!(f, "{}", t.display_prec(self.libsl, self.prec)),
+        }
+    }
+}
+
+make_display_struct!(
+    TyExprPrimitiveLitDisplay { t } for ast::TyExprPrimitiveLit
+    where precedence = 2
+);
+
+impl Display for TyExprPrimitiveLitDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        display_parens(f, self.t.precedence(), self.prec, |f| {
+            write!(f, "{}", self.t.lit.display(self.libsl))
+        })
+    }
+}
+
+make_display_struct!(
+    TyExprNameDisplay { t } for ast::TyExprName
+    where precedence = 2
+);
+
+impl Display for TyExprNameDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        display_parens(f, self.t.precedence(), self.prec, |f| {
+            write!(f, "{}", self.t.ty_name)?;
+
+            if !self.t.generics.is_empty() {
+                write!(f, "<")?;
+
+                for (idx, ty_arg) in self.t.generics.iter().enumerate() {
+                    if idx > 0 {
+                        write!(f, ", ")?;
+                    }
+
+                    write!(f, "{}", ty_arg.display(self.libsl))?;
+                }
+
+                write!(f, ">")?;
+            }
+
+            Ok(())
+        })
+    }
+}
+
+make_display_struct!(
+    TyExprPointerDisplay { t } for ast::TyExprPointer
+    where precedence = 1
+);
+
+impl Display for TyExprPointerDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        display_parens(f, self.t.precedence(), self.prec, |f| {
+            write!(
+                f,
+                "*{}",
+                self.libsl.ty_exprs[self.t.base].display_prec(self.libsl, self.t.precedence()),
+            )
+        })
+    }
+}
+
+make_display_struct!(
+    TyExprIntersectionDisplay { t } for ast::TyExprIntersection
+    where precedence = 0
+);
+
+impl Display for TyExprIntersectionDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        display_parens(f, self.t.precedence(), self.prec, |f| {
+            write!(
+                f,
+                "{lhs} & {rhs}",
+                lhs = self.libsl.ty_exprs[self.t.lhs]
+                    .display_prec(self.libsl, self.t.precedence() + 1),
+                rhs = self.libsl.ty_exprs[self.t.rhs]
+                    .display_prec(self.libsl, self.t.precedence() + 1),
+            )
+        })
+    }
+}
+
+make_display_struct!(
+    TyExprUnionDisplay { t } for ast::TyExprUnion
+    where precedence = 0
+);
+
+impl Display for TyExprUnionDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        display_parens(f, self.t.precedence(), self.prec, |f| {
+            write!(
+                f,
+                "{lhs} + {rhs}",
+                lhs = self.libsl.ty_exprs[self.t.lhs]
+                    .display_prec(self.libsl, self.t.precedence() + 1),
+                rhs = self.libsl.ty_exprs[self.t.rhs]
+                    .display_prec(self.libsl, self.t.precedence() + 1),
+            )
+        })
     }
 }
 
@@ -1149,9 +1395,9 @@ impl Display for ExprDisplay<'_> {
     }
 }
 
-make_display_struct!(AnnotationDisplay { a } for ast::Annotation);
+make_display_struct!(PrimitiveLitDisplay { l } for ast::PrimitiveLit);
 
-impl Display for AnnotationDisplay<'_> {
+impl Display for PrimitiveLitDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         todo!()
     }
@@ -1176,7 +1422,6 @@ impl Display for WhereClauseDisplay<'_> {
 
 struct GenericsDisplay<'a> {
     generics: &'a [ast::Generic],
-    libsl: &'a LibSl,
 }
 
 impl Display for GenericsDisplay<'_> {
@@ -1188,16 +1433,34 @@ impl Display for GenericsDisplay<'_> {
                 write!(f, ", ")?;
             }
 
-            write!(f, "{}", generic.display(self.libsl))?;
+            write!(f, "{generic}")?;
         }
 
         write!(f, ">")
     }
 }
 
-make_display_struct!(GenericDisplay { g } for ast::Generic);
+impl Display for ast::Generic {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(variance) = &self.variance {
+            write!(
+                f,
+                "{} ",
+                match variance {
+                    ast::Variance::Covariant => "out",
+                    ast::Variance::Contravariant => "in",
+                    ast::Variance::Invariant => "in out",
+                }
+            )?;
+        }
 
-impl Display for GenericDisplay<'_> {
+        write!(f, "{}", self.name)
+    }
+}
+
+make_display_struct!(TyArgDisplay { t } for ast::TyArg);
+
+impl Display for TyArgDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         todo!()
     }
@@ -1221,22 +1484,40 @@ make_display_struct!(QualifiedTyNameDisplay { t } for ast::QualifiedTyName);
 
 impl Display for QualifiedTyNameDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        write!(f, "{}", self.t.ty_name)?;
+
+        if !self.t.generics.is_empty() {
+            write!(f, "<")?;
+
+            for (idx, generic) in self.t.generics.iter().enumerate() {
+                if idx > 0 {
+                    write!(f, ", ")?;
+                }
+
+                write!(f, "{generic}")?;
+            }
+        }
+
+        Ok(())
     }
 }
 
-make_display_struct!(FullNameDisplay { n } for ast::FullName);
-
-impl Display for FullNameDisplay<'_> {
+impl Display for ast::FullName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        for (idx, component) in self.components.iter().enumerate() {
+            if idx > 0 {
+                write!(f, ".")?;
+            }
+
+            write!(f, "{component}")?;
+        }
+
+        Ok(())
     }
 }
 
-make_display_struct!(NameDisplay { n } for ast::Name);
-
-impl Display for NameDisplay<'_> {
+impl Display for ast::Name {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        write!(f, "{}", Identifier(&self.name))
     }
 }

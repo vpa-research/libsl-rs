@@ -11,6 +11,134 @@ use crate::{DeclId, LibSl, StmtId, ast};
 
 const INDENT: &str = "    ";
 
+pub trait Prec: Copy + Ord {
+    /// The maximal precedence level that forces parentheses around an expression.
+    const MAX: Self;
+
+    /// The minimal precedence level that forces no parentheses around an expression.
+    const MIN: Self;
+
+    /// Returns the next (higher) precedence level (or `MAX` if there's none).
+    fn higher(self) -> Self;
+
+    /// Returns the previous (lower) precedence level (or `MIN` if there's none).
+    fn lower(self) -> Self;
+}
+
+macro_rules! define_prec {
+    {
+        $(#[$attr:meta])*
+        $vis:vis enum $name:ident {
+            $(
+                $(#[$variant_attr:meta])*
+                $variant:ident,
+            )+
+        }
+    } => {
+        $(#[$attr])*
+        #[repr(u8)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+        $vis enum $name {
+            $(
+                $(#[$variant_attr])*
+                $variant,
+            )+
+
+            /// The precedence level higher than any other.
+            Max = u8::MAX,
+        }
+
+        impl $name {
+            fn from_u8(value: u8) -> Option<Self> {
+                Some(match value {
+                    $(_ if Self::$variant as u8 == value => Self::$variant,)+
+                    u8::MAX => Self::Max,
+                    _ => return None,
+                })
+            }
+        }
+
+        impl Prec for $name {
+            const MAX: Self = Self::Max;
+            const MIN: Self = define_prec!(@first $(Self::$variant,)+);
+
+            fn higher(self) -> Self {
+                (self as u8)
+                    .checked_add(1)
+                    .and_then(Self::from_u8)
+                    .unwrap_or(Self::MAX)
+            }
+
+            fn lower(self) -> Self {
+                (self as u8)
+                    .checked_sub(1)
+                    .and_then(Self::from_u8)
+                    .unwrap_or(Self::MIN)
+            }
+        }
+    };
+
+    (@first $expr:expr, $($rest:expr,)*) => ($expr);
+}
+
+define_prec! {
+    /// Precedence levels of type expressions.
+    pub enum TyExprPrec {
+        /// Intersection and union type expressions.
+        IntersectionOrUnion,
+
+        /// Pointer type expressions.
+        Pointer,
+
+        /// Name type expressions.
+        Name,
+    }
+}
+
+define_prec! {
+    /// Precedence levels of expressions.
+    pub enum ExprPrec {
+        /// Logical and (`&&`) expressions.
+        And,
+
+        /// Logical or (`||`) expressions.
+        Or,
+
+        /// Bitwise and (`&`) expressions.
+        BitAnd,
+
+        /// Bitwise xor (`^`) expressions.
+        BitXor,
+
+        /// Bitwise or (`|`) expressions.
+        BitOr,
+
+        /// Type comparison expressions.
+        TyCmp,
+
+        /// Comparison expressions.
+        Cmp,
+
+        /// Bit shift expressions.
+        Shift,
+
+        /// Additive expressions: addition and subtraction.
+        Add,
+
+        /// Multiplicative expressions: multiplication, division, modulus.
+        Mul,
+
+        /// Cast and has-concept expressions.
+        Cast,
+
+        /// Unary operator expressions.
+        Unary,
+
+        /// Atomic expressions: literals, calls, qualified access.
+        Atomic,
+    }
+}
+
 macro_rules! make_display_struct {
     ($name:ident { $field:ident } for $ast:ty) => {
         impl $ast {
@@ -31,12 +159,12 @@ macro_rules! make_display_struct {
         }
     };
 
-    ($name:ident { $field:ident } for $ast:ty where precedence = $prec:expr) => {
+    ($name:ident { $field:ident } for $ast:ty where precedence: $prec_ty:ty = $prec:expr $(,)?) => {
         impl $ast {
             /// The precedence level of this expression.
             ///
             /// See [`display_prec`][Self::display_prec] for more details.
-            pub const fn precedence(&self) -> u8 {
+            pub const fn precedence(&self) -> $prec_ty {
                 #[allow(unused)]
                 let $field = self;
 
@@ -47,14 +175,14 @@ macro_rules! make_display_struct {
             ///
             /// This is analogous to calling [`display_prec`][Self::display_prec] with the precedence of zero.
             pub fn display<'a>(&'a self, libsl: &'a LibSl) -> $name<'a> {
-                self.display_prec(libsl, 0)
+                self.display_prec(libsl, <$prec_ty>::MIN)
             }
 
             #[doc = concat!("Returns an object that implements [Display] to convert the [", stringify!($ast), "] back to LibSL source text.")]
             ///
             /// The parameter `prec` provides the precedence level of the outer context. If it's
             /// greater than [Self::precedence], parentheses will be printed around the expression.
-            pub fn display_prec<'a>(&'a self, libsl: &'a LibSl, prec: u8) -> $name<'a> {
+            pub fn display_prec<'a>(&'a self, libsl: &'a LibSl, prec: $prec_ty) -> $name<'a> {
                 $name {
                     $field: self,
                     libsl,
@@ -68,7 +196,7 @@ macro_rules! make_display_struct {
         pub struct $name<'a> {
             $field: &'a $ast,
             libsl: &'a LibSl,
-            prec: u8,
+            prec: $prec_ty,
         }
     };
 }
@@ -174,10 +302,10 @@ where
     write!(w, "{right}")
 }
 
-fn display_parens<W: fmt::Write, F>(
+fn display_parens<W: fmt::Write, P: Prec, F>(
     w: &mut W,
-    self_prec: u8,
-    outer_prec: u8,
+    self_prec: P,
+    outer_prec: P,
     fmt_inner: F,
 ) -> fmt::Result
 where
@@ -1253,14 +1381,14 @@ impl Display for AnnotationDisplay<'_> {
 
 make_display_struct!(
     TyExprDisplay { t } for ast::TyExpr
-    where precedence = match &t.kind {
-        ast::TyExprKind::Dummy => u8::MAX,
+    where precedence: TyExprPrec = match &t.kind {
+        ast::TyExprKind::Dummy => TyExprPrec::MAX,
         ast::TyExprKind::PrimitiveLit(t) => t.precedence(),
         ast::TyExprKind::Name(t) => t.precedence(),
         ast::TyExprKind::Pointer(t) => t.precedence(),
         ast::TyExprKind::Intersection(t) => t.precedence(),
         ast::TyExprKind::Union(t) => t.precedence(),
-    }
+    },
 );
 
 impl Display for TyExprDisplay<'_> {
@@ -1282,7 +1410,7 @@ impl Display for TyExprDisplay<'_> {
 
 make_display_struct!(
     TyExprPrimitiveLitDisplay { t } for ast::TyExprPrimitiveLit
-    where precedence = 2
+    where precedence: TyExprPrec = TyExprPrec::Name,
 );
 
 impl Display for TyExprPrimitiveLitDisplay<'_> {
@@ -1295,7 +1423,7 @@ impl Display for TyExprPrimitiveLitDisplay<'_> {
 
 make_display_struct!(
     TyExprNameDisplay { t } for ast::TyExprName
-    where precedence = 2
+    where precedence: TyExprPrec = TyExprPrec::Name,
 );
 
 impl Display for TyExprNameDisplay<'_> {
@@ -1324,7 +1452,7 @@ impl Display for TyExprNameDisplay<'_> {
 
 make_display_struct!(
     TyExprPointerDisplay { t } for ast::TyExprPointer
-    where precedence = 1
+    where precedence: TyExprPrec = TyExprPrec::Pointer,
 );
 
 impl Display for TyExprPointerDisplay<'_> {
@@ -1341,7 +1469,7 @@ impl Display for TyExprPointerDisplay<'_> {
 
 make_display_struct!(
     TyExprIntersectionDisplay { t } for ast::TyExprIntersection
-    where precedence = 0
+    where precedence: TyExprPrec = TyExprPrec::IntersectionOrUnion,
 );
 
 impl Display for TyExprIntersectionDisplay<'_> {
@@ -1351,9 +1479,9 @@ impl Display for TyExprIntersectionDisplay<'_> {
                 f,
                 "{lhs} & {rhs}",
                 lhs = self.libsl.ty_exprs[self.t.lhs]
-                    .display_prec(self.libsl, self.t.precedence() + 1),
+                    .display_prec(self.libsl, self.t.precedence().higher()),
                 rhs = self.libsl.ty_exprs[self.t.rhs]
-                    .display_prec(self.libsl, self.t.precedence() + 1),
+                    .display_prec(self.libsl, self.t.precedence().higher()),
             )
         })
     }
@@ -1361,7 +1489,7 @@ impl Display for TyExprIntersectionDisplay<'_> {
 
 make_display_struct!(
     TyExprUnionDisplay { t } for ast::TyExprUnion
-    where precedence = 0
+    where precedence: TyExprPrec = TyExprPrec::IntersectionOrUnion,
 );
 
 impl Display for TyExprUnionDisplay<'_> {
@@ -1371,9 +1499,9 @@ impl Display for TyExprUnionDisplay<'_> {
                 f,
                 "{lhs} + {rhs}",
                 lhs = self.libsl.ty_exprs[self.t.lhs]
-                    .display_prec(self.libsl, self.t.precedence() + 1),
+                    .display_prec(self.libsl, self.t.precedence().higher()),
                 rhs = self.libsl.ty_exprs[self.t.rhs]
-                    .display_prec(self.libsl, self.t.precedence() + 1),
+                    .display_prec(self.libsl, self.t.precedence().higher()),
             )
         })
     }
@@ -1478,8 +1606,8 @@ impl Display for ast::InPlaceOp {
 
 make_display_struct!(
     ExprDisplay { e } for ast::Expr
-    where precedence = match &e.kind {
-        ast::ExprKind::Dummy => u8::MAX,
+    where precedence: ExprPrec = match &e.kind {
+        ast::ExprKind::Dummy => ExprPrec::MAX,
         ast::ExprKind::PrimitiveLit(e) => e.precedence(),
         ast::ExprKind::ArrayLit(e) => e.precedence(),
         ast::ExprKind::QualifiedAccess(e) => e.precedence(),
@@ -1492,7 +1620,7 @@ make_display_struct!(
         ast::ExprKind::TyCompare(e) => e.precedence(),
         ast::ExprKind::Unary(e) => e.precedence(),
         ast::ExprKind::Binary(e) => e.precedence(),
-    }
+    },
 );
 
 impl Display for ExprDisplay<'_> {
@@ -1521,7 +1649,7 @@ impl Display for ExprDisplay<'_> {
 
 make_display_struct!(
     ExprPrimitiveLitDisplay { e } for ast::ExprPrimitiveLit
-    where precedence = 12
+    where precedence: ExprPrec = ExprPrec::Atomic,
 );
 
 impl Display for ExprPrimitiveLitDisplay<'_> {
@@ -1534,7 +1662,7 @@ impl Display for ExprPrimitiveLitDisplay<'_> {
 
 make_display_struct!(
     ExprArrayLitDisplay { e } for ast::ExprArrayLit
-    where precedence = 12
+    where precedence: ExprPrec = ExprPrec::Atomic,
 );
 
 impl Display for ExprArrayLitDisplay<'_> {
@@ -1557,7 +1685,7 @@ impl Display for ExprArrayLitDisplay<'_> {
 
 make_display_struct!(
     ExprQualifiedAccessDisplay { e } for ast::ExprQualifiedAccess
-    where precedence = 12
+    where precedence: ExprPrec = ExprPrec::Atomic,
 );
 
 impl Display for ExprQualifiedAccessDisplay<'_> {
@@ -1574,7 +1702,7 @@ impl Display for ExprQualifiedAccessDisplay<'_> {
 
 make_display_struct!(
     ExprPrevDisplay { e } for ast::ExprPrev
-    where precedence = 12
+    where precedence: ExprPrec = ExprPrec::Atomic,
 );
 
 impl Display for ExprPrevDisplay<'_> {
@@ -1591,7 +1719,7 @@ impl Display for ExprPrevDisplay<'_> {
 
 make_display_struct!(
     ExprProcCallDisplay { e } for ast::ExprProcCall
-    where precedence = 12
+    where precedence: ExprPrec = ExprPrec::Atomic,
 );
 
 impl Display for ExprProcCallDisplay<'_> {
@@ -1634,7 +1762,7 @@ impl Display for ExprProcCallDisplay<'_> {
 
 make_display_struct!(
     ExprActionCallDisplay { e } for ast::ExprActionCall
-    where precedence = 12
+    where precedence: ExprPrec = ExprPrec::Atomic,
 );
 
 impl Display for ExprActionCallDisplay<'_> {
@@ -1673,7 +1801,7 @@ impl Display for ExprActionCallDisplay<'_> {
 
 make_display_struct!(
     ExprInstantiateDisplay { e } for ast::ExprInstantiate
-    where precedence = 12
+    where precedence: ExprPrec = ExprPrec::Atomic,
 );
 
 impl Display for ExprInstantiateDisplay<'_> {
@@ -1726,7 +1854,7 @@ impl Display for ExprInstantiateDisplay<'_> {
 
 make_display_struct!(
     ExprHasConceptDisplay { e } for ast::ExprHasConcept
-    where precedence = 10
+    where precedence: ExprPrec = ExprPrec::Cast,
 );
 
 impl Display for ExprHasConceptDisplay<'_> {
@@ -1744,7 +1872,7 @@ impl Display for ExprHasConceptDisplay<'_> {
 
 make_display_struct!(
     ExprCastDisplay { e } for ast::ExprCast
-    where precedence = 10
+    where precedence: ExprPrec = ExprPrec::Cast,
 );
 
 impl Display for ExprCastDisplay<'_> {
@@ -1762,7 +1890,7 @@ impl Display for ExprCastDisplay<'_> {
 
 make_display_struct!(
     ExprTyCompareDisplay { e } for ast::ExprTyCompare
-    where precedence = 5
+    where precedence: ExprPrec = ExprPrec::TyCmp,
 );
 
 impl Display for ExprTyCompareDisplay<'_> {
@@ -1780,9 +1908,9 @@ impl Display for ExprTyCompareDisplay<'_> {
 
 make_display_struct!(
     ExprUnaryDisplay { e } for ast::ExprUnary
-    where precedence = match e.op {
-        ast::UnOp::Plus | ast::UnOp::Neg | ast::UnOp::BitNot | ast::UnOp::Not => 11,
-    }
+    where precedence: ExprPrec = match e.op {
+        ast::UnOp::Plus | ast::UnOp::Neg | ast::UnOp::BitNot | ast::UnOp::Not => ExprPrec::Unary,
+    },
 );
 
 impl Display for ExprUnaryDisplay<'_> {
@@ -1815,24 +1943,24 @@ impl Display for ast::UnOp {
 
 make_display_struct!(
     ExprBinaryDisplay { e } for ast::ExprBinary
-    where precedence = match e.op {
-        ast::BinOp::Mul | ast::BinOp::Div | ast::BinOp::Mod => 9,
-        ast::BinOp::Add | ast::BinOp::Sub => 8,
-        ast::BinOp::Sal | ast::BinOp::Sar | ast::BinOp::Shl | ast::BinOp::Shr => 7,
-        ast::BinOp::BitOr => 4,
-        ast::BinOp::BitXor => 3,
-        ast::BinOp::BitAnd => 2,
+    where precedence: ExprPrec = match e.op {
+        ast::BinOp::Mul | ast::BinOp::Div | ast::BinOp::Mod => ExprPrec::Mul,
+        ast::BinOp::Add | ast::BinOp::Sub => ExprPrec::Add,
+        ast::BinOp::Sal | ast::BinOp::Sar | ast::BinOp::Shl | ast::BinOp::Shr => ExprPrec::Shift,
+        ast::BinOp::BitOr => ExprPrec::BitOr,
+        ast::BinOp::BitXor => ExprPrec::BitXor,
+        ast::BinOp::BitAnd => ExprPrec::BitAnd,
 
         ast::BinOp::Lt
         | ast::BinOp::Le
         | ast::BinOp::Gt
         | ast::BinOp::Ge
         | ast::BinOp::Eq
-        | ast::BinOp::Ne => 6,
+        | ast::BinOp::Ne => ExprPrec::Cmp,
 
-        ast::BinOp::Or => 1,
-        ast::BinOp::And => 0,
-    }
+        ast::BinOp::Or => ExprPrec::Or,
+        ast::BinOp::And => ExprPrec::And,
+    },
 );
 
 impl Display for ExprBinaryDisplay<'_> {
@@ -1868,14 +1996,14 @@ impl Display for ExprBinaryDisplay<'_> {
                         self.libsl.exprs[self.e.lhs].display_prec(self.libsl, self.e.precedence()),
                     op = self.e.op,
                     rhs = self.libsl.exprs[self.e.rhs]
-                        .display_prec(self.libsl, self.e.precedence() + 1),
+                        .display_prec(self.libsl, self.e.precedence().higher()),
                 )
             }
 
             ast::BinOp::BitOr | ast::BinOp::BitXor | ast::BinOp::BitAnd => {
                 // skip over a bunch of precedence levels straight to shift ops for clarity because
                 // these operators' precedence is very confusing.
-                let non_assoc_prec = 7;
+                let non_assoc_prec = ExprPrec::Shift;
 
                 write!(
                     f,
@@ -1888,9 +2016,9 @@ impl Display for ExprBinaryDisplay<'_> {
             }
 
             ast::BinOp::Or | ast::BinOp::And => {
-                // skip over a bunch of precedence levels straight to bitwise and for clarity
+                // skip over a bunch of precedence levels straight to bitwise AND for clarity
                 // because these operator's precedence is very confusing.
-                let non_assoc_prec = 2;
+                let non_assoc_prec = ExprPrec::BitAnd;
 
                 write!(
                     f,

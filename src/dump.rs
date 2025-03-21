@@ -1383,21 +1383,570 @@ make_display_struct!(StmtDisplay { s } for ast::Stmt);
 
 impl Display for StmtDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        match &self.s.kind {
+            ast::StmtKind::Dummy => Ok(()),
+            ast::StmtKind::Decl(decl_id) => {
+                write!(f, "{}", self.libsl.decls[*decl_id].display(self.libsl))
+            }
+            ast::StmtKind::If(s) => write!(f, "{}", s.display(self.libsl)),
+            ast::StmtKind::Assign(s) => write!(f, "{}", s.display(self.libsl)),
+            ast::StmtKind::Expr(expr_id) => {
+                write!(f, "{}", self.libsl.exprs[*expr_id].display(self.libsl))
+            }
+        }
     }
 }
 
-make_display_struct!(ExprDisplay { e } for ast::Expr);
+make_display_struct!(StmtIfDisplay { s } for ast::StmtIf);
+
+impl Display for StmtIfDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "if {} ",
+            self.libsl.exprs[self.s.cond].display(self.libsl)
+        )?;
+
+        display_list(
+            f,
+            ("{", "", "}"),
+            false,
+            false,
+            self.s.then_branch.iter().map(|&stmt_id| {
+                move |f: &mut dyn fmt::Write| {
+                    write!(f, "{}", self.libsl.stmts[stmt_id].display(self.libsl))
+                }
+            }),
+        )?;
+
+        if !self.s.else_branch.is_empty() {
+            write!(f, " else ")?;
+
+            display_list(
+                f,
+                ("{", "", "}"),
+                false,
+                false,
+                self.s.else_branch.iter().map(|&stmt_id| {
+                    move |f: &mut dyn fmt::Write| {
+                        write!(f, "{}", self.libsl.stmts[stmt_id].display(self.libsl))
+                    }
+                }),
+            )?;
+        }
+
+        Ok(())
+    }
+}
+
+make_display_struct!(StmtAssignDisplay { s } for ast::StmtAssign);
+
+impl Display for StmtAssignDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} ",
+            self.libsl.qualified_accesses[self.s.lhs].display(self.libsl),
+        )?;
+
+        if let Some(in_place_op) = self.s.in_place_op {
+            write!(f, "{in_place_op}")?;
+        } else {
+            write!(f, "=")?;
+        }
+
+        write!(f, " {};", self.libsl.exprs[self.s.rhs].display(self.libsl))
+    }
+}
+
+impl Display for ast::InPlaceOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ast::InPlaceOp::Add => write!(f, "+="),
+            ast::InPlaceOp::Sub => write!(f, "-="),
+            ast::InPlaceOp::Mul => write!(f, "*="),
+            ast::InPlaceOp::Div => write!(f, "/="),
+            ast::InPlaceOp::Mod => write!(f, "%="),
+            ast::InPlaceOp::BitAnd => write!(f, "&="),
+            ast::InPlaceOp::BitOr => write!(f, "|="),
+            ast::InPlaceOp::BitXor => write!(f, "^="),
+            ast::InPlaceOp::Sal => write!(f, "<<="),
+            ast::InPlaceOp::Sar => write!(f, ">>="),
+        }
+    }
+}
+
+make_display_struct!(
+    ExprDisplay { e } for ast::Expr
+    where precedence = match &e.kind {
+        ast::ExprKind::Dummy => u8::MAX,
+        ast::ExprKind::PrimitiveLit(e) => e.precedence(),
+        ast::ExprKind::ArrayLit(e) => e.precedence(),
+        ast::ExprKind::QualifiedAccess(e) => e.precedence(),
+        ast::ExprKind::Prev(e) => e.precedence(),
+        ast::ExprKind::ProcCall(e) => e.precedence(),
+        ast::ExprKind::ActionCall(e) => e.precedence(),
+        ast::ExprKind::Instantiate(e) => e.precedence(),
+        ast::ExprKind::HasConcept(e) => e.precedence(),
+        ast::ExprKind::Cast(e) => e.precedence(),
+        ast::ExprKind::TyCompare(e) => e.precedence(),
+        ast::ExprKind::Unary(e) => e.precedence(),
+        ast::ExprKind::Binary(e) => e.precedence(),
+    }
+);
 
 impl Display for ExprDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        match &self.e.kind {
+            ast::ExprKind::Dummy => Ok(()),
+            ast::ExprKind::PrimitiveLit(e) => {
+                write!(f, "{}", e.display_prec(self.libsl, self.prec))
+            }
+            ast::ExprKind::ArrayLit(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
+            ast::ExprKind::QualifiedAccess(e) => {
+                write!(f, "{}", e.display_prec(self.libsl, self.prec))
+            }
+            ast::ExprKind::Prev(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
+            ast::ExprKind::ProcCall(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
+            ast::ExprKind::ActionCall(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
+            ast::ExprKind::Instantiate(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
+            ast::ExprKind::HasConcept(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
+            ast::ExprKind::Cast(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
+            ast::ExprKind::TyCompare(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
+            ast::ExprKind::Unary(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
+            ast::ExprKind::Binary(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
+        }
+    }
+}
+
+make_display_struct!(
+    ExprPrimitiveLitDisplay { e } for ast::ExprPrimitiveLit
+    where precedence = 12
+);
+
+impl Display for ExprPrimitiveLitDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        display_parens(f, self.e.precedence(), self.prec, |f| {
+            write!(f, "{}", self.e.lit.display(self.libsl))
+        })
+    }
+}
+
+make_display_struct!(
+    ExprArrayLitDisplay { e } for ast::ExprArrayLit
+    where precedence = 12
+);
+
+impl Display for ExprArrayLitDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        display_parens(f, self.e.precedence(), self.prec, |f| {
+            write!(f, "[")?;
+
+            for (idx, &expr_id) in self.e.elems.iter().enumerate() {
+                if idx > 0 {
+                    write!(f, ", ")?;
+                }
+
+                write!(f, "{}", self.libsl.exprs[expr_id].display(self.libsl))?;
+            }
+
+            write!(f, "]")
+        })
+    }
+}
+
+make_display_struct!(
+    ExprQualifiedAccessDisplay { e } for ast::ExprQualifiedAccess
+    where precedence = 12
+);
+
+impl Display for ExprQualifiedAccessDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        display_parens(f, self.e.precedence(), self.prec, |f| {
+            write!(
+                f,
+                "{}",
+                self.libsl.qualified_accesses[self.e.access].display(self.libsl),
+            )
+        })
+    }
+}
+
+make_display_struct!(
+    ExprPrevDisplay { e } for ast::ExprPrev
+    where precedence = 12
+);
+
+impl Display for ExprPrevDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        display_parens(f, self.e.precedence(), self.prec, |f| {
+            write!(
+                f,
+                "{}'",
+                self.libsl.qualified_accesses[self.e.access].display(self.libsl),
+            )
+        })
+    }
+}
+
+make_display_struct!(
+    ExprProcCallDisplay { e } for ast::ExprProcCall
+    where precedence = 12
+);
+
+impl Display for ExprProcCallDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        display_parens(f, self.e.precedence(), self.prec, |f| {
+            write!(
+                f,
+                "{}",
+                self.libsl.qualified_accesses[self.e.callee].display(self.libsl)
+            )?;
+
+            if !self.e.generics.is_empty() {
+                write!(f, "<")?;
+
+                for (idx, ty_arg) in self.e.generics.iter().enumerate() {
+                    if idx > 0 {
+                        write!(f, ", ")?;
+                    }
+
+                    write!(f, "{}", ty_arg.display(self.libsl))?;
+                }
+
+                write!(f, ">")?;
+            }
+
+            write!(f, "(")?;
+
+            for (idx, &expr_id) in self.e.args.iter().enumerate() {
+                if idx > 0 {
+                    write!(f, ", ")?;
+                }
+
+                write!(f, "{}", self.libsl.exprs[expr_id].display(self.libsl))?;
+            }
+
+            write!(f, ")")
+        })
+    }
+}
+
+make_display_struct!(
+    ExprActionCallDisplay { e } for ast::ExprActionCall
+    where precedence = 12
+);
+
+impl Display for ExprActionCallDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        display_parens(f, self.e.precedence(), self.prec, |f| {
+            write!(f, "{}", self.e.name)?;
+
+            if !self.e.generics.is_empty() {
+                write!(f, "<")?;
+
+                for (idx, ty_arg) in self.e.generics.iter().enumerate() {
+                    if idx > 0 {
+                        write!(f, ", ")?;
+                    }
+
+                    write!(f, "{}", ty_arg.display(self.libsl))?;
+                }
+
+                write!(f, ">")?;
+            }
+
+            write!(f, "(")?;
+
+            for (idx, &expr_id) in self.e.args.iter().enumerate() {
+                if idx > 0 {
+                    write!(f, ", ")?;
+                }
+
+                write!(f, "{}", self.libsl.exprs[expr_id].display(self.libsl))?;
+            }
+
+            write!(f, ")")
+        })
+    }
+}
+
+make_display_struct!(
+    ExprInstantiateDisplay { e } for ast::ExprInstantiate
+    where precedence = 12
+);
+
+impl Display for ExprInstantiateDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        display_parens(f, self.e.precedence(), self.prec, |f| {
+            write!(f, "new {}", self.e.name)?;
+
+            if !self.e.generics.is_empty() {
+                write!(f, "<")?;
+
+                for (idx, ty_arg) in self.e.generics.iter().enumerate() {
+                    if idx > 0 {
+                        write!(f, ", ")?;
+                    }
+
+                    write!(f, "{}", ty_arg.display(self.libsl))?;
+                }
+
+                write!(f, ">")?;
+            }
+
+            write!(f, "(")?;
+
+            for (idx, arg) in self.e.args.iter().enumerate() {
+                if idx > 0 {
+                    write!(f, ", ")?;
+                }
+
+                let expr_id = match arg {
+                    ast::ConstructorArg::State(expr_id) => {
+                        write!(f, "state = ")?;
+
+                        *expr_id
+                    }
+
+                    ast::ConstructorArg::Var(name, expr_id) => {
+                        write!(f, "{name} = ")?;
+
+                        *expr_id
+                    }
+                };
+
+                write!(f, "{}", self.libsl.exprs[expr_id].display(self.libsl))?;
+            }
+
+            write!(f, ")")
+        })
+    }
+}
+
+make_display_struct!(
+    ExprHasConceptDisplay { e } for ast::ExprHasConcept
+    where precedence = 10
+);
+
+impl Display for ExprHasConceptDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        display_parens(f, self.e.precedence(), self.prec, |f| {
+            write!(
+                f,
+                "{lhs} has {concept}",
+                lhs = self.libsl.qualified_accesses[self.e.scrutinee].display(self.libsl),
+                concept = self.e.concept,
+            )
+        })
+    }
+}
+
+make_display_struct!(
+    ExprCastDisplay { e } for ast::ExprCast
+    where precedence = 10
+);
+
+impl Display for ExprCastDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        display_parens(f, self.e.precedence(), self.prec, |f| {
+            write!(
+                f,
+                "{lhs} as {rhs}",
+                lhs = self.libsl.exprs[self.e.expr].display_prec(self.libsl, self.e.precedence()),
+                rhs = self.libsl.ty_exprs[self.e.ty_expr].display(self.libsl),
+            )
+        })
+    }
+}
+
+make_display_struct!(
+    ExprTyCompareDisplay { e } for ast::ExprTyCompare
+    where precedence = 5
+);
+
+impl Display for ExprTyCompareDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        display_parens(f, self.e.precedence(), self.prec, |f| {
+            write!(
+                f,
+                "{lhs} is {rhs}",
+                lhs = self.libsl.exprs[self.e.expr].display_prec(self.libsl, self.e.precedence()),
+                rhs = self.libsl.ty_exprs[self.e.ty_expr].display(self.libsl),
+            )
+        })
+    }
+}
+
+make_display_struct!(
+    ExprUnaryDisplay { e } for ast::ExprUnary
+    where precedence = match e.op {
+        ast::UnOp::Plus | ast::UnOp::Neg | ast::UnOp::BitNot | ast::UnOp::Not => 11,
+    }
+);
+
+impl Display for ExprUnaryDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        display_parens(f, self.e.precedence(), self.prec, |f| {
+            write!(
+                f,
+                "{op}{expr}",
+                op = self.e.op,
+                expr = self.libsl.exprs[self.e.expr].display_prec(self.libsl, self.e.precedence()),
+            )
+        })
+    }
+}
+
+impl Display for ast::UnOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                ast::UnOp::Plus => "+",
+                ast::UnOp::Neg => "-",
+                ast::UnOp::BitNot => "~",
+                ast::UnOp::Not => "!",
+            }
+        )
+    }
+}
+
+make_display_struct!(
+    ExprBinaryDisplay { e } for ast::ExprBinary
+    where precedence = match e.op {
+        ast::BinOp::Mul | ast::BinOp::Div | ast::BinOp::Mod => 9,
+        ast::BinOp::Add | ast::BinOp::Sub => 8,
+        ast::BinOp::Sal | ast::BinOp::Sar | ast::BinOp::Shl | ast::BinOp::Shr => 7,
+        ast::BinOp::BitOr => 4,
+        ast::BinOp::BitXor => 3,
+        ast::BinOp::BitAnd => 2,
+
+        ast::BinOp::Lt
+        | ast::BinOp::Le
+        | ast::BinOp::Gt
+        | ast::BinOp::Ge
+        | ast::BinOp::Eq
+        | ast::BinOp::Ne => 6,
+
+        ast::BinOp::Or => 1,
+        ast::BinOp::And => 0,
+    }
+);
+
+impl Display for ExprBinaryDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let lassoc_or_prec = |prec| match &self.libsl.exprs[self.e.lhs].kind {
+            // allow left association without parentheses.
+            ast::ExprKind::Binary(e) if e.op == self.e.op => self.e.precedence(),
+
+            // otherwise require the supplied (presumably higher) precedence.
+            _ => prec,
+        };
+
+        display_parens(f, self.e.precedence(), self.prec, |f| match self.e.op {
+            ast::BinOp::Mul
+            | ast::BinOp::Div
+            | ast::BinOp::Mod
+            | ast::BinOp::Add
+            | ast::BinOp::Sub
+            | ast::BinOp::Sal
+            | ast::BinOp::Sar
+            | ast::BinOp::Shl
+            | ast::BinOp::Shr
+            | ast::BinOp::Lt
+            | ast::BinOp::Le
+            | ast::BinOp::Gt
+            | ast::BinOp::Ge
+            | ast::BinOp::Eq
+            | ast::BinOp::Ne => {
+                write!(
+                    f,
+                    "{lhs} {op} {rhs}",
+                    lhs =
+                        self.libsl.exprs[self.e.lhs].display_prec(self.libsl, self.e.precedence()),
+                    op = self.e.op,
+                    rhs = self.libsl.exprs[self.e.rhs]
+                        .display_prec(self.libsl, self.e.precedence() + 1),
+                )
+            }
+
+            ast::BinOp::BitOr | ast::BinOp::BitXor | ast::BinOp::BitAnd => {
+                // skip over a bunch of precedence levels straight to shift ops for clarity because
+                // these operators' precedence is very confusing.
+                let non_assoc_prec = 7;
+
+                write!(
+                    f,
+                    "{lhs} {op} {rhs}",
+                    lhs = self.libsl.exprs[self.e.lhs]
+                        .display_prec(self.libsl, lassoc_or_prec(non_assoc_prec)),
+                    op = self.e.op,
+                    rhs = self.libsl.exprs[self.e.rhs].display_prec(self.libsl, non_assoc_prec),
+                )
+            }
+
+            ast::BinOp::Or | ast::BinOp::And => {
+                // skip over a bunch of precedence levels straight to bitwise and for clarity
+                // because these operator's precedence is very confusing.
+                let non_assoc_prec = 2;
+
+                write!(
+                    f,
+                    "{lhs} {op} {rhs}",
+                    lhs = self.libsl.exprs[self.e.lhs]
+                        .display_prec(self.libsl, lassoc_or_prec(non_assoc_prec)),
+                    op = self.e.op,
+                    rhs = self.libsl.exprs[self.e.rhs].display_prec(self.libsl, non_assoc_prec),
+                )
+            }
+        })
+    }
+}
+
+impl Display for ast::BinOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                ast::BinOp::Mul => "*",
+                ast::BinOp::Div => "/",
+                ast::BinOp::Mod => "%",
+                ast::BinOp::Add => "+",
+                ast::BinOp::Sub => "-",
+                ast::BinOp::Sal => "<<",
+                ast::BinOp::Sar => ">>",
+                ast::BinOp::Shl => "<<<",
+                ast::BinOp::Shr => ">>>",
+                ast::BinOp::BitOr => "|",
+                ast::BinOp::BitXor => "^",
+                ast::BinOp::BitAnd => "&",
+                ast::BinOp::Lt => "<",
+                ast::BinOp::Le => "<=",
+                ast::BinOp::Gt => ">",
+                ast::BinOp::Ge => ">=",
+                ast::BinOp::Eq => "==",
+                ast::BinOp::Ne => "!=",
+                ast::BinOp::Or => "||",
+                ast::BinOp::And => "&&",
+            },
+        )
     }
 }
 
 make_display_struct!(PrimitiveLitDisplay { l } for ast::PrimitiveLit);
 
 impl Display for PrimitiveLitDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        todo!()
+    }
+}
+
+make_display_struct!(QualifiedAccessDisplay { a } for ast::QualifiedAccess);
+
+impl Display for QualifiedAccessDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         todo!()
     }

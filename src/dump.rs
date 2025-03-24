@@ -1416,7 +1416,7 @@ make_display_struct!(
 impl Display for TyExprPrimitiveLitDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         display_parens(f, self.t.precedence(), self.prec, |f| {
-            write!(f, "{}", self.t.lit.display(self.libsl))
+            write!(f, "{}", self.t.lit)
         })
     }
 }
@@ -1655,7 +1655,7 @@ make_display_struct!(
 impl Display for ExprPrimitiveLitDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         display_parens(f, self.e.precedence(), self.prec, |f| {
-            write!(f, "{}", self.e.lit.display(self.libsl))
+            write!(f, "{}", self.e.lit)
         })
     }
 }
@@ -2064,11 +2064,57 @@ impl Display for ast::BinOp {
     }
 }
 
-make_display_struct!(PrimitiveLitDisplay { l } for ast::PrimitiveLit);
-
-impl Display for PrimitiveLitDisplay<'_> {
+impl Display for ast::PrimitiveLit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        match self {
+            ast::PrimitiveLit::Int(lit) => write!(f, "{}", lit),
+            ast::PrimitiveLit::Float(lit) => write!(f, "{}", lit),
+            ast::PrimitiveLit::String(s) => write!(f, "{}", QuotedString(s)),
+
+            ast::PrimitiveLit::Char(c) => match char::from_u32(*c) {
+                Some('\x08') => write!(f, "'\\b'"),
+                Some('\t') => write!(f, "'\\t'"),
+                Some('\n') => write!(f, "'\\n'"),
+                Some('\x0c') => write!(f, "'\\f'"),
+                Some(c @ ('"' | '\'' | '\\')) => write!(f, "'\\{c}'"),
+                Some(ch) if ch.is_ascii_control() => write!(f, "'\\u{c:04x}'"),
+                Some(c) => write!(f, "'{c}'"),
+                None => write!(f, "'\\u{c:04x}'"),
+            },
+
+            ast::PrimitiveLit::Bool(true) => write!(f, "true"),
+            ast::PrimitiveLit::Bool(false) => write!(f, "false"),
+
+            ast::PrimitiveLit::Null => write!(f, "null"),
+        }
+    }
+}
+
+impl Display for ast::IntLit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ast::IntLit::I8(v) => write!(f, "{v}x"),
+            ast::IntLit::U8(v) => write!(f, "{v}ux"),
+            ast::IntLit::I16(v) => write!(f, "{v}s"),
+            ast::IntLit::U16(v) => write!(f, "{v}us"),
+            ast::IntLit::I32(v) => write!(f, "{v}"),
+            ast::IntLit::U32(v) => write!(f, "{v}u"),
+            ast::IntLit::I64(v) => write!(f, "{v}L"),
+            ast::IntLit::U64(v) => write!(f, "{v}uL"),
+        }
+    }
+}
+
+impl Display for ast::FloatLit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // assumes the float is finite. if not (infinite or nan), it'll print a string that will be
+        // interpreted as an identifier instead.
+        let mut buf = ryu::Buffer::new();
+
+        match self {
+            ast::FloatLit::F32(v) => write!(f, "{}", buf.format(*v)),
+            ast::FloatLit::F64(v) => write!(f, "{}", buf.format(*v)),
+        }
     }
 }
 
@@ -2146,12 +2192,6 @@ impl Display for TyArgDisplay<'_> {
 make_display_struct!(TyConstraintDisplay { t } for ast::TyConstraint);
 
 impl Display for TyConstraintDisplay<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
-    }
-}
-
-impl Display for ast::IntLit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         todo!()
     }

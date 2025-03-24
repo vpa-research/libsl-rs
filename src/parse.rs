@@ -65,7 +65,7 @@ use crate::grammar::parser::{FileContextAll, LibSLParser};
 use crate::loc::{FileId, Loc, Span};
 use crate::{DeclId, ExprId, LibSl, QualifiedAccessId, StmtId, TyExprId, ast, grammar};
 
-pub type Result<T, E = ParseError> = std::result::Result<T, E>;
+type Result<T, E = ParseError> = std::result::Result<T, E>;
 
 type Terminal<'a> = TerminalNode<'a, LibSLParserContextType>;
 
@@ -188,15 +188,23 @@ impl From<Radix> for u32 {
     }
 }
 
+/// An error that occurred while parsing a file.
 #[derive(Error, Debug, Clone)]
 pub enum ParseError {
+    /// A syntax error.
     #[error("encountered a syntax error at L{line}:{column}: {msg}")]
     Syntax {
+        /// The line number (1-based) this error occurred in.
         line: isize,
+
+        /// The column number (1-based) this error occurred in.
         column: isize,
+
+        /// The error message.
         msg: String,
     },
 
+    /// Could not parse an integer literal.
     #[error(
         "could not parse {radix_article} {radix} integer literal at L{line}:{column}: {inner}",
         radix_article = match radix {
@@ -213,7 +221,8 @@ pub enum ParseError {
         inner: ParseIntError,
     },
 
-    #[error("could not parse a floating-point literal at L{line}:{column}: {inner}")]
+    /// Could not parse a floating-point number literal.
+    #[error("could not parse a floating-point number literal at L{line}:{column}: {inner}")]
     Float {
         line: isize,
         column: isize,
@@ -253,7 +262,14 @@ impl<'input, T: Parser<'input>> ErrorListener<'input, T> for ErrorCollector {
 }
 
 impl LibSl {
-    pub fn parse_file(&mut self, file_name: String, contents: &str) -> Result<ast::File> {
+    /// Parses the `contents` as a LibSL file with the given name.
+    ///
+    /// If the file has syntax errors, returns an `Err(ParserError)`.
+    pub fn parse_file(
+        &mut self,
+        file_name: String,
+        contents: &str,
+    ) -> Result<ast::File, ParseError> {
         let input_stream = InputStream::new(contents);
         let lexer = LibSLLexer::new(input_stream);
         let token_stream = CommonTokenStream::new(lexer);
@@ -301,8 +317,8 @@ impl<'a> AstConstructor<'a> {
     }
 
     fn get_loc(&self, start: &CommonToken<'_>, stop: &CommonToken<'_>) -> Loc {
-        let line = (start.line > 0).then_some(NonZeroUsize::new(start.line as usize).unwrap());
-        let col = (start.column > 0).then_some(NonZeroUsize::new(start.column as usize).unwrap());
+        let line = (start.line > 0).then(|| NonZeroUsize::new(start.line as usize).unwrap());
+        let col = (start.column > 0).then(|| NonZeroUsize::new(start.column as usize).unwrap());
 
         Span {
             start: start.start as usize,
@@ -1774,7 +1790,7 @@ impl<'a> AstConstructor<'a> {
                                 automaton,
                                 generics,
                                 arg,
-                                variable: name,
+                                field: name,
                             }
                             .into(),
                         }),

@@ -1,5 +1,12 @@
+//! Provides types that allow referring to a part of a source file.
+//!
+//! Source location information is represented by the [`Loc`] enum, which acts like an
+//! `Option<Span>`: [`Loc::Synthetic`] is used for nodes that are not represented in the source
+//! file, whereas [`Loc::Span`] contains the [`Span`] corresponding to the node.
+
 use std::num::NonZeroUsize;
 
+/// A file identifier for use in [`Span`s][Span] to avoid lifetime parameters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FileId(pub(crate) usize);
 
@@ -12,7 +19,7 @@ pub struct Span {
     /// A length of the span in bytes.
     pub len: usize,
 
-    /// A file index.
+    /// A file identifier.
     pub file_id: FileId,
 
     /// A line number, counted from 1.

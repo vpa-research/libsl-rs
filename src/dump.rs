@@ -1,6 +1,6 @@
 //! Implements dumping the AST nodes back as LibSL source text.
 //!
-//! The AST built by [parsing](LibSl::parse_file) can always by converted to a syntactically correct
+//! The AST built by [parsing](LibSl::parse_file) can always be converted to a syntactically correct
 //! LibSL source. However, the module performs no additional checks to ensure that, and invalid text
 //! may still be emitted if you, for instance, put an illegal identifier as the name for a type or
 //! insert a wrong node into the AST (such as a state declaration in the global scope).
@@ -11,6 +11,7 @@ use crate::{DeclId, LibSl, StmtId, ast};
 
 const INDENT: &str = "    ";
 
+/// Provides operations on expression precedences.
 pub trait Prec: Copy + Ord {
     /// The maximal precedence level that forces parentheses around an expression.
     const MAX: Self;
@@ -2169,7 +2170,7 @@ impl Display for QualifiedAccessAutomatonVarDisplay<'_> {
             f,
             "({arg}).{field}",
             arg = self.libsl.qualified_accesses[self.a.arg].display(self.libsl),
-            field = self.a.variable,
+            field = self.a.field,
         )
     }
 }

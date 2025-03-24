@@ -155,6 +155,8 @@ macro_rules! make_display_struct {
         #[derive(Debug, Clone, Copy)]
         pub struct $name<'a> {
             $field: &'a $ast,
+
+            #[allow(unused)]
             libsl: &'a LibSl,
         }
     };
@@ -195,7 +197,10 @@ macro_rules! make_display_struct {
         #[derive(Debug, Clone, Copy)]
         pub struct $name<'a> {
             $field: &'a $ast,
+
+            #[allow(unused)]
             libsl: &'a LibSl,
+
             prec: $prec_ty,
         }
     };
@@ -2122,7 +2127,76 @@ make_display_struct!(QualifiedAccessDisplay { a } for ast::QualifiedAccess);
 
 impl Display for QualifiedAccessDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        match &self.a.kind {
+            ast::QualifiedAccessKind::Dummy => Ok(()),
+            ast::QualifiedAccessKind::Name(a) => write!(f, "{}", a.display(self.libsl)),
+            ast::QualifiedAccessKind::AutomatonVar(a) => write!(f, "{}", a.display(self.libsl)),
+            ast::QualifiedAccessKind::Field(a) => write!(f, "{}", a.display(self.libsl)),
+            ast::QualifiedAccessKind::Index(a) => write!(f, "{}", a.display(self.libsl)),
+        }
+    }
+}
+
+make_display_struct!(QualifiedAccessNameDisplay { a } for ast::QualifiedAccessName);
+
+impl Display for QualifiedAccessNameDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.a.name)
+    }
+}
+
+make_display_struct!(QualifiedAccessAutomatonVarDisplay { a } for ast::QualifiedAccessAutomatonVar);
+
+impl Display for QualifiedAccessAutomatonVarDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.a.automaton)?;
+
+        if !self.a.generics.is_empty() {
+            write!(f, "<")?;
+
+            for (idx, ty_arg) in self.a.generics.iter().enumerate() {
+                if idx > 0 {
+                    write!(f, ", ")?;
+                }
+
+                write!(f, "{}", ty_arg.display(self.libsl))?;
+            }
+
+            write!(f, ">")?;
+        }
+
+        write!(
+            f,
+            "({arg}).{field}",
+            arg = self.libsl.qualified_accesses[self.a.arg].display(self.libsl),
+            field = self.a.variable,
+        )
+    }
+}
+
+make_display_struct!(QualifiedAccessFieldDisplay { a } for ast::QualifiedAccessField);
+
+impl Display for QualifiedAccessFieldDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{base}.{field}",
+            base = self.libsl.qualified_accesses[self.a.base].display(self.libsl),
+            field = self.a.field,
+        )
+    }
+}
+
+make_display_struct!(QualifiedAccessIndexDisplay { a } for ast::QualifiedAccessIndex);
+
+impl Display for QualifiedAccessIndexDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{base}[{index}]",
+            base = self.libsl.qualified_accesses[self.a.base].display(self.libsl),
+            index = self.libsl.exprs[self.a.index].display(self.libsl),
+        )
     }
 }
 
@@ -2185,7 +2259,15 @@ make_display_struct!(TyArgDisplay { t } for ast::TyArg);
 
 impl Display for TyArgDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        match self.t {
+            ast::TyArg::TyExpr(ty_expr_id) => write!(
+                f,
+                "{}",
+                self.libsl.ty_exprs[*ty_expr_id].display(self.libsl),
+            ),
+
+            ast::TyArg::Wildcard(_) => write!(f, "?"),
+        }
     }
 }
 
@@ -2193,7 +2275,12 @@ make_display_struct!(TyConstraintDisplay { t } for ast::TyConstraint);
 
 impl Display for TyConstraintDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        write!(
+            f,
+            "{param}: {bound}",
+            param = self.t.param,
+            bound = self.t.bound.display(self.libsl),
+        )
     }
 }
 

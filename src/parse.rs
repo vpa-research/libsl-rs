@@ -1656,9 +1656,9 @@ impl<'a> AstConstructor<'a> {
         } else if op_ctx.rShift().is_some() {
             ast::BinOp::Sar
         } else if op_ctx.uRShift().is_some() {
-            ast::BinOp::Shl
-        } else if op_ctx.uLShift().is_some() {
             ast::BinOp::Shr
+        } else if op_ctx.uLShift().is_some() {
+            ast::BinOp::Shl
         } else {
             panic!("unrecognized bitShiftOp node: {op_ctx:?}");
         };

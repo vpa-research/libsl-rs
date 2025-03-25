@@ -354,7 +354,7 @@ impl Display for QuotedString<'_> {
             }
         }
 
-        Ok(())
+        write!(f, "\"")
     }
 }
 
@@ -484,18 +484,19 @@ make_display_struct!(HeaderDisplay { h } for ast::Header);
 impl Display for HeaderDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "libsl {};", QuotedString(&self.h.libsl_version))?;
+        writeln!(f)?;
         write!(f, "library {}", Identifier(&self.h.library_name))?;
 
         if let Some(version) = &self.h.version {
-            write!(f, " {}", QuotedString(version))?;
+            write!(f, "\n{INDENT}version {}", QuotedString(version))?;
         }
 
         if let Some(language) = &self.h.language {
-            write!(f, " {}", QuotedString(language))?;
+            write!(f, "\n{INDENT}language {}", QuotedString(language))?;
         }
 
         if let Some(url) = &self.h.url {
-            write!(f, " {}", QuotedString(url))?;
+            write!(f, "\n{INDENT}url {}", QuotedString(url))?;
         }
 
         write!(f, ";")
@@ -715,7 +716,17 @@ impl Display for DeclAnnotationDisplay<'_> {
                         "{name}: {ty_expr}",
                         name = param.name,
                         ty_expr = self.libsl.ty_exprs[param.ty_expr].display(self.libsl),
-                    )
+                    )?;
+
+                    if let Some(expr_id) = param.default {
+                        write!(
+                            f,
+                            " = {}",
+                            self.libsl.exprs[expr_id].display(self.libsl),
+                        )?;
+                    }
+
+                    Ok(())
                 }
             }),
         )?;
@@ -753,13 +764,13 @@ impl Display for DeclActionDisplay<'_> {
             true,
             self.d.params.iter().map(|param| {
                 move |f: &mut dyn fmt::Write| {
-                    for annotation in &self.d.annotations {
+                    for annotation in &param.annotations {
                         writeln!(f, "{}", annotation.display(self.libsl))?;
                     }
 
-                    writeln!(
+                    write!(
                         f,
-                        "{INDENT}{name}: {ty_expr}",
+                        "{name}: {ty_expr}",
                         name = param.name,
                         ty_expr = self.libsl.ty_exprs[param.ty_expr].display(self.libsl),
                     )
@@ -1287,7 +1298,8 @@ impl Display for FunctionBodyDisplay<'_> {
                 .iter()
                 .map(Item::Contract)
                 .chain(
-                    (self.b.contracts.is_empty() && self.b.stmts.is_empty()).then_some(Item::Empty),
+                    (!self.b.contracts.is_empty() && !self.b.stmts.is_empty())
+                        .then_some(Item::Empty),
                 )
                 .chain(self.b.stmts.iter().copied().map(Item::Stmt))
                 .map(|item| {
@@ -1525,7 +1537,7 @@ impl Display for StmtDisplay<'_> {
             ast::StmtKind::If(s) => write!(f, "{}", s.display(self.libsl)),
             ast::StmtKind::Assign(s) => write!(f, "{}", s.display(self.libsl)),
             ast::StmtKind::Expr(expr_id) => {
-                write!(f, "{}", self.libsl.exprs[*expr_id].display(self.libsl))
+                write!(f, "{};", self.libsl.exprs[*expr_id].display(self.libsl))
             }
         }
     }
@@ -1774,7 +1786,7 @@ make_display_struct!(
 impl Display for ExprActionCallDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         display_parens(f, self.e.precedence(), self.prec, |f| {
-            write!(f, "{}", self.e.name)?;
+            write!(f, "action {}", self.e.name)?;
 
             if !self.e.generics.is_empty() {
                 write!(f, "<")?;

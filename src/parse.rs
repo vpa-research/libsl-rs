@@ -11,7 +11,7 @@ use antlr_rust::token::CommonToken;
 use antlr_rust::token_factory::TokenFactory;
 use antlr_rust::tree::TerminalNode;
 use antlr_rust::{InputStream, Parser};
-use derive_more::Display;
+use derive_more::{Display, From};
 use thiserror::Error;
 
 use crate::grammar::lexer::LibSLLexer;
@@ -160,6 +160,30 @@ enum QualifiedAccessBase {
     },
 
     QualifiedAccess(QualifiedAccessId),
+}
+
+#[derive(From)]
+enum ParsedQualifiedAccess {
+    QualifiedAccess(QualifiedAccessId),
+    ProcCall(ExprId),
+}
+
+impl ParsedQualifiedAccess {
+    fn to_qualified_access(&self, libsl: &LibSl) -> Result<QualifiedAccessId> {
+        match *self {
+            Self::QualifiedAccess(id) => Ok(id),
+
+            Self::ProcCall(expr_id) => {
+                let span = libsl.exprs[expr_id].loc.span().unwrap();
+
+                Err(ParseError::Syntax {
+                    line: span.line.map(|n| usize::from(n) as isize).unwrap_or(-1),
+                    column: span.col.map(|n| usize::from(n) as isize).unwrap_or(-1),
+                    msg: "unexpected procedure call".into(),
+                })
+            }
+        }
+    }
 }
 
 #[derive(Display, Debug, Clone, Copy, PartialEq, Eq)]
@@ -1294,7 +1318,9 @@ impl<'a> AstConstructor<'a> {
     }
 
     fn process_stmt_assign(&mut self, ctx: &VariableAssignmentContextAll<'_>) -> Result<StmtId> {
-        let lhs = self.process_qualified_access(&ctx.qualifiedAccess().unwrap())?;
+        let lhs = self
+            .process_qualified_access(&ctx.qualifiedAccess().unwrap())?
+            .to_qualified_access(self.libsl)?;
 
         let op = ctx.op.as_ref().unwrap();
         let in_place_op = match op.token_type {
@@ -1372,7 +1398,7 @@ impl<'a> AstConstructor<'a> {
         } else if ctx.apostrophe.is_some() {
             self.process_expr_prev(ctx)
         } else if let Some(expr) = ctx.procUsage() {
-            self.process_expr_proc_call(&expr)
+            self.process_expr_proc_call(&expr, QualifiedAccessBase::None)
         } else if let Some(expr) = ctx.actionUsage() {
             self.process_expr_action_call(&expr)
         } else if let Some(expr) = ctx.callAutomatonConstructorWithNamedArgs() {
@@ -1451,7 +1477,11 @@ impl<'a> AstConstructor<'a> {
         &mut self,
         ctx: &QualifiedAccessContextAll<'_>,
     ) -> Result<ExprId> {
-        let access = self.process_qualified_access(ctx)?;
+        let access = match self.process_qualified_access(ctx)? {
+            ParsedQualifiedAccess::QualifiedAccess(access) => access,
+            ParsedQualifiedAccess::ProcCall(expr_id) => return Ok(expr_id),
+        };
+
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
         Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
@@ -1462,7 +1492,9 @@ impl<'a> AstConstructor<'a> {
     }
 
     fn process_expr_prev(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ExprId> {
-        let access = self.process_qualified_access(&ctx.qualifiedAccess().unwrap())?;
+        let access = self
+            .process_qualified_access(&ctx.qualifiedAccess().unwrap())?
+            .to_qualified_access(self.libsl)?;
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
         Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
@@ -1472,8 +1504,14 @@ impl<'a> AstConstructor<'a> {
         }))
     }
 
-    fn process_expr_proc_call(&mut self, ctx: &ProcUsageContextAll<'_>) -> Result<ExprId> {
-        let callee = self.process_qualified_access(&ctx.qualifiedAccess().unwrap())?;
+    fn process_expr_proc_call(
+        &mut self,
+        ctx: &ProcUsageContextAll<'_>,
+        base: QualifiedAccessBase,
+    ) -> Result<ExprId> {
+        let callee = self
+            .process_qualified_access_chain(&ctx.qualifiedAccess().unwrap(), base)?
+            .to_qualified_access(self.libsl)?;
 
         let generics = ctx
             .generic()
@@ -1582,7 +1620,9 @@ impl<'a> AstConstructor<'a> {
         &mut self,
         ctx: &HasAutomatonConceptContextAll<'_>,
     ) -> Result<ExprId> {
-        let scrutinee = self.process_qualified_access(&ctx.qualifiedAccess().unwrap())?;
+        let scrutinee = self
+            .process_qualified_access(&ctx.qualifiedAccess().unwrap())?
+            .to_qualified_access(self.libsl)?;
         let has = ctx.has.as_ref().unwrap();
 
         if !has.text.eq_ignore_ascii_case("has") {
@@ -1744,7 +1784,7 @@ impl<'a> AstConstructor<'a> {
     fn process_qualified_access(
         &mut self,
         ctx: &QualifiedAccessContextAll<'_>,
-    ) -> Result<QualifiedAccessId> {
+    ) -> Result<ParsedQualifiedAccess> {
         self.process_qualified_access_chain(ctx, QualifiedAccessBase::None)
     }
 
@@ -1752,7 +1792,7 @@ impl<'a> AstConstructor<'a> {
         &mut self,
         ctx: &QualifiedAccessContextAll<'_>,
         mut base: QualifiedAccessBase,
-    ) -> Result<QualifiedAccessId> {
+    ) -> Result<ParsedQualifiedAccess> {
         if let Some(names) = ctx.periodSeparatedFullName() {
             if let Some(token) = names.UNBOUNDED() {
                 return Err(ParseError::Syntax {
@@ -1810,10 +1850,11 @@ impl<'a> AstConstructor<'a> {
                 unreachable!();
             };
 
-            Ok(access)
+            Ok(access.into())
         } else if ctx.L_SQUARE_BRACKET().is_some() {
-            let base =
-                self.process_qualified_access_chain(&ctx.qualifiedAccess(0).unwrap(), base)?;
+            let base = self
+                .process_qualified_access_chain(&ctx.qualifiedAccess(0).unwrap(), base)?
+                .to_qualified_access(self.libsl)?;
             let index = self.process_expr(&ctx.expression().unwrap())?;
 
             let loc = self.get_loc(
@@ -1836,7 +1877,7 @@ impl<'a> AstConstructor<'a> {
                     QualifiedAccessBase::QualifiedAccess(base),
                 )
             } else {
-                Ok(base)
+                Ok(base.into())
             }
         } else if let Some(simple_call) = ctx.simpleCall() {
             match base {
@@ -1858,24 +1899,21 @@ impl<'a> AstConstructor<'a> {
                 .transpose()?
                 .unwrap_or_default();
 
-            let arg = self.process_qualified_access(&simple_call.qualifiedAccess().unwrap())?;
+            let arg = self
+                .process_qualified_access(&simple_call.qualifiedAccess().unwrap())?
+                .to_qualified_access(self.libsl)?;
+
+            let base = QualifiedAccessBase::Automaton {
+                automaton,
+                generics,
+                arg,
+            };
 
             if let Some(proc) = ctx.procUsage() {
-                return Err(ParseError::Syntax {
-                    line: proc.start().line,
-                    column: proc.start().column,
-                    msg: "unexpected procedure call".into(),
-                });
+                self.process_expr_proc_call(&proc, base).map(Into::into)
+            } else {
+                self.process_qualified_access_chain(&ctx.qualifiedAccess(0).unwrap(), base)
             }
-
-            self.process_qualified_access_chain(
-                &ctx.qualifiedAccess(0).unwrap(),
-                QualifiedAccessBase::Automaton {
-                    automaton,
-                    generics,
-                    arg,
-                },
-            )
         } else {
             panic!("unrecognized qualifiedAccess node: {ctx:?}");
         }

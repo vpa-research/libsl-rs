@@ -308,7 +308,7 @@ pub struct DeclAutomaton {
     /// The name of the automaton, possibly qualified with type parameter (generic) declarations.
     pub name: QualifiedTyName,
 
-    /// Automaton constructor declarations.
+    /// Automaton constructor variable declarations.
     pub constructor_variables: Vec<DeclId>,
 
     /// The type modelled by this automaton.

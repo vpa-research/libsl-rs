@@ -2079,7 +2079,7 @@ impl<'a> AstConstructor<'a> {
 
     fn process_identifier(&mut self, ctx: &Terminal<'_>) -> Result<ast::Name> {
         Ok(ast::Name {
-            loc: self.get_loc(&ctx.start(), &ctx.stop()),
+            loc: self.get_loc(&ctx.symbol, &ctx.symbol),
             name: parse_ident(&ctx.symbol),
         })
     }

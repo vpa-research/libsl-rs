@@ -15,11 +15,17 @@ pub enum Command {
         path: PathBuf,
     },
 
-    /// Splits a file into tokens and prints them.
+    /// Split a file into tokens and print them.
     Tokens {
         /// A path to the input LibSL file.
         path: PathBuf,
-    }
+    },
+
+    /// Parse a file, convert it back to LibSL source text, and diff it against the input.
+    Ouroboros {
+        /// A path to the input LibSL file.
+        path: PathBuf,
+    },
 }
 
 pub fn parse() -> Args {

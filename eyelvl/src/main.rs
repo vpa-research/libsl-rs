@@ -1,4 +1,4 @@
-use std::fmt::Write;
+use std::fmt::{self, Display, Write};
 use std::fs;
 use std::path::PathBuf;
 
@@ -11,6 +11,9 @@ use color_eyre::eyre::{Context, Result, eyre};
 use libsl::grammar::lexer::LibSLLexer;
 use libsl::grammar::parser::{LibSLParser, LibSLParserContext, LibSLParserContextType};
 use libsl::grammar::parser_listener::LibSLParserListener;
+use libsl::LibSl;
+use similar::{ChangeTag, TextDiff};
+use yansi::{Paint, Style};
 
 mod args;
 
@@ -129,6 +132,51 @@ fn print_tokens(path: PathBuf) -> Result<()> {
     Ok(())
 }
 
+fn ouroboros(path: PathBuf) -> Result<()> {
+    struct LineNr(Option<usize>, usize);
+
+    impl Display for LineNr {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self.0 {
+                Some(n) => write!(f, "{:>width$}", n + 1, width = self.1),
+                None => write!(f, "{:width$}", "", width = self.1),
+            }
+        }
+    }
+
+    let contents = fs::read_to_string(&path)
+        .with_context(|| format!("could not read `{}`", path.display()))?;
+    let mut libsl = LibSl::new();
+    let file = libsl.parse_file(path.display().to_string(), &contents)
+        .with_context(|| eyre!("could not parse `{}`", path.display()))?;
+    let dump = file.display(&libsl).to_string();
+    let diff = TextDiff::from_lines(&contents, &dump);
+
+    let orig_lines = contents.split('\n').count();
+    let new_lines = contents.split('\n').count();
+
+    let orig_line_nr_width = orig_lines.ilog10() + 1;
+    let new_line_nr_width = new_lines.ilog10() + 1;
+
+    for change in diff.iter_all_changes() {
+        let (sign, style) = match change.tag() {
+            ChangeTag::Equal => (" ", Style::new().dim()),
+            ChangeTag::Delete => ("-", Style::new().red()),
+            ChangeTag::Insert => ("+", Style::new().green()),
+        };
+
+        print!(
+            "{} {} |{}{}",
+            LineNr(change.old_index(), orig_line_nr_width as usize).paint(style),
+            LineNr(change.new_index(), new_line_nr_width as usize).paint(style),
+            sign.paint(style),
+            change.paint(style),
+        );
+    }
+
+    Ok(())
+}
+
 fn main() -> Result<()> {
     color_eyre::install()?;
 
@@ -137,5 +185,6 @@ fn main() -> Result<()> {
     match args.command {
         Command::ParseTree { path } => print_parse_tree(path),
         Command::Tokens { path } => print_tokens(path),
+        Command::Ouroboros { path } => ouroboros(path),
     }
 }

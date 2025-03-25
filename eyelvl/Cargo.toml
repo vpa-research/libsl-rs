@@ -8,3 +8,5 @@ clap = { version = "4.5.31", features = ["derive"] }
 color-eyre = "0.6.3"
 libsl = { path = ".." }
 antlr-rust = { path = "../tool/antlr4-rust-target/runtime/Rust" }
+similar = "2.7.0"
+yansi = "1.0.1"

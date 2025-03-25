@@ -439,7 +439,7 @@ impl<'a> Iterator for GlobalDeclIter<'a> {
                 libsl: self.libsl,
             });
 
-            (r, self.decls.len().max(1))
+            (r, self.decls.len().min(1))
         } else {
             (
                 Some(GlobalDeclDisplay::SemanticTyGroup(SemanticTyGroupDisplay {

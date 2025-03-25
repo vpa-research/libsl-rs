@@ -21,10 +21,14 @@ pub enum Command {
         path: PathBuf,
     },
 
-    /// Parse a file, convert it back to LibSL source text, and diff it against the input.
+    /// Parse a file and convert it back to LibSL source text.
     Ouroboros {
         /// A path to the input LibSL file.
         path: PathBuf,
+
+        /// Whether to emit a diff instead of the reformatted output.
+        #[arg(short = 'd', long)]
+        diff: bool,
     },
 }
 

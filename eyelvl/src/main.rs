@@ -8,10 +8,10 @@ use antlr_rust::tree::{ErrorNode, ParseTreeListener, TerminalNode};
 use antlr_rust::{InputStream, Parser, TokenSource};
 use args::Command;
 use color_eyre::eyre::{Context, Result, eyre};
+use libsl::LibSl;
 use libsl::grammar::lexer::LibSLLexer;
 use libsl::grammar::parser::{LibSLParser, LibSLParserContext, LibSLParserContextType};
 use libsl::grammar::parser_listener::LibSLParserListener;
-use libsl::LibSl;
 use similar::{ChangeTag, TextDiff};
 use yansi::{Paint, Style};
 
@@ -120,7 +120,9 @@ fn print_tokens(path: PathBuf) -> Result<()> {
                 .ok()
                 .and_then(|idx| libsl::grammar::lexer::channelNames.get(idx).copied())
                 .unwrap_or("[unknown]"),
-            lexer.get_vocabulary().get_symbolic_name(token.get_token_type())
+            lexer
+                .get_vocabulary()
+                .get_symbolic_name(token.get_token_type())
                 .unwrap_or("[unknown]"),
         );
 
@@ -132,7 +134,7 @@ fn print_tokens(path: PathBuf) -> Result<()> {
     Ok(())
 }
 
-fn ouroboros(path: PathBuf) -> Result<()> {
+fn ouroboros(path: PathBuf, emit_diff: bool) -> Result<()> {
     struct LineNr(Option<usize>, usize);
 
     impl Display for LineNr {
@@ -147,10 +149,20 @@ fn ouroboros(path: PathBuf) -> Result<()> {
     let contents = fs::read_to_string(&path)
         .with_context(|| format!("could not read `{}`", path.display()))?;
     let mut libsl = LibSl::new();
-    let file = libsl.parse_file(path.display().to_string(), &contents)
+    let file = libsl
+        .parse_file(path.display().to_string(), &contents)
         .with_context(|| eyre!("could not parse `{}`", path.display()))?;
     let dump = file.display(&libsl).to_string();
-    let diff = TextDiff::from_lines(&contents, &dump);
+
+    if !emit_diff {
+        println!("{dump}");
+
+        return Ok(())
+    }
+
+    let diff = TextDiff::configure()
+        .algorithm(similar::Algorithm::Patience)
+        .diff_lines(&contents, &dump);
 
     let orig_lines = contents.split('\n').count();
     let new_lines = contents.split('\n').count();
@@ -185,6 +197,6 @@ fn main() -> Result<()> {
     match args.command {
         Command::ParseTree { path } => print_parse_tree(path),
         Command::Tokens { path } => print_tokens(path),
-        Command::Ouroboros { path } => ouroboros(path),
+        Command::Ouroboros { path, diff } => ouroboros(path, diff),
     }
 }

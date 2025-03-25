@@ -719,11 +719,7 @@ impl Display for DeclAnnotationDisplay<'_> {
                     )?;
 
                     if let Some(expr_id) = param.default {
-                        write!(
-                            f,
-                            " = {}",
-                            self.libsl.exprs[expr_id].display(self.libsl),
-                        )?;
+                        write!(f, " = {}", self.libsl.exprs[expr_id].display(self.libsl),)?;
                     }
 
                     Ok(())
@@ -824,8 +820,21 @@ impl Display for DeclAutomatonDisplay<'_> {
                 false,
                 true,
                 self.d.constructor_variables.iter().map(|&decl_id| {
-                    move |f: &mut dyn fmt::Write| {
-                        write!(f, "{}", self.libsl.decls[decl_id].display(self.libsl))
+                    move |f: &mut dyn fmt::Write| match &self.libsl.decls[decl_id].kind {
+                        ast::DeclKind::Dummy => Ok(()),
+
+                        ast::DeclKind::Variable(decl) => {
+                            write!(
+                                f,
+                                "{}",
+                                DeclVariableDisplay {
+                                    semi: false,
+                                    ..decl.display(self.libsl)
+                                }
+                            )
+                        }
+
+                        _ => write!(f, "{}", self.libsl.decls[decl_id].display(self.libsl)),
                     }
                 }),
             )?;
@@ -956,7 +965,25 @@ impl Display for DeclFunctionDisplay<'_> {
     }
 }
 
-make_display_struct!(DeclVariableDisplay { d } for ast::DeclVariable);
+impl ast::DeclVariable {
+    /// Returns an object that implements [Display] to convert the [ast::DeclVariable] back to LibSL
+    /// source text.
+    pub fn display<'a>(&'a self, libsl: &'a LibSl) -> DeclVariableDisplay<'a> {
+        DeclVariableDisplay {
+            d: self,
+            libsl,
+            semi: true,
+        }
+    }
+}
+
+/// A helper struct that writes the [ast::DeclVariable] out as LibSL source text.
+#[derive(Debug, Clone, Copy)]
+pub struct DeclVariableDisplay<'a> {
+    d: &'a ast::DeclVariable,
+    libsl: &'a LibSl,
+    semi: bool,
+}
 
 impl Display for DeclVariableDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -980,7 +1007,7 @@ impl Display for DeclVariableDisplay<'_> {
             write!(f, " = {}", self.libsl.exprs[expr_id].display(self.libsl))?;
         }
 
-        write!(f, ";")
+        if self.semi { write!(f, ";") } else { Ok(()) }
     }
 }
 

@@ -1767,8 +1767,6 @@ impl<'a> AstConstructor<'a> {
                 s.chars().next().unwrap() as u32
             };
 
-            eprintln!("{:?} -> U+{c:04x}", token.symbol.text);
-
             Ok(ast::PrimitiveLit::Char(c))
         } else if let Some(token) = &ctx.bool {
             Ok(ast::PrimitiveLit::Bool(match token.token_type {
@@ -2139,27 +2137,27 @@ impl<'a> AstConstructor<'a> {
         let lit = ctx.IntegerLiteral().unwrap();
         let s = &lit.symbol.text;
 
-        let (s, suffix) = if let Some(s) = s.strip_suffix('l').or_else(|| s.strip_suffix('L')) {
-            (s, Suffix::Long)
-        } else if let Some(s) = s.strip_suffix("uL") {
+        let (s, suffix) = if let Some(s) = s.strip_suffix("uL") {
             (s, Suffix::ULong)
-        } else if let Some(s) = s.strip_suffix('x') {
-            (s, Suffix::Byte)
+        } else if let Some(s) = s.strip_suffix('l').or_else(|| s.strip_suffix('L')) {
+            (s, Suffix::Long)
         } else if let Some(s) = s.strip_suffix("ux") {
             (s, Suffix::UByte)
-        } else if let Some(s) = s.strip_suffix('s') {
-            (s, Suffix::Short)
+        } else if let Some(s) = s.strip_suffix('x') {
+            (s, Suffix::Byte)
         } else if let Some(s) = s.strip_suffix("us") {
             (s, Suffix::UShort)
+        } else if let Some(s) = s.strip_suffix('s') {
+            (s, Suffix::Short)
         } else if let Some(s) = s.strip_suffix('u') {
             (s, Suffix::UInt)
         } else {
             (&**s, Suffix::Int)
         };
 
-        let (s, radix) = if let Some(s) = s.strip_prefix("0x") {
+        let (s, radix) = if let Some(s) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
             (s, Radix::Hexadecimal)
-        } else if let Some(s) = s.strip_prefix("0b") {
+        } else if let Some(s) = s.strip_prefix("0b").or_else(|| s.strip_prefix("0B")) {
             (s, Radix::Binary)
         } else if s == "0" {
             (s, Radix::Decimal)
@@ -2210,7 +2208,7 @@ impl<'a> AstConstructor<'a> {
         } else if let Some(s) = s.strip_suffix(['d', 'D']) {
             (s, Suffix::Double)
         } else {
-            (s, Suffix::Float)
+            (s, Suffix::Double)
         };
 
         let s = if ctx.MINUS().is_some() {

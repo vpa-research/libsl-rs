@@ -85,8 +85,11 @@ macro_rules! define_prec {
 define_prec! {
     /// Precedence levels of type expressions.
     pub enum TyExprPrec {
-        /// Intersection and union type expressions.
-        IntersectionOrUnion,
+        /// Union type expressions.
+        Union,
+
+        /// Intersection type expressions.
+        Intersection,
 
         /// Pointer type expressions.
         Pointer,
@@ -555,7 +558,7 @@ impl Display for DeclSemanticTyDisplay<'_> {
 
         write!(
             f,
-            "{ty_name} ({real_ty})",
+            "{ty_name}({real_ty})",
             ty_name = self.d.ty_name.display(self.libsl),
             real_ty = self.libsl.ty_exprs[self.d.real_ty].display(self.libsl),
         )?;
@@ -564,7 +567,7 @@ impl Display for DeclSemanticTyDisplay<'_> {
             ast::SemanticTyKind::Simple => write!(f, ";"),
 
             ast::SemanticTyKind::Enumerated(values) => {
-                writeln!(f, " ")?;
+                write!(f, " ")?;
                 display_list(
                     f,
                     ("{", ";", "}"),
@@ -1514,7 +1517,7 @@ impl Display for TyExprPointerDisplay<'_> {
 
 make_display_struct!(
     TyExprIntersectionDisplay { t } for ast::TyExprIntersection
-    where precedence: TyExprPrec = TyExprPrec::IntersectionOrUnion,
+    where precedence: TyExprPrec = TyExprPrec::Intersection,
 );
 
 impl Display for TyExprIntersectionDisplay<'_> {
@@ -1523,8 +1526,7 @@ impl Display for TyExprIntersectionDisplay<'_> {
             write!(
                 f,
                 "{lhs} & {rhs}",
-                lhs = self.libsl.ty_exprs[self.t.lhs]
-                    .display_prec(self.libsl, self.t.precedence().higher()),
+                lhs = self.libsl.ty_exprs[self.t.lhs].display_prec(self.libsl, self.t.precedence()),
                 rhs = self.libsl.ty_exprs[self.t.rhs]
                     .display_prec(self.libsl, self.t.precedence().higher()),
             )
@@ -1534,7 +1536,7 @@ impl Display for TyExprIntersectionDisplay<'_> {
 
 make_display_struct!(
     TyExprUnionDisplay { t } for ast::TyExprUnion
-    where precedence: TyExprPrec = TyExprPrec::IntersectionOrUnion,
+    where precedence: TyExprPrec = TyExprPrec::Union,
 );
 
 impl Display for TyExprUnionDisplay<'_> {
@@ -1542,9 +1544,8 @@ impl Display for TyExprUnionDisplay<'_> {
         display_parens(f, self.t.precedence(), self.prec, |f| {
             write!(
                 f,
-                "{lhs} + {rhs}",
-                lhs = self.libsl.ty_exprs[self.t.lhs]
-                    .display_prec(self.libsl, self.t.precedence().higher()),
+                "{lhs} | {rhs}",
+                lhs = self.libsl.ty_exprs[self.t.lhs].display_prec(self.libsl, self.t.precedence()),
                 rhs = self.libsl.ty_exprs[self.t.rhs]
                     .display_prec(self.libsl, self.t.precedence().higher()),
             )
@@ -1595,17 +1596,30 @@ impl Display for StmtIfDisplay<'_> {
         if !self.s.else_branch.is_empty() {
             write!(f, " else ")?;
 
-            display_list(
-                f,
-                ("{", "", "}"),
-                false,
-                false,
-                self.s.else_branch.iter().map(|&stmt_id| {
-                    move |f: &mut dyn fmt::Write| {
-                        write!(f, "{}", self.libsl.stmts[stmt_id].display(self.libsl))
-                    }
-                }),
-            )?;
+            if self.s.else_branch.len() == 1
+                && matches!(
+                    self.libsl.stmts[self.s.else_branch[0]].kind,
+                    ast::StmtKind::If(..)
+                )
+            {
+                write!(
+                    f,
+                    "{}",
+                    self.libsl.stmts[self.s.else_branch[0]].display(self.libsl)
+                )?;
+            } else {
+                display_list(
+                    f,
+                    ("{", "", "}"),
+                    false,
+                    false,
+                    self.s.else_branch.iter().map(|&stmt_id| {
+                        move |f: &mut dyn fmt::Write| {
+                            write!(f, "{}", self.libsl.stmts[stmt_id].display(self.libsl))
+                        }
+                    }),
+                )?;
+            }
         }
 
         Ok(())
@@ -2159,7 +2173,7 @@ impl Display for ast::FloatLit {
         let mut buf = ryu::Buffer::new();
 
         match self {
-            ast::FloatLit::F32(v) => write!(f, "{}", buf.format(*v)),
+            ast::FloatLit::F32(v) => write!(f, "{}f", buf.format(*v)),
             ast::FloatLit::F64(v) => write!(f, "{}", buf.format(*v)),
         }
     }

@@ -403,7 +403,7 @@ struct SemanticTyGroupDisplay<'a> {
 
 impl Display for SemanticTyGroupDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "types ")?;
+        write!(f, "types ")?;
         display_list(
             f,
             ("{", "", "}"),
@@ -2120,6 +2120,8 @@ impl Display for ast::PrimitiveLit {
                 Some('\x08') => write!(f, "'\\b'"),
                 Some('\t') => write!(f, "'\\t'"),
                 Some('\n') => write!(f, "'\\n'"),
+                Some('\r') => write!(f, "'\\r'"),
+                Some('\0') => write!(f, "'\\0'"),
                 Some('\x0c') => write!(f, "'\\f'"),
                 Some(c @ ('"' | '\'' | '\\')) => write!(f, "'\\{c}'"),
                 Some(ch) if ch.is_ascii_control() => write!(f, "'\\u{c:04x}'"),
@@ -2249,7 +2251,11 @@ impl Display for WhereClauseDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "where")?;
 
-        for ty_constraint in self.ty_constraints {
+        for (idx, ty_constraint) in self.ty_constraints.iter().enumerate() {
+            if idx > 0 {
+                write!(f, ",")?;
+            }
+
             write!(f, "\n{INDENT}{}", ty_constraint.display(self.libsl))?;
         }
 
@@ -2280,15 +2286,7 @@ impl Display for GenericsDisplay<'_> {
 impl Display for ast::Generic {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(variance) = &self.variance {
-            write!(
-                f,
-                "{} ",
-                match variance {
-                    ast::Variance::Covariant => "out",
-                    ast::Variance::Contravariant => "in",
-                    ast::Variance::Invariant => "in out",
-                }
-            )?;
+            write!(f, "{variance} ")?;
         }
 
         write!(f, "{}", self.name)
@@ -2315,11 +2313,26 @@ make_display_struct!(TyConstraintDisplay { t } for ast::TyConstraint);
 
 impl Display for TyConstraintDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: ", self.t.param)?;
+
+        if let Some(variance) = &self.t.variance {
+            write!(f, "{variance} ")?;
+        }
+
+        write!(f, "{}", self.t.bound.display(self.libsl))
+    }
+}
+
+impl Display for ast::Variance {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{param}: {bound}",
-            param = self.t.param,
-            bound = self.t.bound.display(self.libsl),
+            "{}",
+            match self {
+                ast::Variance::Covariant => "out",
+                ast::Variance::Contravariant => "in",
+                ast::Variance::Invariant => "in out",
+            }
         )
     }
 }
@@ -2340,6 +2353,8 @@ impl Display for QualifiedTyNameDisplay<'_> {
 
                 write!(f, "{generic}")?;
             }
+
+            write!(f, ">")?;
         }
 
         Ok(())

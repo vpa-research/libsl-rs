@@ -40,8 +40,8 @@ use crate::grammar::libslparser::{
     FunctionBodyStatementContextAttrs, FunctionContractContextAll, FunctionContractContextAttrs,
     FunctionDeclArgListContextAll, FunctionDeclArgListContextAttrs, FunctionDeclContextAll,
     FunctionDeclContextAttrs, FunctionHeaderContextAttrs, FunctionsListContextAttrs,
-    FunctionsListPartContextAll, FunctionsListPartContextAttrs, GenericContextAll,
-    GenericContextAttrs, GlobalStatementContextAll, GlobalStatementContextAttrs,
+    FunctionsListPartContextAll, FunctionsListPartContextAttrs, GenericBoundContextAll,
+    GenericContextAll, GenericContextAttrs, GlobalStatementContextAll, GlobalStatementContextAttrs,
     HasAutomatonConceptContextAll, HasAutomatonConceptContextAttrs, HeaderContextAll,
     IdentifierListContextAttrs, IfStatementContextAll, IfStatementContextAttrs,
     ImplementedConceptsContextAttrs, IntegerNumberContextAll, IntegerNumberContextAttrs,
@@ -78,8 +78,8 @@ fn strip_surrounding(s: &str, prefix: char, suffix: char) -> &str {
 fn hex_digit_to_u8(c: char) -> u8 {
     match c {
         '0'..='9' => c as u8 - b'0',
-        'a'..='f' => c as u8 - b'a',
-        'A'..='F' => c as u8 - b'A',
+        'a'..='f' => c as u8 - b'a' + 10,
+        'A'..='F' => c as u8 - b'A' + 10,
         _ => panic!("not a hex digit: {c:?}"),
     }
 }
@@ -98,7 +98,7 @@ fn parse_char_escape(s: &str) -> u32 {
         // unicode escape.
         'u' => s[1..5]
             .chars()
-            .fold(0, |acc, c| (acc << 8) | hex_digit_to_u8(c) as u32),
+            .fold(0, |acc, c| (acc << 4) | hex_digit_to_u8(c) as u32),
 
         // octal escape.
         '0'..='7' => s
@@ -1767,6 +1767,8 @@ impl<'a> AstConstructor<'a> {
                 s.chars().next().unwrap() as u32
             };
 
+            eprintln!("{:?} -> U+{c:04x}", token.symbol.text);
+
             Ok(ast::PrimitiveLit::Char(c))
         } else if let Some(token) = &ctx.bool {
             Ok(ast::PrimitiveLit::Bool(match token.token_type {
@@ -2250,9 +2252,14 @@ impl<'a> AstConstructor<'a> {
             .map(|c| {
                 let param =
                     self.process_identifier(&Terminal::new(c.paramName.clone().unwrap()))?;
-                let bound = self.process_ty_arg(c.paramConstraint.as_ref().unwrap())?;
+                let (variance, bound) =
+                    self.process_ty_arg(c.paramConstraint.as_ref().unwrap(), true)?;
 
-                Ok(ast::TyConstraint { param, bound })
+                Ok(ast::TyConstraint {
+                    param,
+                    variance,
+                    bound,
+                })
             })
             .collect()
     }
@@ -2264,20 +2271,9 @@ impl<'a> AstConstructor<'a> {
                 let (ty_ident, variance) = if let Some(i) = t.typeIdentifier() {
                     (i, None)
                 } else if let Some(i) = t.typeIdentifierBounded() {
-                    let generic_bound = i.genericBound().unwrap();
-                    let variance = generic_bound.bound.as_ref().unwrap();
+                    let variance = self.process_generic_bound(&i.genericBound().unwrap())?;
 
-                    (
-                        i.typeIdentifier().unwrap(),
-                        Some(match variance.token_type {
-                            grammar::parser::IN => ast::Variance::Contravariant,
-                            grammar::parser::OUT => ast::Variance::Covariant,
-                            _ => panic!(
-                                "unrecognized token for `bound` field in rule `genericBound`: {}",
-                                variance.text,
-                            ),
-                        }),
-                    )
+                    (i.typeIdentifier().unwrap(), Some(variance))
                 } else {
                     panic!("unrecognized typeArgument node: {t:?}");
                 };
@@ -2320,24 +2316,36 @@ impl<'a> AstConstructor<'a> {
     fn process_ty_args(&mut self, ctx: &GenericContextAll<'_>) -> Result<Vec<ast::TyArg>> {
         ctx.typeArgument_all()
             .into_iter()
-            .map(|a| self.process_ty_arg(&a))
+            .map(|a| Ok(self.process_ty_arg(&a, false)?.1))
             .collect()
     }
 
-    fn process_ty_arg(&mut self, ctx: &TypeArgumentContextAll<'_>) -> Result<ast::TyArg> {
+    fn process_ty_arg(
+        &mut self,
+        ctx: &TypeArgumentContextAll<'_>,
+        allow_variance: bool,
+    ) -> Result<(Option<ast::Variance>, ast::TyArg)> {
+        let mut variance = None;
+
         let ty_ident = if let Some(i) = ctx.typeIdentifier() {
             i
         } else if let Some(i) = ctx.typeIdentifierBounded() {
-            return Err(ParseError::Syntax {
-                line: i.start().line,
-                column: i.start().column,
-                msg: "unexpected variance specifiers".into(),
-            });
+            if !allow_variance {
+                return Err(ParseError::Syntax {
+                    line: i.start().line,
+                    column: i.start().column,
+                    msg: "unexpected variance specifiers".into(),
+                });
+            }
+
+            variance = Some(self.process_generic_bound(&i.genericBound().unwrap())?);
+
+            i.typeIdentifier().unwrap()
         } else {
             panic!("unrecognized typeArgument node: {ctx:?}");
         };
 
-        if let Some(token) = ty_ident
+        let ty_arg = if let Some(token) = ty_ident
             .name
             .as_ref()
             .unwrap()
@@ -2350,6 +2358,21 @@ impl<'a> AstConstructor<'a> {
         } else {
             self.process_ty_identifier_as_ty_expr(&ty_ident)
                 .map(ast::TyArg::TyExpr)
-        }
+        };
+
+        ty_arg.map(|t| (variance, t))
+    }
+
+    fn process_generic_bound(&mut self, ctx: &GenericBoundContextAll<'_>) -> Result<ast::Variance> {
+        let variance = ctx.bound.as_ref().unwrap();
+
+        Ok(match variance.token_type {
+            grammar::parser::IN => ast::Variance::Contravariant,
+            grammar::parser::OUT => ast::Variance::Covariant,
+            _ => panic!(
+                "unrecognized token for `bound` field in rule `genericBound`: {}",
+                variance.text,
+            ),
+        })
     }
 }

@@ -644,6 +644,9 @@ pub struct TyConstraint {
     /// The name of the type parameter bounded by this constraint.
     pub param: Name,
 
+    /// An explicit variance specification, if any.
+    pub variance: Option<Variance>,
+
     /// The bound for the type parameter.
     pub bound: TyArg,
 }

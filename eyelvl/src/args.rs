@@ -30,6 +30,13 @@ pub enum Command {
         #[arg(short = 'd', long)]
         diff: bool,
     },
+
+    /// Parse a file, dump back to LibSL, parse that, dump again, and compare the two dumps for
+    /// equality (thus establishing that the composition of parsing and dumping is idempotent).
+    CheckIdempotence {
+        /// A path to the input LibSL file.
+        path: PathBuf,
+    },
 }
 
 pub fn parse() -> Args {

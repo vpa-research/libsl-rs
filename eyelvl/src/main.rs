@@ -1,6 +1,7 @@
 use std::fmt::{self, Display, Write};
 use std::fs;
 use std::path::PathBuf;
+use std::process::ExitCode;
 
 use antlr_rust::common_token_stream::CommonTokenStream;
 use antlr_rust::token::{TOKEN_EOF, Token};
@@ -27,6 +28,53 @@ impl PrintListener {
         for _ in 0..self.level {
             print!("  ");
         }
+    }
+}
+
+fn print_diff(old: &str, new: &str) {
+    struct LineNr(Option<usize>, usize);
+
+    impl Display for LineNr {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self.0 {
+                Some(n) => write!(f, "{:>width$}", n + 1, width = self.1),
+                None => write!(f, "{:width$}", "", width = self.1),
+            }
+        }
+    }
+
+    let diff = TextDiff::configure()
+        .algorithm(similar::Algorithm::Patience)
+        .diff_lines(old, new);
+
+    let old_lines = old.split('\n').count();
+    let new_lines = new.split('\n').count();
+
+    let old_line_nr_width = old_lines.ilog10() + 1;
+    let new_line_nr_width = new_lines.ilog10() + 1;
+
+    for change in diff.iter_all_changes() {
+        let (sign, style) = match change.tag() {
+            ChangeTag::Equal => (" ", Style::new().dim()),
+            ChangeTag::Delete => ("-", Style::new().red()),
+            ChangeTag::Insert => ("+", Style::new().green()),
+        };
+
+        let line = change.to_string_lossy();
+        let line = line.trim_end_matches('\n');
+        let ws_start = line
+            .rfind(|c: char| !c.is_whitespace())
+            .map(|idx| idx + 1)
+            .unwrap_or(0);
+
+        println!(
+            "{} {} |{}{}{}",
+            LineNr(change.old_index(), old_line_nr_width as usize).paint(style),
+            LineNr(change.new_index(), new_line_nr_width as usize).paint(style),
+            sign.paint(style),
+            line[..ws_start].paint(style),
+            line[ws_start..].paint(style.invert()),
+        );
     }
 }
 
@@ -135,17 +183,6 @@ fn print_tokens(path: PathBuf) -> Result<()> {
 }
 
 fn ouroboros(path: PathBuf, emit_diff: bool) -> Result<()> {
-    struct LineNr(Option<usize>, usize);
-
-    impl Display for LineNr {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            match self.0 {
-                Some(n) => write!(f, "{:>width$}", n + 1, width = self.1),
-                None => write!(f, "{:width$}", "", width = self.1),
-            }
-        }
-    }
-
     let contents = fs::read_to_string(&path)
         .with_context(|| format!("could not read `{}`", path.display()))?;
     let mut libsl = LibSl::new();
@@ -160,51 +197,55 @@ fn ouroboros(path: PathBuf, emit_diff: bool) -> Result<()> {
         return Ok(());
     }
 
-    let diff = TextDiff::configure()
-        .algorithm(similar::Algorithm::Patience)
-        .diff_lines(&contents, &dump);
-
-    let orig_lines = contents.split('\n').count();
-    let new_lines = contents.split('\n').count();
-
-    let orig_line_nr_width = orig_lines.ilog10() + 1;
-    let new_line_nr_width = new_lines.ilog10() + 1;
-
-    for change in diff.iter_all_changes() {
-        let (sign, style) = match change.tag() {
-            ChangeTag::Equal => (" ", Style::new().dim()),
-            ChangeTag::Delete => ("-", Style::new().red()),
-            ChangeTag::Insert => ("+", Style::new().green()),
-        };
-
-        let line = change.to_string_lossy();
-        let line = line.trim_end_matches('\n');
-        let ws_start = line
-            .rfind(|c: char| !c.is_whitespace())
-            .map(|idx| idx + 1)
-            .unwrap_or(0);
-
-        println!(
-            "{} {} |{}{}{}",
-            LineNr(change.old_index(), orig_line_nr_width as usize).paint(style),
-            LineNr(change.new_index(), new_line_nr_width as usize).paint(style),
-            sign.paint(style),
-            line[..ws_start].paint(style),
-            line[ws_start..].paint(style.invert()),
-        );
-    }
+    print_diff(&contents, &dump);
 
     Ok(())
 }
 
-fn main() -> Result<()> {
-    color_eyre::install()?;
+fn check_idempotence(path: PathBuf) -> Result<ExitCode> {
+    let contents = fs::read_to_string(&path)
+        .with_context(|| format!("could not read `{}`", path.display()))?;
+    let mut libsl = LibSl::new();
+    let first_dump = libsl
+        .parse_file(path.display().to_string(), &contents)
+        .with_context(|| eyre!("could not parse `{}`", path.display()))?
+        .display(&libsl)
+        .to_string();
+    let second_dump = libsl
+        .parse_file(path.display().to_string(), &contents)
+        .context("could not parse the first dump")?
+        .display(&libsl)
+        .to_string();
+
+    if first_dump == second_dump {
+        println!("{}", "The dumps are equal".bright_green());
+
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    println!("{}", "The dumps differ!".bright_red());
+    print_diff(&first_dump, &second_dump);
+
+    Ok(ExitCode::FAILURE)
+}
+
+fn main() -> ExitCode {
+    color_eyre::install().unwrap();
 
     let args = args::parse();
 
-    match args.command {
-        Command::ParseTree { path } => print_parse_tree(path),
-        Command::Tokens { path } => print_tokens(path),
-        Command::Ouroboros { path, diff } => ouroboros(path, diff),
+    match match args.command {
+        Command::ParseTree { path } => print_parse_tree(path).map(|_| ExitCode::SUCCESS),
+        Command::Tokens { path } => print_tokens(path).map(|_| ExitCode::SUCCESS),
+        Command::Ouroboros { path, diff } => ouroboros(path, diff).map(|_| ExitCode::SUCCESS),
+        Command::CheckIdempotence { path } => check_idempotence(path),
+    } {
+        Ok(code) => code,
+
+        Err(e) => {
+            eprintln!("{e:?}");
+
+            ExitCode::FAILURE
+        }
     }
 }

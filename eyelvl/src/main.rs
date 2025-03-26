@@ -157,7 +157,7 @@ fn ouroboros(path: PathBuf, emit_diff: bool) -> Result<()> {
     if !emit_diff {
         println!("{dump}");
 
-        return Ok(())
+        return Ok(());
     }
 
     let diff = TextDiff::configure()
@@ -177,12 +177,20 @@ fn ouroboros(path: PathBuf, emit_diff: bool) -> Result<()> {
             ChangeTag::Insert => ("+", Style::new().green()),
         };
 
-        print!(
-            "{} {} |{}{}",
+        let line = change.to_string_lossy();
+        let line = line.trim_end_matches('\n');
+        let ws_start = line
+            .rfind(|c: char| !c.is_whitespace())
+            .map(|idx| idx + 1)
+            .unwrap_or(0);
+
+        println!(
+            "{} {} |{}{}{}",
             LineNr(change.old_index(), orig_line_nr_width as usize).paint(style),
             LineNr(change.new_index(), new_line_nr_width as usize).paint(style),
             sign.paint(style),
-            change.paint(style),
+            line[..ws_start].paint(style),
+            line[ws_start..].paint(style.invert()),
         );
     }
 

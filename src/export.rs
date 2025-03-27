@@ -7,7 +7,17 @@
 
 use std::fmt::{self, Display, Write as _};
 
-use crate::{DeclId, LibSl, StmtId, ast};
+use crate::ast::{self, LibSlNode};
+use crate::{DeclId, LibSl, StmtId};
+
+impl<'a, T> Display for LibSlNode<'a, T>
+where
+    T: Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.inner().fmt(f)
+    }
+}
 
 const INDENT: &str = "    ";
 
@@ -163,6 +173,12 @@ macro_rules! make_display_struct {
             #[allow(unused)]
             libsl: &'a LibSl,
         }
+
+        impl<'a> Display for LibSlNode<'a, $ast> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                self.inner().display(self.libsl()).fmt(f)
+            }
+        }
     };
 
     ($name:ident { $field:ident } for $ast:ty where precedence: $prec_ty:ty = $prec:expr $(,)?) => {
@@ -206,6 +222,12 @@ macro_rules! make_display_struct {
             libsl: &'a LibSl,
 
             prec: $prec_ty,
+        }
+
+        impl<'a> Display for LibSlNode<'a, $ast> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                self.inner().display(self.libsl()).fmt(f)
+            }
         }
     };
 }

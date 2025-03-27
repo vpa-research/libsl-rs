@@ -1,4 +1,4 @@
-//! Implements dumping the AST nodes back as LibSL source text.
+//! Implements exporting the AST nodes back to LibSL source text.
 //!
 //! The AST built by [parsing](LibSl::parse_file) can always be converted to a syntactically correct
 //! LibSL source. However, the module performs no additional checks to ensure that, and invalid text

@@ -66,7 +66,7 @@ use loc::FileId;
 use slotmap::{SlotMap, new_key_type};
 
 pub mod ast;
-pub mod dump;
+pub mod export;
 pub mod grammar;
 pub mod loc;
 mod parse;

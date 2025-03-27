@@ -7,6 +7,33 @@ use derive_more::From;
 use crate::loc::Loc;
 use crate::{DeclId, ExprId, QualifiedAccessId, StmtId, TyExprId};
 
+/// A helper struct that bundles together an AST node with a reference to [`LibSl`][crate::LibSl].
+#[derive(Debug, Clone, Copy)]
+pub struct LibSlNode<'a, T: 'a + ?Sized> {
+    libsl: &'a crate::LibSl,
+    inner: &'a T,
+}
+
+impl<'a, T: 'a + ?Sized> LibSlNode<'a, T> {
+    /// Returns the inner node type wrapped by `Self`.
+    pub fn inner(&self) -> &'a T {
+        self.inner
+    }
+
+    /// Returns the reference to [`LibSl`][crate::LibSl] stored in this struct.
+    pub fn libsl(&self) -> &'a crate::LibSl {
+        self.libsl
+    }
+}
+
+/// Allows creating `WithLibSl` using method syntax.
+pub trait WithLibSl {
+    /// Creates a new [`LibSlNode`] instance for this node.
+    fn with_libsl<'a>(&'a self, libsl: &'a crate::LibSl) -> LibSlNode<'a, Self> {
+        LibSlNode { libsl, inner: self }
+    }
+}
+
 /// A single LibSL file.
 #[derive(Debug, Clone)]
 pub struct File {
@@ -19,6 +46,8 @@ pub struct File {
     /// The top-level declarations in the file.
     pub decls: Vec<DeclId>,
 }
+
+impl WithLibSl for File {}
 
 /// A LibSL header declaration.
 #[derive(Debug, Clone)]
@@ -53,6 +82,8 @@ pub struct Header {
     pub url: Option<String>,
 }
 
+impl WithLibSl for Header {}
+
 /// An entity declaration.
 #[derive(Debug, Default, Clone)]
 pub struct Decl {
@@ -70,6 +101,8 @@ pub struct Decl {
     /// The variants hold data specific to each declaration kind.
     pub kind: DeclKind,
 }
+
+impl WithLibSl for Decl {}
 
 /// An enumeration of all possible declaration kinds.
 #[derive(From, Debug, Default, Clone)]
@@ -129,6 +162,8 @@ pub enum DeclKind {
     Proc(DeclProc),
 }
 
+impl WithLibSl for DeclKind {}
+
 /// An import declaration.
 #[derive(Debug, Clone)]
 pub struct DeclImport {
@@ -136,12 +171,16 @@ pub struct DeclImport {
     pub path: String,
 }
 
+impl WithLibSl for DeclImport {}
+
 /// An include declaration.
 #[derive(Debug, Clone)]
 pub struct DeclInclude {
     /// An uninterpreted include path.
     pub path: String,
 }
+
+impl WithLibSl for DeclInclude {}
 
 /// A semantic type declaration.
 #[derive(Debug, Clone)]
@@ -159,6 +198,8 @@ pub struct DeclSemanticTy {
     pub kind: SemanticTyKind,
 }
 
+impl WithLibSl for DeclSemanticTy {}
+
 /// An enumeration of possible semantic type kinds.
 #[derive(Debug, Default, Clone)]
 pub enum SemanticTyKind {
@@ -170,6 +211,8 @@ pub enum SemanticTyKind {
     Enumerated(Vec<SemanticTyEnumValue>),
 }
 
+impl WithLibSl for SemanticTyKind {}
+
 /// A named value of an enumerated semantic type.
 #[derive(Debug, Clone)]
 pub struct SemanticTyEnumValue {
@@ -179,6 +222,8 @@ pub struct SemanticTyEnumValue {
     /// The underlying value represented by this entry.
     pub expr: ExprId,
 }
+
+impl WithLibSl for SemanticTyEnumValue {}
 
 /// A type alias declaration.
 #[derive(Debug, Clone)]
@@ -192,6 +237,8 @@ pub struct DeclTyAlias {
     /// The type represented by this alias.
     pub ty_expr: TyExprId,
 }
+
+impl WithLibSl for DeclTyAlias {}
 
 /// A structure type declaration.
 #[derive(Debug, Clone)]
@@ -215,6 +262,8 @@ pub struct DeclStruct {
     pub decls: Vec<DeclId>,
 }
 
+impl WithLibSl for DeclStruct {}
+
 /// An enum type declaration.
 #[derive(Debug, Clone)]
 pub struct DeclEnum {
@@ -228,6 +277,8 @@ pub struct DeclEnum {
     pub variants: Vec<EnumVariant>,
 }
 
+impl WithLibSl for DeclEnum {}
+
 /// An enum type variant.
 #[derive(Debug, Clone)]
 pub struct EnumVariant {
@@ -238,6 +289,8 @@ pub struct EnumVariant {
     pub value: IntLit,
 }
 
+impl WithLibSl for EnumVariant {}
+
 /// An annotation declaration.
 #[derive(Debug, Clone)]
 pub struct DeclAnnotation {
@@ -247,6 +300,8 @@ pub struct DeclAnnotation {
     /// A list of parameters declared for this annotation.
     pub params: Vec<AnnotationParam>,
 }
+
+impl WithLibSl for DeclAnnotation {}
 
 /// An annotation parameter.
 #[derive(Debug, Clone)]
@@ -260,6 +315,8 @@ pub struct AnnotationParam {
     /// The default value for the parameter.
     pub default: Option<ExprId>,
 }
+
+impl WithLibSl for AnnotationParam {}
 
 /// An action declaration.
 #[derive(Debug, Clone)]
@@ -283,6 +340,8 @@ pub struct DeclAction {
     pub ty_constraints: Vec<TyConstraint>,
 }
 
+impl WithLibSl for DeclAction {}
+
 /// An action parameter.
 #[derive(Debug, Clone)]
 pub struct ActionParam {
@@ -295,6 +354,8 @@ pub struct ActionParam {
     /// The type of the parameter.
     pub ty_expr: TyExprId,
 }
+
+impl WithLibSl for ActionParam {}
 
 /// An automaton declaration.
 #[derive(Debug, Clone)]
@@ -320,6 +381,8 @@ pub struct DeclAutomaton {
     /// Entities defines as members of this automaton.
     pub decls: Vec<DeclId>,
 }
+
+impl WithLibSl for DeclAutomaton {}
 
 /// A function declaration.
 #[derive(Debug, Clone)]
@@ -355,6 +418,8 @@ pub struct DeclFunction {
     pub body: Option<FunctionBody>,
 }
 
+impl WithLibSl for DeclFunction {}
+
 /// A variable declaration.
 ///
 /// Depending on the context, it could be any of the following:
@@ -381,6 +446,8 @@ pub struct DeclVariable {
     pub init: Option<ExprId>,
 }
 
+impl WithLibSl for DeclVariable {}
+
 /// The mutability of a variable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VariableKind {
@@ -390,6 +457,8 @@ pub enum VariableKind {
     /// An immutable variable declaration (`val`).
     Val,
 }
+
+impl WithLibSl for VariableKind {}
 
 impl VariableKind {
     /// Returns `true` if this is a mutable variable declaration (`var`).
@@ -413,6 +482,8 @@ pub struct DeclState {
     pub name: Name,
 }
 
+impl WithLibSl for DeclState {}
+
 /// An enumeration of possible state declaration kinds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StateKind {
@@ -425,6 +496,8 @@ pub enum StateKind {
     /// A final state declaration.
     Final,
 }
+
+impl WithLibSl for StateKind {}
 
 /// An automaton state transfer function declaration.
 #[derive(Debug, Clone)]
@@ -439,6 +512,8 @@ pub struct DeclShift {
     pub by: Vec<QualifiedFunctionName>,
 }
 
+impl WithLibSl for DeclShift {}
+
 /// A function name or its specific overload.
 #[derive(Debug, Clone)]
 pub struct QualifiedFunctionName {
@@ -448,6 +523,8 @@ pub struct QualifiedFunctionName {
     /// Optional parameter type qualification to disambiguate overloads.
     pub params: Option<Vec<TyExprId>>,
 }
+
+impl WithLibSl for QualifiedFunctionName {}
 
 /// An automaton constructor declaration.
 #[derive(Debug, Clone)]
@@ -471,6 +548,8 @@ pub struct DeclConstructor {
     pub body: Option<FunctionBody>,
 }
 
+impl WithLibSl for DeclConstructor {}
+
 /// An automaton destructor declaration.
 #[derive(Debug, Clone)]
 pub struct DeclDestructor {
@@ -492,6 +571,8 @@ pub struct DeclDestructor {
     /// The destructor's body.
     pub body: Option<FunctionBody>,
 }
+
+impl WithLibSl for DeclDestructor {}
 
 /// An automaton procedure declaration.
 #[derive(Debug, Clone)]
@@ -521,6 +602,8 @@ pub struct DeclProc {
     pub body: Option<FunctionBody>,
 }
 
+impl WithLibSl for DeclProc {}
+
 /// A function parameter declaration.
 #[derive(Debug, Clone)]
 pub struct FunctionParam {
@@ -534,6 +617,8 @@ pub struct FunctionParam {
     pub ty_expr: TyExprId,
 }
 
+impl WithLibSl for FunctionParam {}
+
 /// The body of a function.
 #[derive(Debug, Clone)]
 pub struct FunctionBody {
@@ -543,6 +628,8 @@ pub struct FunctionBody {
     /// A list of statements comprising the body of the function.
     pub stmts: Vec<StmtId>,
 }
+
+impl WithLibSl for FunctionBody {}
 
 /// A function contract specification.
 #[derive(From, Debug, Clone)]
@@ -557,6 +644,8 @@ pub enum Contract {
     Assigns(ContractAssigns),
 }
 
+impl WithLibSl for Contract {}
+
 /// A precondition specification.
 #[derive(Debug, Clone)]
 pub struct ContractRequires {
@@ -566,6 +655,8 @@ pub struct ContractRequires {
     /// The contract expression.
     pub expr: ExprId,
 }
+
+impl WithLibSl for ContractRequires {}
 
 /// A postcondition specification.
 #[derive(Debug, Clone)]
@@ -577,6 +668,8 @@ pub struct ContractEnsures {
     pub expr: ExprId,
 }
 
+impl WithLibSl for ContractEnsures {}
+
 /// A write set specification.
 #[derive(Debug, Clone)]
 pub struct ContractAssigns {
@@ -586,6 +679,8 @@ pub struct ContractAssigns {
     /// The contract expression.
     pub expr: ExprId,
 }
+
+impl WithLibSl for ContractAssigns {}
 
 /// An annotation use.
 #[derive(Debug, Clone)]
@@ -597,6 +692,8 @@ pub struct Annotation {
     pub args: Vec<AnnotationArg>,
 }
 
+impl WithLibSl for Annotation {}
+
 /// An annotation argument supplied at the point of an annotation's use.
 #[derive(Debug, Clone)]
 pub struct AnnotationArg {
@@ -606,6 +703,8 @@ pub struct AnnotationArg {
     /// The argument expression.
     pub expr: ExprId,
 }
+
+impl WithLibSl for AnnotationArg {}
 
 /// A type name qualified with type parameter declarations.
 #[derive(Debug, Clone)]
@@ -617,6 +716,8 @@ pub struct QualifiedTyName {
     pub generics: Vec<Generic>,
 }
 
+impl WithLibSl for QualifiedTyName {}
+
 /// A full name to an entity, consisting of several components separated with a period.
 #[derive(Debug, Clone)]
 pub struct FullName {
@@ -625,6 +726,8 @@ pub struct FullName {
     /// Each component is a single identifier in the period-separated sequence.
     pub components: Vec<Name>,
 }
+
+impl WithLibSl for FullName {}
 
 /// A name in the source file paired with its location information.
 #[derive(Debug, Clone)]
@@ -637,6 +740,8 @@ pub struct Name {
     /// For LibSL export, must be a valid LibSL identifier.
     pub name: String,
 }
+
+impl WithLibSl for Name {}
 
 /// A constraint on a type parameter.
 #[derive(Debug, Clone)]
@@ -651,6 +756,8 @@ pub struct TyConstraint {
     pub bound: TyArg,
 }
 
+impl WithLibSl for TyConstraint {}
+
 /// A type parameter (generic) declaration.
 #[derive(Debug, Clone)]
 pub struct Generic {
@@ -660,6 +767,8 @@ pub struct Generic {
     /// The name of the type parameter.
     pub name: Name,
 }
+
+impl WithLibSl for Generic {}
 
 /// An enumeration of possible variance specifications.
 #[derive(Debug, Clone)]
@@ -681,6 +790,8 @@ pub enum Variance {
     Invariant,
 }
 
+impl WithLibSl for Variance {}
+
 /// A type expression, denoting a particular type in the type system.
 #[derive(Debug, Default, Clone)]
 pub struct TyExpr {
@@ -698,6 +809,8 @@ pub struct TyExpr {
     /// The variants hold data specific to each type expression kind.
     pub kind: TyExprKind,
 }
+
+impl WithLibSl for TyExpr {}
 
 /// An enumeration of all possible type expression kinds.
 #[derive(From, Debug, Default, Clone)]
@@ -724,12 +837,16 @@ pub enum TyExprKind {
     Union(TyExprUnion),
 }
 
+impl WithLibSl for TyExprKind {}
+
 /// A literal expression of a primitive type.
 #[derive(Debug, Clone)]
 pub struct TyExprPrimitiveLit {
     /// The primitive literal comprising this type expression.
     pub lit: PrimitiveLit,
 }
+
+impl WithLibSl for TyExprPrimitiveLit {}
 
 /// A type name expression.
 #[derive(Debug, Clone)]
@@ -741,12 +858,16 @@ pub struct TyExprName {
     pub generics: Vec<TyArg>,
 }
 
+impl WithLibSl for TyExprName {}
+
 /// A pointer type expression.
 #[derive(Debug, Clone)]
 pub struct TyExprPointer {
     /// A base type the pointer refers to.
     pub base: TyExprId,
 }
+
+impl WithLibSl for TyExprPointer {}
 
 /// An intersection type expression.
 #[derive(Debug, Clone)]
@@ -758,6 +879,8 @@ pub struct TyExprIntersection {
     pub rhs: TyExprId,
 }
 
+impl WithLibSl for TyExprIntersection {}
+
 /// A union type expression.
 #[derive(Debug, Clone)]
 pub struct TyExprUnion {
@@ -767,6 +890,8 @@ pub struct TyExprUnion {
     /// The right type expression.
     pub rhs: TyExprId,
 }
+
+impl WithLibSl for TyExprUnion {}
 
 /// A type argument for a generic type's type parameter.
 #[derive(Debug, Clone)]
@@ -778,6 +903,8 @@ pub enum TyArg {
     /// required.
     Wildcard(Loc),
 }
+
+impl WithLibSl for TyArg {}
 
 /// A statement in a function body.
 #[derive(Debug, Default, Clone)]
@@ -796,6 +923,8 @@ pub struct Stmt {
     /// The variants hold data specific to each declaration kind.
     pub kind: StmtKind,
 }
+
+impl WithLibSl for Stmt {}
 
 /// An enumeration of all possible statement kinds.
 #[derive(From, Debug, Default, Clone)]
@@ -818,6 +947,8 @@ pub enum StmtKind {
     Expr(ExprId),
 }
 
+impl WithLibSl for StmtKind {}
+
 /// A conditional statement.
 #[derive(Debug, Clone)]
 pub struct StmtIf {
@@ -831,6 +962,8 @@ pub struct StmtIf {
     pub else_branch: Vec<StmtId>,
 }
 
+impl WithLibSl for StmtIf {}
+
 /// A variable assignment statement.
 #[derive(Debug, Clone)]
 pub struct StmtAssign {
@@ -843,6 +976,8 @@ pub struct StmtAssign {
     /// The expression assigned to the place.
     pub rhs: ExprId,
 }
+
+impl WithLibSl for StmtAssign {}
 
 /// An in-place update operator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -878,6 +1013,8 @@ pub enum InPlaceOp {
     Sar,
 }
 
+impl WithLibSl for InPlaceOp {}
+
 /// A LibSL expression.
 #[derive(Debug, Default, Clone)]
 pub struct Expr {
@@ -895,6 +1032,8 @@ pub struct Expr {
     /// The variants hold data specific to each expression kind.
     pub kind: ExprKind,
 }
+
+impl WithLibSl for Expr {}
 
 /// An enumeration of all possible expression kinds.
 #[derive(From, Debug, Default, Clone)]
@@ -942,12 +1081,16 @@ pub enum ExprKind {
     Binary(ExprBinary),
 }
 
+impl WithLibSl for ExprKind {}
+
 /// A literal expression of a primitive type.
 #[derive(Debug, Clone)]
 pub struct ExprPrimitiveLit {
     /// The primitive literal comprising this expression.
     pub lit: PrimitiveLit,
 }
+
+impl WithLibSl for ExprPrimitiveLit {}
 
 /// An array literal expression.
 #[derive(Debug, Clone)]
@@ -956,6 +1099,8 @@ pub struct ExprArrayLit {
     pub elems: Vec<ExprId>,
 }
 
+impl WithLibSl for ExprArrayLit {}
+
 /// A qualified variable/element access expression.
 #[derive(Debug, Clone)]
 pub struct ExprQualifiedAccess {
@@ -963,12 +1108,16 @@ pub struct ExprQualifiedAccess {
     pub access: QualifiedAccessId,
 }
 
+impl WithLibSl for ExprQualifiedAccess {}
+
 /// A previous-state value expression.
 #[derive(Debug, Clone)]
 pub struct ExprPrev {
     /// The variable/element referred to by this expression.
     pub access: QualifiedAccessId,
 }
+
+impl WithLibSl for ExprPrev {}
 
 /// A procedure call expression.
 #[derive(Debug, Clone)]
@@ -983,6 +1132,8 @@ pub struct ExprProcCall {
     pub args: Vec<ExprId>,
 }
 
+impl WithLibSl for ExprProcCall {}
+
 /// An action invocation expression.
 #[derive(Debug, Clone)]
 pub struct ExprActionCall {
@@ -995,6 +1146,8 @@ pub struct ExprActionCall {
     /// A list of arguments to the action invocation.
     pub args: Vec<ExprId>,
 }
+
+impl WithLibSl for ExprActionCall {}
 
 /// An automaton instantiation expression.
 #[derive(Debug, Clone)]
@@ -1009,6 +1162,8 @@ pub struct ExprInstantiate {
     pub args: Vec<ConstructorArg>,
 }
 
+impl WithLibSl for ExprInstantiate {}
+
 /// An argument for an automaton instantiation expression.
 #[derive(Debug, Clone)]
 pub enum ConstructorArg {
@@ -1018,6 +1173,8 @@ pub enum ConstructorArg {
     /// A value for a constructor variable.
     Var(Name, ExprId),
 }
+
+impl WithLibSl for ConstructorArg {}
 
 /// A `has`-concept expression.
 #[derive(Debug, Clone)]
@@ -1029,6 +1186,8 @@ pub struct ExprHasConcept {
     pub concept: Name,
 }
 
+impl WithLibSl for ExprHasConcept {}
+
 /// A cast expression.
 #[derive(Debug, Clone)]
 pub struct ExprCast {
@@ -1038,6 +1197,8 @@ pub struct ExprCast {
     /// A type the expression is cast to.
     pub ty_expr: TyExprId,
 }
+
+impl WithLibSl for ExprCast {}
 
 /// An type comparison expression.
 #[derive(Debug, Clone)]
@@ -1049,6 +1210,8 @@ pub struct ExprTyCompare {
     pub ty_expr: TyExprId,
 }
 
+impl WithLibSl for ExprTyCompare {}
+
 /// A unary arithmetic or logical expression.
 #[derive(Debug, Clone)]
 pub struct ExprUnary {
@@ -1058,6 +1221,8 @@ pub struct ExprUnary {
     /// The operand of the unary operator.
     pub expr: ExprId,
 }
+
+impl WithLibSl for ExprUnary {}
 
 /// An enumeration of all unary operators that can be used in [`ExprUnary`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -1075,6 +1240,8 @@ pub enum UnOp {
     Not,
 }
 
+impl WithLibSl for UnOp {}
+
 /// A binary arithmetic or logical expression.
 #[derive(Debug, Clone)]
 pub struct ExprBinary {
@@ -1087,6 +1254,8 @@ pub struct ExprBinary {
     /// The right operand of the operator.
     pub rhs: ExprId,
 }
+
+impl WithLibSl for ExprBinary {}
 
 /// An enumeration of all binary operators that can be used in [`ExprBinary`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -1152,6 +1321,8 @@ pub enum BinOp {
     And,
 }
 
+impl WithLibSl for BinOp {}
+
 /// A literal of a primitive type, usable in both expression and type expression contexts.
 #[derive(From, Debug, Clone)]
 pub enum PrimitiveLit {
@@ -1173,6 +1344,8 @@ pub enum PrimitiveLit {
     /// The `null` literal.
     Null,
 }
+
+impl WithLibSl for PrimitiveLit {}
 
 /// An integer literal.
 #[derive(From, Debug, Clone, Copy)]
@@ -1202,6 +1375,8 @@ pub enum IntLit {
     U64(u64),
 }
 
+impl WithLibSl for IntLit {}
+
 /// A floating-point number literal.
 #[derive(Debug, Clone, Copy)]
 pub enum FloatLit {
@@ -1211,6 +1386,8 @@ pub enum FloatLit {
     /// A double literal (no suffix / suffix `d`).
     F64(f64),
 }
+
+impl WithLibSl for FloatLit {}
 
 /// A qualified variable/element access.
 #[derive(Debug, Default, Clone)]
@@ -1229,6 +1406,8 @@ pub struct QualifiedAccess {
     /// The variants hold data specific to each qualified access kind.
     pub kind: QualifiedAccessKind,
 }
+
+impl WithLibSl for QualifiedAccess {}
 
 /// An enumeration of all possible qualified access kinds.
 #[derive(From, Debug, Default, Clone)]
@@ -1252,12 +1431,16 @@ pub enum QualifiedAccessKind {
     Index(QualifiedAccessIndex),
 }
 
+impl WithLibSl for QualifiedAccessKind {}
+
 /// An access referring to a plain identifier, such as `foo`.
 #[derive(Debug, Clone)]
 pub struct QualifiedAccessName {
     /// The name this qualified access refers to.
     pub name: Name,
 }
+
+impl WithLibSl for QualifiedAccessName {}
 
 /// An access referring to a variable of a freshly-created automaton, such as `A(x).foo`.
 #[derive(Debug, Clone)]
@@ -1275,6 +1458,8 @@ pub struct QualifiedAccessAutomatonVar {
     pub field: Name,
 }
 
+impl WithLibSl for QualifiedAccessAutomatonVar {}
+
 /// An access referring to a field of a base entity, such as `foo.bar`.
 #[derive(Debug, Clone)]
 pub struct QualifiedAccessField {
@@ -1285,6 +1470,8 @@ pub struct QualifiedAccessField {
     pub field: Name,
 }
 
+impl WithLibSl for QualifiedAccessField {}
+
 /// An access referring to an element of an indexed collection, such as `foo[42]`.
 #[derive(Debug, Clone)]
 pub struct QualifiedAccessIndex {
@@ -1294,3 +1481,5 @@ pub struct QualifiedAccessIndex {
     /// An index of the element this qualified access refers to.
     pub index: ExprId,
 }
+
+impl WithLibSl for QualifiedAccessIndex {}

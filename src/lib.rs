@@ -70,6 +70,8 @@ pub mod export;
 pub mod grammar;
 pub mod loc;
 mod parse;
+#[cfg(feature = "serde")]
+mod serialize;
 
 new_key_type! {
     /// An [entity declaration][ast::Decl] identifier.
@@ -122,5 +124,67 @@ impl LibSl {
     /// Returns the file name corresponding to the given `id`.
     pub fn filename_by_id(&self, id: FileId) -> &str {
         &self.file_names[id.0]
+    }
+}
+
+/// A helper struct that bundles together `T` with a reference to [`LibSl`].
+#[derive(Debug)]
+pub struct LibSlNode<'a, T: 'a + ?Sized> {
+    libsl: &'a crate::LibSl,
+    inner: &'a T,
+}
+
+impl<'a, T: 'a + ?Sized> Clone for LibSlNode<'a, T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<'a, T: 'a + ?Sized> Copy for LibSlNode<'a, T> {}
+
+impl<'a, T: 'a + ?Sized> LibSlNode<'a, T> {
+    /// Creates a new instance of [`LibSlNode`].
+    pub fn new(inner: &'a T, libsl: &'a LibSl) -> Self {
+        Self { libsl, inner }
+    }
+
+    /// Returns the inner value wrapped by `Self`.
+    pub fn inner(&self) -> &'a T {
+        self.inner
+    }
+
+    /// Returns the reference to [`LibSl`] stored in this struct.
+    pub fn libsl(&self) -> &'a crate::LibSl {
+        self.libsl
+    }
+
+    /// Maps the inner value using the function and wraps the result into [`LibSlNode`].
+    pub fn map<F, R>(self, f: F) -> LibSlNode<'a, R>
+    where
+        F: FnOnce(&'a T) -> &'a R,
+        R: 'a + ?Sized,
+    {
+        LibSlNode {
+            libsl: self.libsl(),
+            inner: f(self.inner()),
+        }
+    }
+}
+
+impl<'a, T: 'a> LibSlNode<'a, Option<T>> {
+    /// Converts a `LibSlNode<Option<T>>` to `Option<LibSlNode<T>>`.
+    pub fn transpose(self) -> Option<LibSlNode<'a, T>> {
+        Some(LibSlNode {
+            libsl: self.libsl(),
+            inner: self.inner().as_ref()?,
+        })
+    }
+}
+
+/// Allows creating `WithLibSl` using method syntax.
+pub trait WithLibSl {
+    /// Creates a new [`LibSlNode`] instance for `Self`.
+    fn with_libsl<'a>(&'a self, libsl: &'a crate::LibSl) -> LibSlNode<'a, Self> {
+        LibSlNode { libsl, inner: self }
     }
 }

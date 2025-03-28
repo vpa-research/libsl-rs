@@ -1,5 +1,5 @@
 [workspace]
-members = ["eyelvl"]
+members = ["eyelvl", "libsl-derive"]
 exclude = ["tool/antlr4-rust-target/runtime/Rust"]
 
 [package]
@@ -10,6 +10,11 @@ edition = "2024"
 [dependencies]
 antlr-rust = { path = "tool/antlr4-rust-target/runtime/Rust" }
 derive_more = { version = "2.0.1", features = ["display", "from"] }
+libsl-derive = { path = "libsl-derive", optional = true }
 ryu = "1.0.20"
+serde = { version = "1.0.219", features = ["derive"], optional = true }
 slotmap = "1.0.7"
 thiserror = "2.0.12"
+
+[features]
+serde = ["dep:serde", "dep:libsl-derive"]

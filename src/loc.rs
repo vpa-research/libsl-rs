@@ -6,6 +6,8 @@
 
 use std::num::NonZeroUsize;
 
+use crate::WithLibSl;
+
 /// A file identifier for use in [`Span`s][Span] to avoid lifetime parameters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FileId(pub(crate) usize);
@@ -28,6 +30,8 @@ pub struct Span {
     /// A column number, counted from 1.
     pub col: Option<NonZeroUsize>,
 }
+
+impl WithLibSl for Span {}
 
 /// A location in a source file.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -72,3 +76,5 @@ impl From<Loc> for Option<Span> {
         loc.span().cloned()
     }
 }
+
+impl WithLibSl for Loc {}

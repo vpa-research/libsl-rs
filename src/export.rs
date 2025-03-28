@@ -7,8 +7,7 @@
 
 use std::fmt::{self, Display, Write as _};
 
-use crate::ast::{self, LibSlNode};
-use crate::{DeclId, LibSl, StmtId};
+use crate::{DeclId, LibSl, LibSlNode, StmtId, ast};
 
 impl<'a, T> Display for LibSlNode<'a, T>
 where

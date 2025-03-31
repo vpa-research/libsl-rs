@@ -2191,11 +2191,9 @@ impl Display for ast::FloatLit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // assumes the float is finite. if not (infinite or nan), it'll print a string that will be
         // interpreted as an identifier instead.
-        let mut buf = ryu::Buffer::new();
-
         match self {
-            ast::FloatLit::F32(v) => write!(f, "{}f", buf.format(*v)),
-            ast::FloatLit::F64(v) => write!(f, "{}", buf.format(*v)),
+            ast::FloatLit::F32(v) => write!(f, "{}f", v),
+            ast::FloatLit::F64(v) => write!(f, "{}", v),
         }
     }
 }

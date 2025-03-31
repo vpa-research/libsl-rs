@@ -1,5 +1,6 @@
 use std::cell::RefCell;
-use std::fmt::Debug;
+use std::error::Error;
+use std::fmt::{self, Debug, Display};
 use std::num::{NonZeroUsize, ParseIntError};
 use std::rc::Rc;
 
@@ -11,8 +12,6 @@ use antlr_rust::token::CommonToken;
 use antlr_rust::token_factory::TokenFactory;
 use antlr_rust::tree::TerminalNode;
 use antlr_rust::{InputStream, Parser};
-use derive_more::{Display, From};
-use thiserror::Error;
 
 use crate::grammar::lexer::LibSLLexer;
 use crate::grammar::libslparser::{
@@ -162,7 +161,6 @@ enum QualifiedAccessBase {
     QualifiedAccess(QualifiedAccessId),
 }
 
-#[derive(From)]
 enum ParsedQualifiedAccess {
     QualifiedAccess(QualifiedAccessId),
     ProcCall(ExprId),
@@ -186,19 +184,35 @@ impl ParsedQualifiedAccess {
     }
 }
 
-#[derive(Display, Debug, Clone, Copy, PartialEq, Eq)]
+impl From<QualifiedAccessId> for ParsedQualifiedAccess {
+    fn from(qid: QualifiedAccessId) -> Self {
+        Self::QualifiedAccess(qid)
+    }
+}
+
+impl From<ExprId> for ParsedQualifiedAccess {
+    fn from(expr_id: ExprId) -> Self {
+        Self::ProcCall(expr_id)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Radix {
-    #[display("binary")]
     Binary,
-
-    #[display("octal")]
     Octal,
-
-    #[display("decimal")]
     Decimal,
-
-    #[display("hexadecimal")]
     Hexadecimal,
+}
+
+impl Display for Radix {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Radix::Binary => write!(f, "binary"),
+            Radix::Octal => write!(f, "octal"),
+            Radix::Decimal => write!(f, "decimal"),
+            Radix::Hexadecimal => write!(f, "hexadecimal"),
+        }
+    }
 }
 
 impl From<Radix> for u32 {
@@ -213,10 +227,9 @@ impl From<Radix> for u32 {
 }
 
 /// An error that occurred while parsing a file.
-#[derive(Error, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub enum ParseError {
     /// A syntax error.
-    #[error("encountered a syntax error at L{line}:{column}: {msg}")]
     Syntax {
         /// The line number (1-based) this error occurred in.
         line: isize,
@@ -229,21 +242,45 @@ pub enum ParseError {
     },
 
     /// Could not parse an integer literal.
-    #[error(
-        "could not parse {radix_article} {radix} integer literal at L{line}:{column}: {inner}",
-        radix_article = match radix {
-            Radix::Octal => "an",
-            _ => "a",
-        },
-    )]
     Int {
         radix: Radix,
         line: isize,
         column: isize,
-
-        #[source]
         inner: ParseIntError,
     },
+}
+
+impl Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ParseError::Syntax { line, column, msg } => {
+                write!(f, "encountered a syntax error at L{line}:{column}: {msg}")
+            }
+
+            ParseError::Int {
+                radix,
+                line,
+                column,
+                inner,
+            } => write!(
+                f,
+                "could not parse {radix_article} {radix} integer literal at L{line}:{column}: {inner}",
+                radix_article = match radix {
+                    Radix::Octal => "an",
+                    _ => "a",
+                },
+            ),
+        }
+    }
+}
+
+impl Error for ParseError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            ParseError::Syntax { .. } => None,
+            ParseError::Int { inner, .. } => Some(inner),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

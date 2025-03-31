@@ -2,8 +2,6 @@
 //!
 //! The top-level struct is [`File`]; all other nodes are descendants of it.
 
-use derive_more::From;
-
 use crate::loc::Loc;
 use crate::{DeclId, ExprId, QualifiedAccessId, StmtId, TyExprId, WithLibSl};
 
@@ -85,7 +83,7 @@ pub struct Decl {
 impl WithLibSl for Decl {}
 
 /// An enumeration of all possible declaration kinds.
-#[derive(From, Debug, Default, Clone)]
+#[derive(Debug, Default, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub enum DeclKind {
     /// A dummy declaration, the default value of `DeclKind`.
@@ -141,6 +139,102 @@ pub enum DeclKind {
 
     /// An automaton procedure declaration.
     Proc(DeclProc),
+}
+
+impl From<DeclImport> for DeclKind {
+    fn from(decl: DeclImport) -> Self {
+        Self::Import(decl)
+    }
+}
+
+impl From<DeclInclude> for DeclKind {
+    fn from(decl: DeclInclude) -> Self {
+        Self::Include(decl)
+    }
+}
+
+impl From<DeclSemanticTy> for DeclKind {
+    fn from(decl: DeclSemanticTy) -> Self {
+        Self::SemanticTy(decl)
+    }
+}
+
+impl From<DeclTyAlias> for DeclKind {
+    fn from(decl: DeclTyAlias) -> Self {
+        Self::TyAlias(decl)
+    }
+}
+
+impl From<DeclStruct> for DeclKind {
+    fn from(decl: DeclStruct) -> Self {
+        Self::Struct(decl)
+    }
+}
+
+impl From<DeclEnum> for DeclKind {
+    fn from(decl: DeclEnum) -> Self {
+        Self::Enum(decl)
+    }
+}
+
+impl From<DeclAnnotation> for DeclKind {
+    fn from(decl: DeclAnnotation) -> Self {
+        Self::Annotation(decl)
+    }
+}
+
+impl From<DeclAction> for DeclKind {
+    fn from(decl: DeclAction) -> Self {
+        Self::Action(decl)
+    }
+}
+
+impl From<DeclAutomaton> for DeclKind {
+    fn from(decl: DeclAutomaton) -> Self {
+        Self::Automaton(decl)
+    }
+}
+
+impl From<DeclFunction> for DeclKind {
+    fn from(decl: DeclFunction) -> Self {
+        Self::Function(decl)
+    }
+}
+
+impl From<DeclVariable> for DeclKind {
+    fn from(decl: DeclVariable) -> Self {
+        Self::Variable(decl)
+    }
+}
+
+impl From<DeclState> for DeclKind {
+    fn from(decl: DeclState) -> Self {
+        Self::State(decl)
+    }
+}
+
+impl From<DeclShift> for DeclKind {
+    fn from(decl: DeclShift) -> Self {
+        Self::Shift(decl)
+    }
+}
+
+impl From<DeclConstructor> for DeclKind {
+    fn from(decl: DeclConstructor) -> Self {
+        Self::Constructor(decl)
+    }
+}
+
+impl From<DeclDestructor> for DeclKind {
+    fn from(decl: DeclDestructor) -> Self {
+        Self::Destructor(decl)
+    }
+}
+
+impl From<DeclProc> for DeclKind {
+    fn from(decl: DeclProc) -> Self {
+        Self::Proc(decl)
+    }
 }
 
 impl WithLibSl for DeclKind {}
@@ -650,7 +744,7 @@ pub struct FunctionBody {
 impl WithLibSl for FunctionBody {}
 
 /// A function contract specification.
-#[derive(From, Debug, Clone)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub enum Contract {
     /// A precondition specification.
@@ -661,6 +755,24 @@ pub enum Contract {
 
     /// A write set specification.
     Assigns(ContractAssigns),
+}
+
+impl From<ContractRequires> for Contract {
+    fn from(contract: ContractRequires) -> Self {
+        Self::Requires(contract)
+    }
+}
+
+impl From<ContractEnsures> for Contract {
+    fn from(contract: ContractEnsures) -> Self {
+        Self::Ensures(contract)
+    }
+}
+
+impl From<ContractAssigns> for Contract {
+    fn from(contract: ContractAssigns) -> Self {
+        Self::Assigns(contract)
+    }
 }
 
 impl WithLibSl for Contract {}
@@ -846,7 +958,7 @@ pub struct TyExpr {
 impl WithLibSl for TyExpr {}
 
 /// An enumeration of all possible type expression kinds.
-#[derive(From, Debug, Default, Clone)]
+#[derive(Debug, Default, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub enum TyExprKind {
     /// A dummy type expression, the default value of `TyExprKind`.
@@ -869,6 +981,36 @@ pub enum TyExprKind {
 
     /// A union type expression.
     Union(TyExprUnion),
+}
+
+impl From<TyExprPrimitiveLit> for TyExprKind {
+    fn from(ty_expr: TyExprPrimitiveLit) -> Self {
+        Self::PrimitiveLit(ty_expr)
+    }
+}
+
+impl From<TyExprName> for TyExprKind {
+    fn from(ty_expr: TyExprName) -> Self {
+        Self::Name(ty_expr)
+    }
+}
+
+impl From<TyExprPointer> for TyExprKind {
+    fn from(ty_expr: TyExprPointer) -> Self {
+        Self::Pointer(ty_expr)
+    }
+}
+
+impl From<TyExprIntersection> for TyExprKind {
+    fn from(ty_expr: TyExprIntersection) -> Self {
+        Self::Intersection(ty_expr)
+    }
+}
+
+impl From<TyExprUnion> for TyExprKind {
+    fn from(ty_expr: TyExprUnion) -> Self {
+        Self::Union(ty_expr)
+    }
 }
 
 impl WithLibSl for TyExprKind {}
@@ -968,7 +1110,7 @@ pub struct Stmt {
 impl WithLibSl for Stmt {}
 
 /// An enumeration of all possible statement kinds.
-#[derive(From, Debug, Default, Clone)]
+#[derive(Debug, Default, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub enum StmtKind {
     /// A dummy statement, the default value of `StmtKind`.
@@ -987,6 +1129,30 @@ pub enum StmtKind {
 
     /// An expression statement.
     Expr(ExprId),
+}
+
+impl From<DeclId> for StmtKind {
+    fn from(decl_id: DeclId) -> Self {
+        Self::Decl(decl_id)
+    }
+}
+
+impl From<StmtIf> for StmtKind {
+    fn from(stmt: StmtIf) -> Self {
+        Self::If(stmt)
+    }
+}
+
+impl From<StmtAssign> for StmtKind {
+    fn from(stmt: StmtAssign) -> Self {
+        Self::Assign(stmt)
+    }
+}
+
+impl From<ExprId> for StmtKind {
+    fn from(expr_id: ExprId) -> Self {
+        Self::Expr(expr_id)
+    }
 }
 
 impl WithLibSl for StmtKind {}
@@ -1082,7 +1248,7 @@ pub struct Expr {
 impl WithLibSl for Expr {}
 
 /// An enumeration of all possible expression kinds.
-#[derive(From, Debug, Default, Clone)]
+#[derive(Debug, Default, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub enum ExprKind {
     /// A dummy expression, the default value of `ExprKind`.
@@ -1126,6 +1292,78 @@ pub enum ExprKind {
 
     /// A binary arithmetic/logical expression.
     Binary(ExprBinary),
+}
+
+impl From<ExprPrimitiveLit> for ExprKind {
+    fn from(expr: ExprPrimitiveLit) -> Self {
+        Self::PrimitiveLit(expr)
+    }
+}
+
+impl From<ExprArrayLit> for ExprKind {
+    fn from(expr: ExprArrayLit) -> Self {
+        Self::ArrayLit(expr)
+    }
+}
+
+impl From<ExprQualifiedAccess> for ExprKind {
+    fn from(expr: ExprQualifiedAccess) -> Self {
+        Self::QualifiedAccess(expr)
+    }
+}
+
+impl From<ExprPrev> for ExprKind {
+    fn from(expr: ExprPrev) -> Self {
+        Self::Prev(expr)
+    }
+}
+
+impl From<ExprProcCall> for ExprKind {
+    fn from(expr: ExprProcCall) -> Self {
+        Self::ProcCall(expr)
+    }
+}
+
+impl From<ExprActionCall> for ExprKind {
+    fn from(expr: ExprActionCall) -> Self {
+        Self::ActionCall(expr)
+    }
+}
+
+impl From<ExprInstantiate> for ExprKind {
+    fn from(expr: ExprInstantiate) -> Self {
+        Self::Instantiate(expr)
+    }
+}
+
+impl From<ExprHasConcept> for ExprKind {
+    fn from(expr: ExprHasConcept) -> Self {
+        Self::HasConcept(expr)
+    }
+}
+
+impl From<ExprCast> for ExprKind {
+    fn from(expr: ExprCast) -> Self {
+        Self::Cast(expr)
+    }
+}
+
+impl From<ExprTyCompare> for ExprKind {
+    fn from(expr: ExprTyCompare) -> Self {
+        Self::TyCompare(expr)
+    }
+}
+
+impl From<ExprUnary> for ExprKind {
+    fn from(expr: ExprUnary) -> Self {
+        Self::Unary(expr)
+    }
+}
+
+impl From<ExprBinary> for ExprKind {
+    fn from(expr: ExprBinary) -> Self {
+        Self::Binary(expr)
+    }
 }
 
 impl WithLibSl for ExprKind {}
@@ -1389,7 +1627,7 @@ pub enum BinOp {
 impl WithLibSl for BinOp {}
 
 /// A literal of a primitive type, usable in both expression and type expression contexts.
-#[derive(From, Debug, Clone)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum PrimitiveLit {
     /// An integer literal.
@@ -1411,10 +1649,34 @@ pub enum PrimitiveLit {
     Null,
 }
 
+impl From<IntLit> for PrimitiveLit {
+    fn from(int_lit: IntLit) -> Self {
+        Self::Int(int_lit)
+    }
+}
+
+impl From<FloatLit> for PrimitiveLit {
+    fn from(float_lit: FloatLit) -> Self {
+        Self::Float(float_lit)
+    }
+}
+
+impl From<String> for PrimitiveLit {
+    fn from(s: String) -> Self {
+        Self::String(s)
+    }
+}
+
+impl From<bool> for PrimitiveLit {
+    fn from(value: bool) -> Self {
+        Self::Bool(value)
+    }
+}
+
 impl WithLibSl for PrimitiveLit {}
 
 /// An integer literal.
-#[derive(From, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum IntLit {
     /// A signed byte literal (suffix `x`).
@@ -1440,6 +1702,54 @@ pub enum IntLit {
 
     /// An unsigned long integer literal (suffix `uL`).
     U64(u64),
+}
+
+impl From<i8> for IntLit {
+    fn from(value: i8) -> Self {
+        Self::I8(value)
+    }
+}
+
+impl From<u8> for IntLit {
+    fn from(value: u8) -> Self {
+        Self::U8(value)
+    }
+}
+
+impl From<i16> for IntLit {
+    fn from(value: i16) -> Self {
+        Self::I16(value)
+    }
+}
+
+impl From<u16> for IntLit {
+    fn from(value: u16) -> Self {
+        Self::U16(value)
+    }
+}
+
+impl From<i32> for IntLit {
+    fn from(value: i32) -> Self {
+        Self::I32(value)
+    }
+}
+
+impl From<u32> for IntLit {
+    fn from(value: u32) -> Self {
+        Self::U32(value)
+    }
+}
+
+impl From<i64> for IntLit {
+    fn from(value: i64) -> Self {
+        Self::I64(value)
+    }
+}
+
+impl From<u64> for IntLit {
+    fn from(value: u64) -> Self {
+        Self::U64(value)
+    }
 }
 
 impl WithLibSl for IntLit {}
@@ -1478,7 +1788,7 @@ pub struct QualifiedAccess {
 impl WithLibSl for QualifiedAccess {}
 
 /// An enumeration of all possible qualified access kinds.
-#[derive(From, Debug, Default, Clone)]
+#[derive(Debug, Default, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub enum QualifiedAccessKind {
     /// A dummy qualified access, the default value of `QualifiedAccessKind`.
@@ -1498,6 +1808,30 @@ pub enum QualifiedAccessKind {
 
     /// An indexed element of an outer entity: the `[42]` in `foo[42]`.
     Index(QualifiedAccessIndex),
+}
+
+impl From<QualifiedAccessName> for QualifiedAccessKind {
+    fn from(access: QualifiedAccessName) -> Self {
+        Self::Name(access)
+    }
+}
+
+impl From<QualifiedAccessAutomatonVar> for QualifiedAccessKind {
+    fn from(access: QualifiedAccessAutomatonVar) -> Self {
+        Self::AutomatonVar(access)
+    }
+}
+
+impl From<QualifiedAccessField> for QualifiedAccessKind {
+    fn from(access: QualifiedAccessField) -> Self {
+        Self::Field(access)
+    }
+}
+
+impl From<QualifiedAccessIndex> for QualifiedAccessKind {
+    fn from(access: QualifiedAccessIndex) -> Self {
+        Self::Index(access)
+    }
 }
 
 impl WithLibSl for QualifiedAccessKind {}

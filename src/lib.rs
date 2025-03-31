@@ -8,7 +8,7 @@
 //! #
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! # let file_name = "test.libsl".into();
-//! # let contents = r#"libsl "1.0.0" library test;
+//! # let contents = r#"libsl "1.0.0"; library test;
 //! # val x: I32 = 42;
 //! # "#;
 //! let mut libsl = LibSl::new();
@@ -29,7 +29,7 @@
 //! #
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! # let file_name = "test.libsl".into();
-//! # let contents = r#"libsl "1.0.0" library test;
+//! # let contents = r#"libsl "1.0.0"; library test;
 //! # val x: I32 = 42;
 //! # "#;
 //! let mut libsl = LibSl::new();
@@ -49,7 +49,7 @@
 //! #
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! # let file_name = "test.libsl".into();
-//! # let contents = r#"libsl "1.0.0" library test;
+//! # let contents = r#"libsl "1.0.0"; library test;
 //! # val x: I32 = 42;
 //! # "#;
 //! let mut libsl = LibSl::new();

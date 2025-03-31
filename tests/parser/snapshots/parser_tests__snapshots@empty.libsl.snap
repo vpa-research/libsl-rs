@@ -1,0 +1,15 @@
+---
+source: tests/parser/main.rs
+input_file: tests/parser/test-data/empty.libsl
+---
+Ok(File(
+  loc: Span(
+    start: 0,
+    len: 0,
+    file: "/home/slowlime/projects/github/vpa-research/libsl-rs/tests/parser/test-data/empty.libsl",
+    line: Some(1),
+    col: None,
+  ),
+  header: None,
+  decls: [],
+))

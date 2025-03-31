@@ -346,7 +346,10 @@ impl<'a> AstConstructor<'a> {
 
         Span {
             start: start.start as usize,
-            len: (stop.stop as usize).saturating_sub(start.start as usize),
+            len: usize::try_from(stop.stop)
+                .ok()
+                .and_then(|stop| Some(stop.saturating_sub(start.start.try_into().ok()?)))
+                .unwrap_or(0),
             file_id: self.file_id,
             line,
             col,

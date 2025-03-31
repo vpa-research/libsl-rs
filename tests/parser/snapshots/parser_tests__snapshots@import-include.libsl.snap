@@ -1,0 +1,54 @@
+---
+source: tests/parser/main.rs
+description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary test_imp_incl;\n\nimport hello_world;\ninclude foo_bar;\n"
+input_file: tests/parser/test-data/import-include.libsl
+---
+Ok(File(
+  loc: Span(
+    start: 0,
+    len: 76,
+    file: "/home/slowlime/projects/github/vpa-research/libsl-rs/tests/parser/test-data/import-include.libsl",
+    line: Some(1),
+    col: None,
+  ),
+  header: Some(Header(
+    loc: Span(
+      start: 0,
+      len: 37,
+      file: "/home/slowlime/projects/github/vpa-research/libsl-rs/tests/parser/test-data/import-include.libsl",
+      line: Some(1),
+      col: None,
+    ),
+    libsl_version: "1.0.0",
+    library_name: "test_imp_incl",
+    version: None,
+    language: None,
+    url: None,
+  )),
+  decls: [
+    Decl(
+      loc: Span(
+        start: 40,
+        len: 18,
+        file: "/home/slowlime/projects/github/vpa-research/libsl-rs/tests/parser/test-data/import-include.libsl",
+        line: Some(5),
+        col: None,
+      ),
+      kind: Import(DeclImport(
+        path: "hello_world",
+      )),
+    ),
+    Decl(
+      loc: Span(
+        start: 60,
+        len: 15,
+        file: "/home/slowlime/projects/github/vpa-research/libsl-rs/tests/parser/test-data/import-include.libsl",
+        line: Some(6),
+        col: None,
+      ),
+      kind: Include(DeclInclude(
+        path: "foo_bar",
+      )),
+    ),
+  ],
+))

@@ -18,3 +18,13 @@ thiserror = "2.0.12"
 
 [features]
 serde = ["dep:serde", "dep:libsl-derive"]
+
+[dev-dependencies]
+insta = { version = "1.42.2", features = ["glob", "ron"] }
+
+# see https://github.com/rust-lang/cargo/issues/2911.
+libsl = { path = ".", features = ["serde"] }
+
+[[test]]
+name = "parser-tests"
+path = "tests/parser/main.rs"

@@ -7,7 +7,7 @@ Ok(File(
   loc: Span(
     start: 0,
     len: 76,
-    file: "/home/slowlime/projects/github/vpa-research/libsl-rs/tests/parser/test-data/import-include.libsl",
+    file: "tests/parser/test-data/import-include.libsl",
     line: Some(1),
     col: None,
   ),
@@ -15,7 +15,7 @@ Ok(File(
     loc: Span(
       start: 0,
       len: 37,
-      file: "/home/slowlime/projects/github/vpa-research/libsl-rs/tests/parser/test-data/import-include.libsl",
+      file: "tests/parser/test-data/import-include.libsl",
       line: Some(1),
       col: None,
     ),
@@ -30,7 +30,7 @@ Ok(File(
       loc: Span(
         start: 40,
         len: 18,
-        file: "/home/slowlime/projects/github/vpa-research/libsl-rs/tests/parser/test-data/import-include.libsl",
+        file: "tests/parser/test-data/import-include.libsl",
         line: Some(5),
         col: None,
       ),
@@ -42,7 +42,7 @@ Ok(File(
       loc: Span(
         start: 60,
         len: 15,
-        file: "/home/slowlime/projects/github/vpa-research/libsl-rs/tests/parser/test-data/import-include.libsl",
+        file: "tests/parser/test-data/import-include.libsl",
         line: Some(6),
         col: None,
       ),

@@ -24,6 +24,7 @@ insta = { version = "1.42.2", features = ["glob", "ron"] }
 
 # see https://github.com/rust-lang/cargo/issues/2911.
 libsl = { path = ".", features = ["serde"] }
+pathdiff = "0.2.3"
 
 [[test]]
 name = "parser-tests"

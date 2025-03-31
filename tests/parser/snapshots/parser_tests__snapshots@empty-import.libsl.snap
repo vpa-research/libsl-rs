@@ -1,0 +1,6 @@
+---
+source: tests/parser/main.rs
+description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary empty_imp;\n\n// import declarations must specify a path.\nimport   ;\n"
+input_file: tests/parser/test-data/empty-import.libsl
+---
+Err("encountered a syntax error at L6:0: no path specified for the import declaration")

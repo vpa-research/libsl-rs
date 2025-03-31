@@ -1,6 +1,6 @@
 use std::fs;
 
-use insta::{assert_ron_snapshot, Settings};
+use insta::{Settings, assert_ron_snapshot};
 use libsl::{LibSl, WithLibSl};
 use pathdiff::diff_paths;
 
@@ -21,8 +21,11 @@ fn test_snapshots() {
 
         let mut libsl = LibSl::new();
         let ast = libsl.parse_file(
-            diff_paths(path, env!("CARGO_MANIFEST_DIR")).unwrap().display().to_string(),
-            &contents
+            diff_paths(path, env!("CARGO_MANIFEST_DIR"))
+                .unwrap()
+                .display()
+                .to_string(),
+            &contents,
         );
 
         assert_ron_snapshot!(match &ast {

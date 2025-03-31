@@ -1,0 +1,6 @@
+libsl "1.0.0";
+
+library empty_incl;
+
+// include declarations must specify a path.
+include    ;

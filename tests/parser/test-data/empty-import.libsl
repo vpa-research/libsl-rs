@@ -1,0 +1,6 @@
+libsl "1.0.0";
+
+library empty_imp;
+
+// import declarations must specify a path.
+import   ;

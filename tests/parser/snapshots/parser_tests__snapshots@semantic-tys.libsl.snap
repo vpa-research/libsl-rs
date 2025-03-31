@@ -1,0 +1,191 @@
+---
+source: tests/parser/main.rs
+description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary semantic_tys;\n\n// empty.\ntypes {}\n\ntypes {\n    Simple(RealTy);\n\n    Enumerated(RealTy) {\n        foo: 42;\n        bar: 24;\n    }\n}\n"
+input_file: tests/parser/test-data/semantic-tys.libsl
+---
+Ok(File(
+  loc: Span(
+    start: 0,
+    len: 154,
+    file: "tests/parser/test-data/semantic-tys.libsl",
+    line: Some(1),
+    col: None,
+  ),
+  header: Some(Header(
+    loc: Span(
+      start: 0,
+      len: 36,
+      file: "tests/parser/test-data/semantic-tys.libsl",
+      line: Some(1),
+      col: None,
+    ),
+    libsl_version: "1.0.0",
+    library_name: "semantic_tys",
+    version: None,
+    language: None,
+    url: None,
+  )),
+  decls: [
+    Decl(
+      loc: Span(
+        start: 71,
+        len: 14,
+        file: "tests/parser/test-data/semantic-tys.libsl",
+        line: Some(9),
+        col: Some(4),
+      ),
+      kind: SemanticTy(DeclSemanticTy(
+        annotations: [],
+        ty_name: QualifiedTyName(
+          ty_name: FullName(
+            components: [
+              Name(
+                loc: Span(
+                  start: 71,
+                  len: 5,
+                  file: "tests/parser/test-data/semantic-tys.libsl",
+                  line: Some(9),
+                  col: Some(4),
+                ),
+                name: "Simple",
+              ),
+            ],
+          ),
+          generics: [],
+        ),
+        real_ty: TyExpr(
+          loc: Span(
+            start: 78,
+            len: 5,
+            file: "tests/parser/test-data/semantic-tys.libsl",
+            line: Some(9),
+            col: Some(11),
+          ),
+          kind: Name(TyExprName(
+            ty_name: FullName(
+              components: [
+                Name(
+                  loc: Span(
+                    start: 78,
+                    len: 5,
+                    file: "tests/parser/test-data/semantic-tys.libsl",
+                    line: Some(9),
+                    col: Some(11),
+                  ),
+                  name: "RealTy",
+                ),
+              ],
+            ),
+            generics: [],
+          )),
+        ),
+        kind: Simple,
+      )),
+    ),
+    Decl(
+      loc: Span(
+        start: 92,
+        len: 59,
+        file: "tests/parser/test-data/semantic-tys.libsl",
+        line: Some(11),
+        col: Some(4),
+      ),
+      kind: SemanticTy(DeclSemanticTy(
+        annotations: [],
+        ty_name: QualifiedTyName(
+          ty_name: FullName(
+            components: [
+              Name(
+                loc: Span(
+                  start: 92,
+                  len: 9,
+                  file: "tests/parser/test-data/semantic-tys.libsl",
+                  line: Some(11),
+                  col: Some(4),
+                ),
+                name: "Enumerated",
+              ),
+            ],
+          ),
+          generics: [],
+        ),
+        real_ty: TyExpr(
+          loc: Span(
+            start: 103,
+            len: 5,
+            file: "tests/parser/test-data/semantic-tys.libsl",
+            line: Some(11),
+            col: Some(15),
+          ),
+          kind: Name(TyExprName(
+            ty_name: FullName(
+              components: [
+                Name(
+                  loc: Span(
+                    start: 103,
+                    len: 5,
+                    file: "tests/parser/test-data/semantic-tys.libsl",
+                    line: Some(11),
+                    col: Some(15),
+                  ),
+                  name: "RealTy",
+                ),
+              ],
+            ),
+            generics: [],
+          )),
+        ),
+        kind: Enumerated([
+          SemanticTyEnumValue(
+            name: Name(
+              loc: Span(
+                start: 121,
+                len: 2,
+                file: "tests/parser/test-data/semantic-tys.libsl",
+                line: Some(12),
+                col: Some(8),
+              ),
+              name: "foo",
+            ),
+            expr: Expr(
+              loc: Span(
+                start: 126,
+                len: 1,
+                file: "tests/parser/test-data/semantic-tys.libsl",
+                line: Some(12),
+                col: Some(13),
+              ),
+              kind: PrimitiveLit(ExprPrimitiveLit(
+                lit: Int(I32(42)),
+              )),
+            ),
+          ),
+          SemanticTyEnumValue(
+            name: Name(
+              loc: Span(
+                start: 138,
+                len: 2,
+                file: "tests/parser/test-data/semantic-tys.libsl",
+                line: Some(13),
+                col: Some(8),
+              ),
+              name: "bar",
+            ),
+            expr: Expr(
+              loc: Span(
+                start: 143,
+                len: 1,
+                file: "tests/parser/test-data/semantic-tys.libsl",
+                line: Some(13),
+                col: Some(13),
+              ),
+              kind: PrimitiveLit(ExprPrimitiveLit(
+                lit: Int(I32(24)),
+              )),
+            ),
+          ),
+        ]),
+      )),
+    ),
+  ],
+))

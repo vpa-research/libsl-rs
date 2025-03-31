@@ -1,0 +1,15 @@
+libsl "1.0.0";
+
+library semantic_tys;
+
+// empty.
+types {}
+
+types {
+    Simple(RealTy);
+
+    Enumerated(RealTy) {
+        foo: 42;
+        bar: 24;
+    }
+}

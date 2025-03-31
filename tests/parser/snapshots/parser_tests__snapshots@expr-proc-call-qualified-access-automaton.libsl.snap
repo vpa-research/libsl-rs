@@ -1,0 +1,6 @@
+---
+source: tests/parser/main.rs
+description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary expr_proc_call_qualified_access_automaton;\n\nfun test() {\n    Automaton(Wrong(foo).wrong()).test;\n}\n"
+input_file: tests/parser/test-data/expr-proc-call-qualified-access-automaton.libsl
+---
+Err("encountered a syntax error at L6:25: unexpected procedure call")

@@ -1,0 +1,6 @@
+---
+source: tests/parser/main.rs
+description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary stmt_assign_to_proc_call;\n\nfun test() {\n    Automaton(foo).procCall() = \"wrong\";\n}\n"
+input_file: tests/parser/test-data/stmt-assign-to-proc-call.libsl
+---
+Err("encountered a syntax error at L6:19: unexpected procedure call")

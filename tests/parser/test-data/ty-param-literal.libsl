@@ -1,0 +1,5 @@
+libsl "1.0.0";
+
+library ty_param_literal;
+
+typealias Wrong<"very wrong"> = Indeed;

@@ -1,0 +1,6 @@
+---
+source: tests/parser/main.rs
+description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary expr_proc_call_proc_call;\n\nfun test() {\n    Automaton(foo).procCall()(wrongHere);\n}\n"
+input_file: tests/parser/test-data/expr-proc-call-proc-call.libsl
+---
+Err("encountered a syntax error at L6:19: unexpected procedure call")

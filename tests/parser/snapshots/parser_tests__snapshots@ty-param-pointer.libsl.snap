@@ -1,0 +1,6 @@
+---
+source: tests/parser/main.rs
+description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary ty_param_pointer;\n\ntypealias Wrong<*Very> = Wrong;\n"
+input_file: tests/parser/test-data/ty-param-pointer.libsl
+---
+Err("encountered a syntax error at L5:16: unexpected token `*`")

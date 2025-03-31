@@ -1,0 +1,6 @@
+---
+source: tests/parser/main.rs
+description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary decl_automaton_named_question_mark;\n\nautomaton ? : ItsAMystery {}\n"
+input_file: tests/parser/test-data/decl-automaton-named-question-mark.libsl
+---
+Err("encountered a syntax error at L5:10: unexpected token `?`")

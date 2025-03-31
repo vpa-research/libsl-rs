@@ -1,0 +1,7 @@
+libsl "1.0.0";
+
+library qualified_access_unexpected_call_qualified_access_base;
+
+fun test() {
+    qualified[access].ThisIs(wrong).noreally(yes);
+}

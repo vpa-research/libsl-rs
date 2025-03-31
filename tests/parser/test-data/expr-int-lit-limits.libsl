@@ -1,0 +1,27 @@
+libsl "1.0.0";
+
+library expr_int_lit_limits;
+
+var int8_min: int8 = -128x;
+var int8_max: int8 = 127x;
+
+var unsigned8_min: unsigned8 = 0ux;
+var unsigned8_max: unsigned8 = 255ux;
+
+var int16_min: int16 = -32768s;
+var int16_max: int16 = 32767s;
+
+var unsigned16_min: unsigned16 = 0us;
+var unsigned16_max: unsigned16 = 65535us;
+
+var int32_min: int32 = -2147483648;
+var int32_max: int32 = 2147483647;
+
+var unsigned32_min: unsigned32 = 0u;
+var unsigned32_max: unsigned32 = 4194967295u;
+
+var int64_min: int64 = -9223372036854775808L;
+var int64_max: int64 = 9223372036854775807L;
+
+var unsigned64_min: unsigned64 = 0uL;
+var unsigned64_max: unsigned64 = 18446744073709551615uL;

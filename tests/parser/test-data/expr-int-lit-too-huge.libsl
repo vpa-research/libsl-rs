@@ -1,0 +1,7 @@
+libsl "1.0.0";
+
+library expr_int_lit_too_huge;
+
+fun test() {
+    123467899876543212345678987654324567;
+}

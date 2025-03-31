@@ -1,0 +1,6 @@
+---
+source: tests/parser/main.rs
+description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary ty_expr_literal_with_generics;\n\ntypealias Foo = \"this is wrong: \"<Wrong>;\n"
+input_file: tests/parser/test-data/ty-expr-literal-with-generics.libsl
+---
+Err("encountered a syntax error at L5:33: a primitive literal type expression cannot have type parameters")

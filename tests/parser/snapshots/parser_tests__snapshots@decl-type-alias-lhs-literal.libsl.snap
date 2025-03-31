@@ -1,0 +1,6 @@
+---
+source: tests/parser/main.rs
+description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary decl_type_alias_lhs_pointer;\n\ntypealias \"this is wrong\" = VeryWrong;\n"
+input_file: tests/parser/test-data/decl-type-alias-lhs-literal.libsl
+---
+Err("encountered a syntax error at L5:5: unexpected primitive literal expression")

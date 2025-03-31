@@ -1,0 +1,5 @@
+libsl "1.0.0";
+
+library ty_expr_literal_with_generics;
+
+typealias Foo = "this is wrong: "<Wrong>;

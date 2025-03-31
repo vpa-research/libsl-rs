@@ -1,0 +1,5 @@
+libsl "1.0.0";
+
+library ty_arg_unexpected_variant_specifier;
+
+typealias Foo = Wrong<in VeryWrong>;

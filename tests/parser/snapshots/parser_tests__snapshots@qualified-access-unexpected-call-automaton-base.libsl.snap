@@ -1,0 +1,6 @@
+---
+source: tests/parser/main.rs
+description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary expr_has_concept_has_spelled_wrong;\n\nfun test() {\n    AutomatonBase(foo).ThisIs(wrong).noreally(yes);\n}\n"
+input_file: tests/parser/test-data/qualified-access-unexpected-call-automaton-base.libsl
+---
+Err("encountered a syntax error at L6:23: unexpected call")

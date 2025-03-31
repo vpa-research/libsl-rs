@@ -1,0 +1,91 @@
+---
+source: tests/parser/main.rs
+description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary expr_float_lit_too_huge;\n\nvar inf: double = 189574125684125874598741584528711895741256841258745987415845287118957412568412587459874158452871189574125684125874598741584528711895741256841258745987415845287118957412568412587459874158452871189574125684125874598741584528711895741256841258745987415845287118957412568412587459874158452871189574125684125874598741584528711895741256841258745987415845287118957412568412587459874158452871189574125684125874598741584528711895741256841258745987415845287118957412568412587459874158452871189574125684125874598741584528711895741256841258745987415845287118957412568412587459874158452871189574125684125874598741584528711895741256841258745987415845287118957412568412587459874158452871189574125684125874598741584528711895741256841258745987415845287118957412568412587459874158452871189574125684125874598741584528711895741256841258745987415845287118957412568412587459874158452871.0;\n"
+input_file: tests/parser/test-data/expr-float-lit-too-huge.libsl
+---
+Ok(File(
+  loc: Span(
+    start: 0,
+    len: 935,
+    file: "tests/parser/test-data/expr-float-lit-too-huge.libsl",
+    line: Some(1),
+    col: None,
+  ),
+  header: Some(Header(
+    loc: Span(
+      start: 0,
+      len: 47,
+      file: "tests/parser/test-data/expr-float-lit-too-huge.libsl",
+      line: Some(1),
+      col: None,
+    ),
+    libsl_version: "1.0.0",
+    library_name: "expr_float_lit_too_huge",
+    version: None,
+    language: None,
+    url: None,
+  )),
+  decls: [
+    Decl(
+      loc: Span(
+        start: 50,
+        len: 884,
+        file: "tests/parser/test-data/expr-float-lit-too-huge.libsl",
+        line: Some(5),
+        col: None,
+      ),
+      kind: Variable(DeclVariable(
+        annotations: [],
+        kind: Var,
+        name: Name(
+          loc: Span(
+            start: 54,
+            len: 2,
+            file: "tests/parser/test-data/expr-float-lit-too-huge.libsl",
+            line: Some(5),
+            col: Some(4),
+          ),
+          name: "inf",
+        ),
+        ty_expr: TyExpr(
+          loc: Span(
+            start: 59,
+            len: 5,
+            file: "tests/parser/test-data/expr-float-lit-too-huge.libsl",
+            line: Some(5),
+            col: Some(9),
+          ),
+          kind: Name(TyExprName(
+            ty_name: FullName(
+              components: [
+                Name(
+                  loc: Span(
+                    start: 59,
+                    len: 5,
+                    file: "tests/parser/test-data/expr-float-lit-too-huge.libsl",
+                    line: Some(5),
+                    col: Some(9),
+                  ),
+                  name: "double",
+                ),
+              ],
+            ),
+            generics: [],
+          )),
+        ),
+        init: Some(Expr(
+          loc: Span(
+            start: 68,
+            len: 865,
+            file: "tests/parser/test-data/expr-float-lit-too-huge.libsl",
+            line: Some(5),
+            col: Some(18),
+          ),
+          kind: PrimitiveLit(ExprPrimitiveLit(
+            lit: Float(F64(inf)),
+          )),
+        )),
+      )),
+    ),
+  ],
+))

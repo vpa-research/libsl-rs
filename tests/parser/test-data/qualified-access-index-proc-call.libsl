@@ -1,0 +1,7 @@
+libsl "1.0.0";
+
+library qualified_access_index_proc_call;
+
+fun test() {
+    Automaton(foo).procCall()[wrong];
+}

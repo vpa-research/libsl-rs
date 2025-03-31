@@ -1,0 +1,6 @@
+---
+source: tests/parser/main.rs
+description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary ty_param_period_separated;\n\ntypealias Wrong<A.B> = VeryWrong;\n"
+input_file: tests/parser/test-data/ty-param-period-separated.libsl
+---
+Err("encountered a syntax error at L5:17: unexpected token `.`")

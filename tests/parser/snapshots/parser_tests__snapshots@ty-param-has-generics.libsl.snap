@@ -1,0 +1,6 @@
+---
+source: tests/parser/main.rs
+description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary ty_param_has_geneircs;\n\ntypealias Wrong<Very<Wrong>> = Yes;\n"
+input_file: tests/parser/test-data/ty-param-has-generics.libsl
+---
+Err("encountered a syntax error at L5:20: a generic declaration cannot have type parameters")

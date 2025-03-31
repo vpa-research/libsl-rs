@@ -1,0 +1,5 @@
+libsl "1.1.0";
+
+library decl_automaton_implements_spelled_wrong;
+
+automaton TestAutomaton : TestType `foobar` Concept {}

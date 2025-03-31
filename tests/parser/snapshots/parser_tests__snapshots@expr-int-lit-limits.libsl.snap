@@ -1,0 +1,1006 @@
+---
+source: tests/parser/main.rs
+description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary expr_int_lit_limits;\n\nvar int8_min: int8 = -128x;\nvar int8_max: int8 = 127x;\n\nvar unsigned8_min: unsigned8 = 0ux;\nvar unsigned8_max: unsigned8 = 255ux;\n\nvar int16_min: int16 = -32768s;\nvar int16_max: int16 = 32767s;\n\nvar unsigned16_min: unsigned16 = 0us;\nvar unsigned16_max: unsigned16 = 65535us;\n\nvar int32_min: int32 = -2147483648;\nvar int32_max: int32 = 2147483647;\n\nvar unsigned32_min: unsigned32 = 0u;\nvar unsigned32_max: unsigned32 = 4194967295u;\n\nvar int64_min: int64 = -9223372036854775808L;\nvar int64_max: int64 = 9223372036854775807L;\n\nvar unsigned64_min: unsigned64 = 0uL;\nvar unsigned64_max: unsigned64 = 18446744073709551615uL;\n"
+input_file: tests/parser/test-data/expr-int-lit-limits.libsl
+---
+Ok(File(
+  loc: Span(
+    start: 0,
+    len: 664,
+    file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+    line: Some(1),
+    col: None,
+  ),
+  header: Some(Header(
+    loc: Span(
+      start: 0,
+      len: 43,
+      file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+      line: Some(1),
+      col: None,
+    ),
+    libsl_version: "1.0.0",
+    library_name: "expr_int_lit_limits",
+    version: None,
+    language: None,
+    url: None,
+  )),
+  decls: [
+    Decl(
+      loc: Span(
+        start: 46,
+        len: 26,
+        file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+        line: Some(5),
+        col: None,
+      ),
+      kind: Variable(DeclVariable(
+        annotations: [],
+        kind: Var,
+        name: Name(
+          loc: Span(
+            start: 50,
+            len: 7,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(5),
+            col: Some(4),
+          ),
+          name: "int8_min",
+        ),
+        ty_expr: TyExpr(
+          loc: Span(
+            start: 60,
+            len: 3,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(5),
+            col: Some(14),
+          ),
+          kind: Name(TyExprName(
+            ty_name: FullName(
+              components: [
+                Name(
+                  loc: Span(
+                    start: 60,
+                    len: 3,
+                    file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                    line: Some(5),
+                    col: Some(14),
+                  ),
+                  name: "int8",
+                ),
+              ],
+            ),
+            generics: [],
+          )),
+        ),
+        init: Some(Expr(
+          loc: Span(
+            start: 67,
+            len: 4,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(5),
+            col: Some(21),
+          ),
+          kind: PrimitiveLit(ExprPrimitiveLit(
+            lit: Int(I8(-128)),
+          )),
+        )),
+      )),
+    ),
+    Decl(
+      loc: Span(
+        start: 74,
+        len: 25,
+        file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+        line: Some(6),
+        col: None,
+      ),
+      kind: Variable(DeclVariable(
+        annotations: [],
+        kind: Var,
+        name: Name(
+          loc: Span(
+            start: 78,
+            len: 7,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(6),
+            col: Some(4),
+          ),
+          name: "int8_max",
+        ),
+        ty_expr: TyExpr(
+          loc: Span(
+            start: 88,
+            len: 3,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(6),
+            col: Some(14),
+          ),
+          kind: Name(TyExprName(
+            ty_name: FullName(
+              components: [
+                Name(
+                  loc: Span(
+                    start: 88,
+                    len: 3,
+                    file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                    line: Some(6),
+                    col: Some(14),
+                  ),
+                  name: "int8",
+                ),
+              ],
+            ),
+            generics: [],
+          )),
+        ),
+        init: Some(Expr(
+          loc: Span(
+            start: 95,
+            len: 3,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(6),
+            col: Some(21),
+          ),
+          kind: PrimitiveLit(ExprPrimitiveLit(
+            lit: Int(I8(127)),
+          )),
+        )),
+      )),
+    ),
+    Decl(
+      loc: Span(
+        start: 102,
+        len: 34,
+        file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+        line: Some(8),
+        col: None,
+      ),
+      kind: Variable(DeclVariable(
+        annotations: [],
+        kind: Var,
+        name: Name(
+          loc: Span(
+            start: 106,
+            len: 12,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(8),
+            col: Some(4),
+          ),
+          name: "unsigned8_min",
+        ),
+        ty_expr: TyExpr(
+          loc: Span(
+            start: 121,
+            len: 8,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(8),
+            col: Some(19),
+          ),
+          kind: Name(TyExprName(
+            ty_name: FullName(
+              components: [
+                Name(
+                  loc: Span(
+                    start: 121,
+                    len: 8,
+                    file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                    line: Some(8),
+                    col: Some(19),
+                  ),
+                  name: "unsigned8",
+                ),
+              ],
+            ),
+            generics: [],
+          )),
+        ),
+        init: Some(Expr(
+          loc: Span(
+            start: 133,
+            len: 2,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(8),
+            col: Some(31),
+          ),
+          kind: PrimitiveLit(ExprPrimitiveLit(
+            lit: Int(U8(0)),
+          )),
+        )),
+      )),
+    ),
+    Decl(
+      loc: Span(
+        start: 138,
+        len: 36,
+        file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+        line: Some(9),
+        col: None,
+      ),
+      kind: Variable(DeclVariable(
+        annotations: [],
+        kind: Var,
+        name: Name(
+          loc: Span(
+            start: 142,
+            len: 12,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(9),
+            col: Some(4),
+          ),
+          name: "unsigned8_max",
+        ),
+        ty_expr: TyExpr(
+          loc: Span(
+            start: 157,
+            len: 8,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(9),
+            col: Some(19),
+          ),
+          kind: Name(TyExprName(
+            ty_name: FullName(
+              components: [
+                Name(
+                  loc: Span(
+                    start: 157,
+                    len: 8,
+                    file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                    line: Some(9),
+                    col: Some(19),
+                  ),
+                  name: "unsigned8",
+                ),
+              ],
+            ),
+            generics: [],
+          )),
+        ),
+        init: Some(Expr(
+          loc: Span(
+            start: 169,
+            len: 4,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(9),
+            col: Some(31),
+          ),
+          kind: PrimitiveLit(ExprPrimitiveLit(
+            lit: Int(U8(255)),
+          )),
+        )),
+      )),
+    ),
+    Decl(
+      loc: Span(
+        start: 177,
+        len: 30,
+        file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+        line: Some(11),
+        col: None,
+      ),
+      kind: Variable(DeclVariable(
+        annotations: [],
+        kind: Var,
+        name: Name(
+          loc: Span(
+            start: 181,
+            len: 8,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(11),
+            col: Some(4),
+          ),
+          name: "int16_min",
+        ),
+        ty_expr: TyExpr(
+          loc: Span(
+            start: 192,
+            len: 4,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(11),
+            col: Some(15),
+          ),
+          kind: Name(TyExprName(
+            ty_name: FullName(
+              components: [
+                Name(
+                  loc: Span(
+                    start: 192,
+                    len: 4,
+                    file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                    line: Some(11),
+                    col: Some(15),
+                  ),
+                  name: "int16",
+                ),
+              ],
+            ),
+            generics: [],
+          )),
+        ),
+        init: Some(Expr(
+          loc: Span(
+            start: 200,
+            len: 6,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(11),
+            col: Some(23),
+          ),
+          kind: PrimitiveLit(ExprPrimitiveLit(
+            lit: Int(I16(-32768)),
+          )),
+        )),
+      )),
+    ),
+    Decl(
+      loc: Span(
+        start: 209,
+        len: 29,
+        file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+        line: Some(12),
+        col: None,
+      ),
+      kind: Variable(DeclVariable(
+        annotations: [],
+        kind: Var,
+        name: Name(
+          loc: Span(
+            start: 213,
+            len: 8,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(12),
+            col: Some(4),
+          ),
+          name: "int16_max",
+        ),
+        ty_expr: TyExpr(
+          loc: Span(
+            start: 224,
+            len: 4,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(12),
+            col: Some(15),
+          ),
+          kind: Name(TyExprName(
+            ty_name: FullName(
+              components: [
+                Name(
+                  loc: Span(
+                    start: 224,
+                    len: 4,
+                    file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                    line: Some(12),
+                    col: Some(15),
+                  ),
+                  name: "int16",
+                ),
+              ],
+            ),
+            generics: [],
+          )),
+        ),
+        init: Some(Expr(
+          loc: Span(
+            start: 232,
+            len: 5,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(12),
+            col: Some(23),
+          ),
+          kind: PrimitiveLit(ExprPrimitiveLit(
+            lit: Int(I16(32767)),
+          )),
+        )),
+      )),
+    ),
+    Decl(
+      loc: Span(
+        start: 241,
+        len: 36,
+        file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+        line: Some(14),
+        col: None,
+      ),
+      kind: Variable(DeclVariable(
+        annotations: [],
+        kind: Var,
+        name: Name(
+          loc: Span(
+            start: 245,
+            len: 13,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(14),
+            col: Some(4),
+          ),
+          name: "unsigned16_min",
+        ),
+        ty_expr: TyExpr(
+          loc: Span(
+            start: 261,
+            len: 9,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(14),
+            col: Some(20),
+          ),
+          kind: Name(TyExprName(
+            ty_name: FullName(
+              components: [
+                Name(
+                  loc: Span(
+                    start: 261,
+                    len: 9,
+                    file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                    line: Some(14),
+                    col: Some(20),
+                  ),
+                  name: "unsigned16",
+                ),
+              ],
+            ),
+            generics: [],
+          )),
+        ),
+        init: Some(Expr(
+          loc: Span(
+            start: 274,
+            len: 2,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(14),
+            col: Some(33),
+          ),
+          kind: PrimitiveLit(ExprPrimitiveLit(
+            lit: Int(U16(0)),
+          )),
+        )),
+      )),
+    ),
+    Decl(
+      loc: Span(
+        start: 279,
+        len: 40,
+        file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+        line: Some(15),
+        col: None,
+      ),
+      kind: Variable(DeclVariable(
+        annotations: [],
+        kind: Var,
+        name: Name(
+          loc: Span(
+            start: 283,
+            len: 13,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(15),
+            col: Some(4),
+          ),
+          name: "unsigned16_max",
+        ),
+        ty_expr: TyExpr(
+          loc: Span(
+            start: 299,
+            len: 9,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(15),
+            col: Some(20),
+          ),
+          kind: Name(TyExprName(
+            ty_name: FullName(
+              components: [
+                Name(
+                  loc: Span(
+                    start: 299,
+                    len: 9,
+                    file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                    line: Some(15),
+                    col: Some(20),
+                  ),
+                  name: "unsigned16",
+                ),
+              ],
+            ),
+            generics: [],
+          )),
+        ),
+        init: Some(Expr(
+          loc: Span(
+            start: 312,
+            len: 6,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(15),
+            col: Some(33),
+          ),
+          kind: PrimitiveLit(ExprPrimitiveLit(
+            lit: Int(U16(65535)),
+          )),
+        )),
+      )),
+    ),
+    Decl(
+      loc: Span(
+        start: 322,
+        len: 34,
+        file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+        line: Some(17),
+        col: None,
+      ),
+      kind: Variable(DeclVariable(
+        annotations: [],
+        kind: Var,
+        name: Name(
+          loc: Span(
+            start: 326,
+            len: 8,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(17),
+            col: Some(4),
+          ),
+          name: "int32_min",
+        ),
+        ty_expr: TyExpr(
+          loc: Span(
+            start: 337,
+            len: 4,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(17),
+            col: Some(15),
+          ),
+          kind: Name(TyExprName(
+            ty_name: FullName(
+              components: [
+                Name(
+                  loc: Span(
+                    start: 337,
+                    len: 4,
+                    file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                    line: Some(17),
+                    col: Some(15),
+                  ),
+                  name: "int32",
+                ),
+              ],
+            ),
+            generics: [],
+          )),
+        ),
+        init: Some(Expr(
+          loc: Span(
+            start: 345,
+            len: 10,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(17),
+            col: Some(23),
+          ),
+          kind: PrimitiveLit(ExprPrimitiveLit(
+            lit: Int(I32(-2147483648)),
+          )),
+        )),
+      )),
+    ),
+    Decl(
+      loc: Span(
+        start: 358,
+        len: 33,
+        file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+        line: Some(18),
+        col: None,
+      ),
+      kind: Variable(DeclVariable(
+        annotations: [],
+        kind: Var,
+        name: Name(
+          loc: Span(
+            start: 362,
+            len: 8,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(18),
+            col: Some(4),
+          ),
+          name: "int32_max",
+        ),
+        ty_expr: TyExpr(
+          loc: Span(
+            start: 373,
+            len: 4,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(18),
+            col: Some(15),
+          ),
+          kind: Name(TyExprName(
+            ty_name: FullName(
+              components: [
+                Name(
+                  loc: Span(
+                    start: 373,
+                    len: 4,
+                    file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                    line: Some(18),
+                    col: Some(15),
+                  ),
+                  name: "int32",
+                ),
+              ],
+            ),
+            generics: [],
+          )),
+        ),
+        init: Some(Expr(
+          loc: Span(
+            start: 381,
+            len: 9,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(18),
+            col: Some(23),
+          ),
+          kind: PrimitiveLit(ExprPrimitiveLit(
+            lit: Int(I32(2147483647)),
+          )),
+        )),
+      )),
+    ),
+    Decl(
+      loc: Span(
+        start: 394,
+        len: 35,
+        file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+        line: Some(20),
+        col: None,
+      ),
+      kind: Variable(DeclVariable(
+        annotations: [],
+        kind: Var,
+        name: Name(
+          loc: Span(
+            start: 398,
+            len: 13,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(20),
+            col: Some(4),
+          ),
+          name: "unsigned32_min",
+        ),
+        ty_expr: TyExpr(
+          loc: Span(
+            start: 414,
+            len: 9,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(20),
+            col: Some(20),
+          ),
+          kind: Name(TyExprName(
+            ty_name: FullName(
+              components: [
+                Name(
+                  loc: Span(
+                    start: 414,
+                    len: 9,
+                    file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                    line: Some(20),
+                    col: Some(20),
+                  ),
+                  name: "unsigned32",
+                ),
+              ],
+            ),
+            generics: [],
+          )),
+        ),
+        init: Some(Expr(
+          loc: Span(
+            start: 427,
+            len: 1,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(20),
+            col: Some(33),
+          ),
+          kind: PrimitiveLit(ExprPrimitiveLit(
+            lit: Int(U32(0)),
+          )),
+        )),
+      )),
+    ),
+    Decl(
+      loc: Span(
+        start: 431,
+        len: 44,
+        file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+        line: Some(21),
+        col: None,
+      ),
+      kind: Variable(DeclVariable(
+        annotations: [],
+        kind: Var,
+        name: Name(
+          loc: Span(
+            start: 435,
+            len: 13,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(21),
+            col: Some(4),
+          ),
+          name: "unsigned32_max",
+        ),
+        ty_expr: TyExpr(
+          loc: Span(
+            start: 451,
+            len: 9,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(21),
+            col: Some(20),
+          ),
+          kind: Name(TyExprName(
+            ty_name: FullName(
+              components: [
+                Name(
+                  loc: Span(
+                    start: 451,
+                    len: 9,
+                    file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                    line: Some(21),
+                    col: Some(20),
+                  ),
+                  name: "unsigned32",
+                ),
+              ],
+            ),
+            generics: [],
+          )),
+        ),
+        init: Some(Expr(
+          loc: Span(
+            start: 464,
+            len: 10,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(21),
+            col: Some(33),
+          ),
+          kind: PrimitiveLit(ExprPrimitiveLit(
+            lit: Int(U32(4194967295)),
+          )),
+        )),
+      )),
+    ),
+    Decl(
+      loc: Span(
+        start: 478,
+        len: 44,
+        file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+        line: Some(23),
+        col: None,
+      ),
+      kind: Variable(DeclVariable(
+        annotations: [],
+        kind: Var,
+        name: Name(
+          loc: Span(
+            start: 482,
+            len: 8,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(23),
+            col: Some(4),
+          ),
+          name: "int64_min",
+        ),
+        ty_expr: TyExpr(
+          loc: Span(
+            start: 493,
+            len: 4,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(23),
+            col: Some(15),
+          ),
+          kind: Name(TyExprName(
+            ty_name: FullName(
+              components: [
+                Name(
+                  loc: Span(
+                    start: 493,
+                    len: 4,
+                    file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                    line: Some(23),
+                    col: Some(15),
+                  ),
+                  name: "int64",
+                ),
+              ],
+            ),
+            generics: [],
+          )),
+        ),
+        init: Some(Expr(
+          loc: Span(
+            start: 501,
+            len: 20,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(23),
+            col: Some(23),
+          ),
+          kind: PrimitiveLit(ExprPrimitiveLit(
+            lit: Int(I64(-9223372036854775808)),
+          )),
+        )),
+      )),
+    ),
+    Decl(
+      loc: Span(
+        start: 524,
+        len: 43,
+        file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+        line: Some(24),
+        col: None,
+      ),
+      kind: Variable(DeclVariable(
+        annotations: [],
+        kind: Var,
+        name: Name(
+          loc: Span(
+            start: 528,
+            len: 8,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(24),
+            col: Some(4),
+          ),
+          name: "int64_max",
+        ),
+        ty_expr: TyExpr(
+          loc: Span(
+            start: 539,
+            len: 4,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(24),
+            col: Some(15),
+          ),
+          kind: Name(TyExprName(
+            ty_name: FullName(
+              components: [
+                Name(
+                  loc: Span(
+                    start: 539,
+                    len: 4,
+                    file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                    line: Some(24),
+                    col: Some(15),
+                  ),
+                  name: "int64",
+                ),
+              ],
+            ),
+            generics: [],
+          )),
+        ),
+        init: Some(Expr(
+          loc: Span(
+            start: 547,
+            len: 19,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(24),
+            col: Some(23),
+          ),
+          kind: PrimitiveLit(ExprPrimitiveLit(
+            lit: Int(I64(9223372036854775807)),
+          )),
+        )),
+      )),
+    ),
+    Decl(
+      loc: Span(
+        start: 570,
+        len: 36,
+        file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+        line: Some(26),
+        col: None,
+      ),
+      kind: Variable(DeclVariable(
+        annotations: [],
+        kind: Var,
+        name: Name(
+          loc: Span(
+            start: 574,
+            len: 13,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(26),
+            col: Some(4),
+          ),
+          name: "unsigned64_min",
+        ),
+        ty_expr: TyExpr(
+          loc: Span(
+            start: 590,
+            len: 9,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(26),
+            col: Some(20),
+          ),
+          kind: Name(TyExprName(
+            ty_name: FullName(
+              components: [
+                Name(
+                  loc: Span(
+                    start: 590,
+                    len: 9,
+                    file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                    line: Some(26),
+                    col: Some(20),
+                  ),
+                  name: "unsigned64",
+                ),
+              ],
+            ),
+            generics: [],
+          )),
+        ),
+        init: Some(Expr(
+          loc: Span(
+            start: 603,
+            len: 2,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(26),
+            col: Some(33),
+          ),
+          kind: PrimitiveLit(ExprPrimitiveLit(
+            lit: Int(U64(0)),
+          )),
+        )),
+      )),
+    ),
+    Decl(
+      loc: Span(
+        start: 608,
+        len: 55,
+        file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+        line: Some(27),
+        col: None,
+      ),
+      kind: Variable(DeclVariable(
+        annotations: [],
+        kind: Var,
+        name: Name(
+          loc: Span(
+            start: 612,
+            len: 13,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(27),
+            col: Some(4),
+          ),
+          name: "unsigned64_max",
+        ),
+        ty_expr: TyExpr(
+          loc: Span(
+            start: 628,
+            len: 9,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(27),
+            col: Some(20),
+          ),
+          kind: Name(TyExprName(
+            ty_name: FullName(
+              components: [
+                Name(
+                  loc: Span(
+                    start: 628,
+                    len: 9,
+                    file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                    line: Some(27),
+                    col: Some(20),
+                  ),
+                  name: "unsigned64",
+                ),
+              ],
+            ),
+            generics: [],
+          )),
+        ),
+        init: Some(Expr(
+          loc: Span(
+            start: 641,
+            len: 21,
+            file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+            line: Some(27),
+            col: Some(33),
+          ),
+          kind: PrimitiveLit(ExprPrimitiveLit(
+            lit: Int(U64(18446744073709551615)),
+          )),
+        )),
+      )),
+    ),
+  ],
+))

@@ -1,0 +1,5 @@
+libsl "1.0.0";
+
+library decl_function_unknown_modifier;
+
+foobar fun wrong_modifier();

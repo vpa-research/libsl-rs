@@ -1,0 +1,6 @@
+---
+source: tests/parser/main.rs
+description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary expr_int_lit_too_huge;\n\nfun test() {\n    123467899876543212345678987654324567;\n}\n"
+input_file: tests/parser/test-data/expr-int-lit-too-huge.libsl
+---
+Err("could not parse a decimal integer literal at L6:4: number too large to fit in target type")

@@ -1,0 +1,6 @@
+---
+source: tests/parser/main.rs
+description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary ty_arg_unexpected_variant_specifier;\n\ntypealias Foo = Wrong<in VeryWrong>;\n"
+input_file: tests/parser/test-data/ty-arg-unexpected-variance-specifier.libsl
+---
+Err("encountered a syntax error at L5:22: unexpected variance specifier")

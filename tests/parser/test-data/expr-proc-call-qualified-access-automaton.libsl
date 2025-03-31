@@ -1,0 +1,7 @@
+libsl "1.0.0";
+
+library expr_proc_call_qualified_access_automaton;
+
+fun test() {
+    Automaton(Wrong(foo).wrong()).test;
+}

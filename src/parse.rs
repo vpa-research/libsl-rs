@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::fmt::Debug;
-use std::num::{NonZeroUsize, ParseFloatError, ParseIntError};
+use std::num::{NonZeroUsize, ParseIntError};
 use std::rc::Rc;
 
 use antlr_rust::common_token_stream::CommonTokenStream;
@@ -243,16 +243,6 @@ pub enum ParseError {
 
         #[source]
         inner: ParseIntError,
-    },
-
-    /// Could not parse a floating-point number literal.
-    #[error("could not parse a floating-point number literal at L{line}:{column}: {inner}")]
-    Float {
-        line: isize,
-        column: isize,
-
-        #[source]
-        inner: ParseFloatError,
     },
 }
 
@@ -2226,15 +2216,9 @@ impl<'a> AstConstructor<'a> {
             s.into()
         };
 
-        let n = match suffix {
-            Suffix::Float => s.parse().map(ast::FloatLit::F32),
-            Suffix::Double => s.parse().map(ast::FloatLit::F64),
-        };
-
-        n.map_err(|inner| ParseError::Float {
-            line: ctx.start().line,
-            column: ctx.start().column,
-            inner,
+        Ok(match suffix {
+            Suffix::Float => ast::FloatLit::F32(s.parse().unwrap()),
+            Suffix::Double => ast::FloatLit::F64(s.parse().unwrap()),
         })
     }
 
@@ -2339,7 +2323,7 @@ impl<'a> AstConstructor<'a> {
                 return Err(ParseError::Syntax {
                     line: i.start().line,
                     column: i.start().column,
-                    msg: "unexpected variance specifiers".into(),
+                    msg: "unexpected variance specifier".into(),
                 });
             }
 

@@ -1,0 +1,6 @@
+---
+source: tests/parser/main.rs
+description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary ty_param_literal;\n\ntypealias Wrong<\"very wrong\"> = Indeed;\n"
+input_file: tests/parser/test-data/ty-param-literal.libsl
+---
+Err("encountered a syntax error at L5:16: unexpected primitive literal expression")

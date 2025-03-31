@@ -1,0 +1,6 @@
+---
+source: tests/parser/main.rs
+description: "// Input file:\nlibsl \"1.1.0\";\n\nlibrary decl_automaton_implements_spelled_wrong;\n\nautomaton TestAutomaton : TestType `foobar` Concept {}\n"
+input_file: tests/parser/test-data/decl-automaton-implements-spelled-wrong.libsl
+---
+Err("encountered a syntax error at L5:35: expected \'implements\', got \'`foobar`\'")

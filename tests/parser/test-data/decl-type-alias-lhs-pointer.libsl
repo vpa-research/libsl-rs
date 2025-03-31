@@ -1,0 +1,5 @@
+libsl "1.0.0";
+
+library decl_type_alias_lhs_pointer;
+
+typealias *Wrong = VeryWrong;

@@ -1,0 +1,8 @@
+libsl "1.0.0";
+
+library expr_has_concept_proc_call;
+
+fun test() {
+    Automaton(foo).wrong() has Concept;
+}
+

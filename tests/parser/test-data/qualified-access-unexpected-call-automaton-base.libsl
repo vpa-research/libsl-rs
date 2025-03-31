@@ -1,0 +1,7 @@
+libsl "1.0.0";
+
+library qualified_access_unexpected_call_automaton_base;
+
+fun test() {
+    AutomatonBase(foo).ThisIs(wrong).noreally(yes);
+}

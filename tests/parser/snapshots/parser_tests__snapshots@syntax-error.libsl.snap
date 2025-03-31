@@ -1,0 +1,6 @@
+---
+source: tests/parser/main.rs
+description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary syntax_error;\n\nvar x : Foo = include;\n"
+input_file: tests/parser/test-data/syntax-error.libsl
+---
+Err("encountered a syntax error at L5:14: mismatched input \'include;\' expecting {\'(\', \'[\', \'+\', \'-\', \'!\', \'~\', \'`\', \'new\', \'action\', \'true\', \'false\', \'null\', IntegerLiteral, FloatingPointLiteral, Identifier, DoubleQuotedString, CHARACTER, \'?\'}")

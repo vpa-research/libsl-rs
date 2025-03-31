@@ -1,0 +1,5 @@
+libsl "1.0.0";
+
+library syntax_error;
+
+var x : Foo = include;

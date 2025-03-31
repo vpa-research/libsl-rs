@@ -303,7 +303,11 @@ impl LibSl {
         parser.add_error_listener(Box::new(error_listener));
 
         let tree = match parser.file() {
-            Ok(tree) => tree,
+            Ok(tree) if errors.borrow().is_empty() => tree,
+
+            Ok(_) => {
+                return Err(errors.borrow_mut().swap_remove(0));
+            }
 
             Err(e) => {
                 let mut errors = errors.borrow_mut();

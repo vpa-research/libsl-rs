@@ -131,7 +131,10 @@ impl<'input> ParseTreeListener<'input, LibSLParserContextType> for PrintListener
 
     fn visit_error_node(&mut self, node: &ErrorNode<'input, LibSLParserContextType>) {
         self.print_indent();
-        println!("Entered an error node: {}", node.symbol);
+        println!(
+            "{}",
+            format_args!("Entered an error node: {}", node.symbol).bright_red()
+        );
     }
 }
 

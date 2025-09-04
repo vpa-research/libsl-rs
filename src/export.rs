@@ -1690,7 +1690,7 @@ make_display_struct!(
         ast::ExprKind::Dummy => ExprPrec::MAX,
         ast::ExprKind::PrimitiveLit(e) => e.precedence(),
         ast::ExprKind::ArrayLit(e) => e.precedence(),
-        ast::ExprKind::QualifiedAccess(e) => e.precedence(),
+        ast::ExprKind::Access(e) => e.precedence(),
         ast::ExprKind::Prev(e) => e.precedence(),
         ast::ExprKind::ProcCall(e) => e.precedence(),
         ast::ExprKind::ActionCall(e) => e.precedence(),
@@ -1711,7 +1711,7 @@ impl Display for ExprDisplay<'_> {
                 write!(f, "{}", e.display_prec(self.libsl, self.prec))
             }
             ast::ExprKind::ArrayLit(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
-            ast::ExprKind::QualifiedAccess(e) => {
+            ast::ExprKind::Access(e) => {
                 write!(f, "{}", e.display_prec(self.libsl, self.prec))
             }
             ast::ExprKind::Prev(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),

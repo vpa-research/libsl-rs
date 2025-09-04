@@ -4,7 +4,7 @@ use serde::Serialize;
 use serde::ser::{SerializeSeq, SerializeStruct};
 
 use crate::loc::{Loc, Span};
-use crate::{DeclId, ExprId, LibSlNode, QualifiedAccessId, StmtId, TyExprId, WithLibSl, ast};
+use crate::{DeclId, ExprId, LibSlNode, AccessId, StmtId, TyExprId, WithLibSl, ast};
 
 impl<'a, T> Serialize for LibSlNode<'a, [T]>
 where
@@ -88,7 +88,7 @@ impl Serialize for LibSlNode<'_, StmtId> {
     }
 }
 
-impl Serialize for LibSlNode<'_, QualifiedAccessId> {
+impl Serialize for LibSlNode<'_, AccessId> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,

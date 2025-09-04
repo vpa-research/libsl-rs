@@ -86,8 +86,8 @@ new_key_type! {
     /// A [statement][ast::Stmt] identifier.
     pub struct StmtId;
 
-    /// A [qualified access][ast::QualifiedAccess] identifier.
-    pub struct QualifiedAccessId;
+    /// An [access][ast::QualifiedAccess] identifier.
+    pub struct AccessId;
 }
 
 /// The top-level struct that stores all parsed AST nodes and allows access to them via an
@@ -111,8 +111,8 @@ pub struct LibSl {
     /// Statement AST nodes.
     pub stmts: SlotMap<StmtId, ast::Stmt>,
 
-    /// Qualified access AST nodes.
-    pub qualified_accesses: SlotMap<QualifiedAccessId, ast::QualifiedAccess>,
+    /// Access AST nodes.
+    pub accesses: SlotMap<AccessId, ast::Access>,
 }
 
 impl LibSl {

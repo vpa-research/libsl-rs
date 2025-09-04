@@ -3,7 +3,7 @@
 //! The top-level struct is [`File`]; all other nodes are descendants of it.
 
 use crate::loc::Loc;
-use crate::{DeclId, ExprId, QualifiedAccessId, StmtId, TyExprId, WithLibSl};
+use crate::{DeclId, ExprId, AccessId, StmtId, TyExprId, WithLibSl};
 
 /// A single LibSL file.
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
@@ -414,11 +414,11 @@ pub struct DeclAction {
     /// A list of annotations for this declaration.
     pub annotations: Vec<Annotation>,
 
-    /// A list of type parameter (generic) declarations.
-    pub generics: Vec<Generic>,
-
     /// The name of the action.
     pub name: Name,
+
+    /// A list of type parameter (generic) declarations.
+    pub generics: Vec<Generic>,
 
     /// A list of parameters declared for this action.
     pub params: Vec<ActionParam>,
@@ -1034,7 +1034,7 @@ pub struct TyExprName {
     pub ty_name: FullName,
 
     /// A list of type arguments for the referred type.
-    pub generics: Vec<TyArg>,
+    pub generics: Option<Vec<TyArg>>,
 }
 
 impl WithLibSl for TyExprName {}
@@ -1178,7 +1178,7 @@ impl WithLibSl for StmtIf {}
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct StmtAssign {
     /// The place this statement assigns to.
-    pub lhs: QualifiedAccessId,
+    pub lhs: AccessId,
 
     /// An optional in-place update operator.
     #[cfg_attr(feature = "serde", no_wrap)]
@@ -1263,8 +1263,8 @@ pub enum ExprKind {
     /// An array literal expression.
     ArrayLit(ExprArrayLit),
 
-    /// A qualified variable/element access expression.
-    QualifiedAccess(ExprQualifiedAccess),
+    /// A variable/element access expression.
+    Access(ExprAccess),
 
     /// A previous-state value expression.
     Prev(ExprPrev),
@@ -1306,9 +1306,9 @@ impl From<ExprArrayLit> for ExprKind {
     }
 }
 
-impl From<ExprQualifiedAccess> for ExprKind {
-    fn from(expr: ExprQualifiedAccess) -> Self {
-        Self::QualifiedAccess(expr)
+impl From<ExprAccess> for ExprKind {
+    fn from(expr: ExprAccess) -> Self {
+        Self::Access(expr)
     }
 }
 
@@ -1389,22 +1389,22 @@ pub struct ExprArrayLit {
 
 impl WithLibSl for ExprArrayLit {}
 
-/// A qualified variable/element access expression.
+/// A variable/element access expression.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-pub struct ExprQualifiedAccess {
+pub struct ExprAccess {
     /// The variable/element accessed by this expression.
-    pub access: QualifiedAccessId,
+    pub access: AccessId,
 }
 
-impl WithLibSl for ExprQualifiedAccess {}
+impl WithLibSl for ExprAccess {}
 
 /// A previous-state value expression.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct ExprPrev {
     /// The variable/element referred to by this expression.
-    pub access: QualifiedAccessId,
+    pub access: AccessId,
 }
 
 impl WithLibSl for ExprPrev {}
@@ -1414,10 +1414,10 @@ impl WithLibSl for ExprPrev {}
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct ExprProcCall {
     /// The procedure called in this expression.
-    pub callee: QualifiedAccessId,
+    pub callee: AccessId,
 
     /// A list of type arguments for the callee.
-    pub generics: Vec<TyArg>,
+    pub generics: Option<Vec<TyArg>>,
 
     /// A list of arguments to the procedure call.
     pub args: Vec<ExprId>,
@@ -1433,7 +1433,7 @@ pub struct ExprActionCall {
     pub name: Name,
 
     /// A list of type arguments for the action.
-    pub generics: Vec<TyArg>,
+    pub generics: Option<Vec<TyArg>>,
 
     /// A list of arguments to the action invocation.
     pub args: Vec<ExprId>,
@@ -1449,7 +1449,7 @@ pub struct ExprInstantiate {
     pub name: FullName,
 
     /// A list of type arguments for the automaton.
-    pub generics: Vec<TyArg>,
+    pub generics: Option<Vec<TyArg>>,
 
     /// A list of arguments to the automaton's constructor.
     pub args: Vec<ConstructorArg>,
@@ -1475,7 +1475,7 @@ impl WithLibSl for ConstructorArg {}
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct ExprHasConcept {
     /// An entity this expression tests for.
-    pub scrutinee: QualifiedAccessId,
+    pub scrutinee: AccessId,
 
     /// A concept the scrutinee is tested for.
     pub concept: Name,
@@ -1767,126 +1767,126 @@ pub enum FloatLit {
 
 impl WithLibSl for FloatLit {}
 
-/// A qualified variable/element access.
+/// A variable/element access.
 #[derive(Debug, Default, Clone)]
-pub struct QualifiedAccess {
-    /// A unique identifier for this qualified access, usable as a (secondary) slotmap key.
+pub struct Access {
+    /// A unique identifier for this access, usable as a (secondary) slotmap key.
     ///
-    /// This allwos to assicated additional information with the qualified access as well as refer
+    /// This allwos to assicated additional information with the access as well as refer
     /// to it without violating borrowing rules.
-    pub id: QualifiedAccessId,
+    pub id: AccessId,
 
-    /// The qualified access's location in the source text.
+    /// The access's location in the source text.
     pub loc: Loc,
 
-    /// What kind of qualified access this is.
+    /// What kind of access this is.
     ///
-    /// The variants hold data specific to each qualified access kind.
-    pub kind: QualifiedAccessKind,
+    /// The variants hold data specific to each access kind.
+    pub kind: AccessKind,
 }
 
-impl WithLibSl for QualifiedAccess {}
+impl WithLibSl for Access {}
 
-/// An enumeration of all possible qualified access kinds.
+/// An enumeration of all possible access kinds.
 #[derive(Debug, Default, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-pub enum QualifiedAccessKind {
-    /// A dummy qualified access, the default value of `QualifiedAccessKind`.
+pub enum AccessKind {
+    /// A dummy access, the default value of `AccessKind`.
     ///
     /// Allows using `mem::take` to take ownership of the value.
     #[default]
     Dummy,
 
     /// A plain identifier.
-    Name(QualifiedAccessName),
+    Name(AccessName),
 
     /// A freshly-created automaton's variable.
-    AutomatonVar(QualifiedAccessAutomatonVar),
+    AutomatonVar(AccessAutomatonVar),
 
     /// A field of an outer entity.
-    Field(QualifiedAccessField),
+    Field(AccessField),
 
     /// An indexed element of an outer entity: the `[42]` in `foo[42]`.
-    Index(QualifiedAccessIndex),
+    Index(AccessIndex),
 }
 
-impl From<QualifiedAccessName> for QualifiedAccessKind {
-    fn from(access: QualifiedAccessName) -> Self {
+impl From<AccessName> for AccessKind {
+    fn from(access: AccessName) -> Self {
         Self::Name(access)
     }
 }
 
-impl From<QualifiedAccessAutomatonVar> for QualifiedAccessKind {
-    fn from(access: QualifiedAccessAutomatonVar) -> Self {
+impl From<AccessAutomatonVar> for AccessKind {
+    fn from(access: AccessAutomatonVar) -> Self {
         Self::AutomatonVar(access)
     }
 }
 
-impl From<QualifiedAccessField> for QualifiedAccessKind {
-    fn from(access: QualifiedAccessField) -> Self {
+impl From<AccessField> for AccessKind {
+    fn from(access: AccessField) -> Self {
         Self::Field(access)
     }
 }
 
-impl From<QualifiedAccessIndex> for QualifiedAccessKind {
-    fn from(access: QualifiedAccessIndex) -> Self {
+impl From<AccessIndex> for AccessKind {
+    fn from(access: AccessIndex) -> Self {
         Self::Index(access)
     }
 }
 
-impl WithLibSl for QualifiedAccessKind {}
+impl WithLibSl for AccessKind {}
 
 /// An access referring to a plain identifier, such as `foo`.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-pub struct QualifiedAccessName {
-    /// The name this qualified access refers to.
+pub struct AccessName {
+    /// The name this access refers to.
     pub name: Name,
 }
 
-impl WithLibSl for QualifiedAccessName {}
+impl WithLibSl for AccessName {}
 
 /// An access referring to a variable of a freshly-created automaton, such as `A(x).foo`.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-pub struct QualifiedAccessAutomatonVar {
+pub struct AccessAutomatonVar {
     /// An automaton name.
     pub automaton: Name,
 
     /// A list of type arguments for the automaton.
-    pub generics: Vec<TyArg>,
+    pub generics: Option<Vec<TyArg>>,
 
-    /// The qualified access serving as an argument to the automaton.
-    pub arg: QualifiedAccessId,
+    /// The access serving as an argument to the automaton.
+    pub arg: AccessId,
 
-    /// The automaton's field this qualified access refers to.
+    /// The automaton's field this access refers to.
     pub field: Name,
 }
 
-impl WithLibSl for QualifiedAccessAutomatonVar {}
+impl WithLibSl for AccessAutomatonVar {}
 
 /// An access referring to a field of a base entity, such as `foo.bar`.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-pub struct QualifiedAccessField {
-    /// The base part of the qualified access (preceding the dot).
-    pub base: QualifiedAccessId,
+pub struct AccessField {
+    /// The base part of the access (preceding the dot).
+    pub base: AccessId,
 
-    /// The field this qualified access refers to.
+    /// The field this access refers to.
     pub field: Name,
 }
 
-impl WithLibSl for QualifiedAccessField {}
+impl WithLibSl for AccessField {}
 
 /// An access referring to an element of an indexed collection, such as `foo[42]`.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-pub struct QualifiedAccessIndex {
-    /// The base part of the qualified access (preceding the brackets).
-    pub base: QualifiedAccessId,
+pub struct AccessIndex {
+    /// The base part of the access (preceding the brackets).
+    pub base: AccessId,
 
-    /// An index of the element this qualified access refers to.
+    /// An index of the element this access refers to.
     pub index: ExprId,
 }
 
-impl WithLibSl for QualifiedAccessIndex {}
+impl WithLibSl for AccessIndex {}

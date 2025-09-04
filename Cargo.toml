@@ -17,7 +17,7 @@ slotmap = "1.0.7"
 serde = ["dep:serde", "dep:libsl-derive"]
 
 [dev-dependencies]
-insta = { version = "1.42.2", features = ["glob", "ron"] }
+insta = { version = "1.43.1", features = ["glob", "ron"] }
 
 # see https://github.com/rust-lang/cargo/issues/2911.
 libsl = { path = ".", features = ["serde"] }

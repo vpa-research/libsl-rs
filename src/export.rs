@@ -147,7 +147,7 @@ define_prec! {
         /// Unary operator expressions.
         Unary,
 
-        /// Atomic expressions: literals, calls, qualified access.
+        /// Atomic expressions: literals, calls, access.
         Atomic,
     }
 }
@@ -1500,10 +1500,10 @@ impl Display for TyExprNameDisplay<'_> {
         display_parens(f, self.t.precedence(), self.prec, |f| {
             write!(f, "{}", self.t.ty_name)?;
 
-            if !self.t.generics.is_empty() {
+            if let Some(generics) = &self.t.generics {
                 write!(f, "<")?;
 
-                for (idx, ty_arg) in self.t.generics.iter().enumerate() {
+                for (idx, ty_arg) in generics.iter().enumerate() {
                     if idx > 0 {
                         write!(f, ", ")?;
                     }
@@ -1654,7 +1654,7 @@ impl Display for StmtAssignDisplay<'_> {
         write!(
             f,
             "{} ",
-            self.libsl.qualified_accesses[self.s.lhs].display(self.libsl),
+            self.libsl.accesses[self.s.lhs].display(self.libsl),
         )?;
 
         if let Some(in_place_op) = self.s.in_place_op {
@@ -1764,17 +1764,17 @@ impl Display for ExprArrayLitDisplay<'_> {
 }
 
 make_display_struct!(
-    ExprQualifiedAccessDisplay { e } for ast::ExprQualifiedAccess
+    ExprAccessDisplay { e } for ast::ExprAccess
     where precedence: ExprPrec = ExprPrec::Atomic,
 );
 
-impl Display for ExprQualifiedAccessDisplay<'_> {
+impl Display for ExprAccessDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         display_parens(f, self.e.precedence(), self.prec, |f| {
             write!(
                 f,
                 "{}",
-                self.libsl.qualified_accesses[self.e.access].display(self.libsl),
+                self.libsl.accesses[self.e.access].display(self.libsl),
             )
         })
     }
@@ -1791,7 +1791,7 @@ impl Display for ExprPrevDisplay<'_> {
             write!(
                 f,
                 "{}'",
-                self.libsl.qualified_accesses[self.e.access].display(self.libsl),
+                self.libsl.accesses[self.e.access].display(self.libsl),
             )
         })
     }
@@ -1808,13 +1808,13 @@ impl Display for ExprProcCallDisplay<'_> {
             write!(
                 f,
                 "{}",
-                self.libsl.qualified_accesses[self.e.callee].display(self.libsl)
+                self.libsl.accesses[self.e.callee].display(self.libsl)
             )?;
 
-            if !self.e.generics.is_empty() {
+            if let Some(generics) = &self.e.generics {
                 write!(f, "<")?;
 
-                for (idx, ty_arg) in self.e.generics.iter().enumerate() {
+                for (idx, ty_arg) in generics.iter().enumerate() {
                     if idx > 0 {
                         write!(f, ", ")?;
                     }
@@ -1850,10 +1850,10 @@ impl Display for ExprActionCallDisplay<'_> {
         display_parens(f, self.e.precedence(), self.prec, |f| {
             write!(f, "action {}", self.e.name)?;
 
-            if !self.e.generics.is_empty() {
+            if let Some(generics) = &self.e.generics {
                 write!(f, "<")?;
 
-                for (idx, ty_arg) in self.e.generics.iter().enumerate() {
+                for (idx, ty_arg) in generics.iter().enumerate() {
                     if idx > 0 {
                         write!(f, ", ")?;
                     }
@@ -1889,10 +1889,10 @@ impl Display for ExprInstantiateDisplay<'_> {
         display_parens(f, self.e.precedence(), self.prec, |f| {
             write!(f, "new {}", self.e.name)?;
 
-            if !self.e.generics.is_empty() {
+            if let Some(generics) = &self.e.generics {
                 write!(f, "<")?;
 
-                for (idx, ty_arg) in self.e.generics.iter().enumerate() {
+                for (idx, ty_arg) in generics.iter().enumerate() {
                     if idx > 0 {
                         write!(f, ", ")?;
                     }
@@ -1943,7 +1943,7 @@ impl Display for ExprHasConceptDisplay<'_> {
             write!(
                 f,
                 "{lhs} has {concept}",
-                lhs = self.libsl.qualified_accesses[self.e.scrutinee].display(self.libsl),
+                lhs = self.libsl.accesses[self.e.scrutinee].display(self.libsl),
                 concept = self.e.concept,
             )
         })
@@ -2198,78 +2198,48 @@ impl Display for ast::FloatLit {
     }
 }
 
-make_display_struct!(QualifiedAccessDisplay { a } for ast::QualifiedAccess);
+make_display_struct!(AccessDisplay { a } for ast::Access);
 
-impl Display for QualifiedAccessDisplay<'_> {
+impl Display for AccessDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.a.kind {
-            ast::QualifiedAccessKind::Dummy => Ok(()),
-            ast::QualifiedAccessKind::Name(a) => write!(f, "{}", a.display(self.libsl)),
-            ast::QualifiedAccessKind::AutomatonVar(a) => write!(f, "{}", a.display(self.libsl)),
-            ast::QualifiedAccessKind::Field(a) => write!(f, "{}", a.display(self.libsl)),
-            ast::QualifiedAccessKind::Index(a) => write!(f, "{}", a.display(self.libsl)),
+            ast::AccessKind::Dummy => Ok(()),
+            ast::AccessKind::Name(a) => write!(f, "{}", a.display(self.libsl)),
+            ast::AccessKind::Field(a) => write!(f, "{}", a.display(self.libsl)),
+            ast::AccessKind::Index(a) => write!(f, "{}", a.display(self.libsl)),
         }
     }
 }
 
-make_display_struct!(QualifiedAccessNameDisplay { a } for ast::QualifiedAccessName);
+make_display_struct!(AccessNameDisplay { a } for ast::AccessName);
 
-impl Display for QualifiedAccessNameDisplay<'_> {
+impl Display for AccessNameDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.a.name)
     }
 }
 
-make_display_struct!(QualifiedAccessAutomatonVarDisplay { a } for ast::QualifiedAccessAutomatonVar);
+make_display_struct!(AccessFieldDisplay { a } for ast::AccessField);
 
-impl Display for QualifiedAccessAutomatonVarDisplay<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.a.automaton)?;
-
-        if !self.a.generics.is_empty() {
-            write!(f, "<")?;
-
-            for (idx, ty_arg) in self.a.generics.iter().enumerate() {
-                if idx > 0 {
-                    write!(f, ", ")?;
-                }
-
-                write!(f, "{}", ty_arg.display(self.libsl))?;
-            }
-
-            write!(f, ">")?;
-        }
-
-        write!(
-            f,
-            "({arg}).{field}",
-            arg = self.libsl.qualified_accesses[self.a.arg].display(self.libsl),
-            field = self.a.field,
-        )
-    }
-}
-
-make_display_struct!(QualifiedAccessFieldDisplay { a } for ast::QualifiedAccessField);
-
-impl Display for QualifiedAccessFieldDisplay<'_> {
+impl Display for AccessFieldDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{base}.{field}",
-            base = self.libsl.qualified_accesses[self.a.base].display(self.libsl),
+            base = self.libsl.accesses[self.a.base].display(self.libsl),
             field = self.a.field,
         )
     }
 }
 
-make_display_struct!(QualifiedAccessIndexDisplay { a } for ast::QualifiedAccessIndex);
+make_display_struct!(AccessIndexDisplay { a } for ast::AccessIndex);
 
-impl Display for QualifiedAccessIndexDisplay<'_> {
+impl Display for AccessIndexDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{base}[{index}]",
-            base = self.libsl.qualified_accesses[self.a.base].display(self.libsl),
+            base = self.libsl.accesses[self.a.base].display(self.libsl),
             index = self.libsl.exprs[self.a.index].display(self.libsl),
         )
     }

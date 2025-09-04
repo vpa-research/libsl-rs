@@ -1800,9 +1800,6 @@ pub enum AccessKind {
     /// A plain identifier.
     Name(AccessName),
 
-    /// A freshly-created automaton's variable.
-    AutomatonVar(AccessAutomatonVar),
-
     /// A field of an outer entity.
     Field(AccessField),
 
@@ -1813,12 +1810,6 @@ pub enum AccessKind {
 impl From<AccessName> for AccessKind {
     fn from(access: AccessName) -> Self {
         Self::Name(access)
-    }
-}
-
-impl From<AccessAutomatonVar> for AccessKind {
-    fn from(access: AccessAutomatonVar) -> Self {
-        Self::AutomatonVar(access)
     }
 }
 
@@ -1846,24 +1837,6 @@ pub struct AccessName {
 
 impl WithLibSl for AccessName {}
 
-/// An access referring to a variable of a freshly-created automaton, such as `A(x).foo`.
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-pub struct AccessAutomatonVar {
-    /// An automaton name.
-    pub automaton: Name,
-
-    /// A list of type arguments for the automaton.
-    pub generics: Option<Vec<TyArg>>,
-
-    /// The access serving as an argument to the automaton.
-    pub arg: AccessId,
-
-    /// The automaton's field this access refers to.
-    pub field: Name,
-}
-
-impl WithLibSl for AccessAutomatonVar {}
 
 /// An access referring to a field of a base entity, such as `foo.bar`.
 #[derive(Debug, Clone)]

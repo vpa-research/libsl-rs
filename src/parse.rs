@@ -159,57 +159,6 @@ fn parse_import_or_include(ctx: &Terminal<'_>, kw: &str, rule_name: &str) -> Res
     }
 }
 
-fn unit_vec<T>(value: T) -> Vec<T> {
-    vec![value]
-}
-
-enum QualifiedAccessBase {
-    None,
-
-    Automaton {
-        automaton: ast::Name,
-        generics: Vec<ast::TyArg>,
-        arg: AccessId,
-    },
-
-    QualifiedAccess(AccessId),
-}
-
-enum ParsedQualifiedAccess {
-    QualifiedAccess(AccessId),
-    ProcCall(ExprId),
-}
-
-impl ParsedQualifiedAccess {
-    fn to_qualified_access(&self, libsl: &LibSl) -> Result<AccessId> {
-        match *self {
-            Self::QualifiedAccess(id) => Ok(id),
-
-            Self::ProcCall(expr_id) => {
-                let span = libsl.exprs[expr_id].loc.span().unwrap();
-
-                Err(ParseError::Syntax {
-                    line: span.line.map(|n| usize::from(n) as isize).unwrap_or(-1),
-                    column: span.col.map(|n| usize::from(n) as isize).unwrap_or(-1),
-                    msg: "unexpected procedure call".into(),
-                })
-            }
-        }
-    }
-}
-
-impl From<AccessId> for ParsedQualifiedAccess {
-    fn from(qid: AccessId) -> Self {
-        Self::QualifiedAccess(qid)
-    }
-}
-
-impl From<ExprId> for ParsedQualifiedAccess {
-    fn from(expr_id: ExprId) -> Self {
-        Self::ProcCall(expr_id)
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Radix {
     Binary,

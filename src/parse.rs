@@ -1899,8 +1899,8 @@ impl<'a> AstConstructor<'a> {
         };
 
         let s = match sign {
-            Sign::Plus => format!("-{s}"),
-            Sign::Minus => format!("+{s}"),
+            Sign::Plus => format!("+{s}"),
+            Sign::Minus => format!("-{s}"),
         };
 
         let n: Result<ast::IntLit, _> = match suffix {
@@ -1916,8 +1916,8 @@ impl<'a> AstConstructor<'a> {
 
         n.map_err(|inner| ParseError::Int {
             radix,
-            line: ctx.start().line,
-            column: ctx.start().column,
+            line: ctx.symbol.line,
+            column: ctx.symbol.column,
             inner,
         })
     }
@@ -1941,8 +1941,8 @@ impl<'a> AstConstructor<'a> {
         };
 
         let s = match sign {
-            Sign::Plus => format!("-{s}"),
-            Sign::Minus => format!("+{s}"),
+            Sign::Plus => format!("+{s}"),
+            Sign::Minus => format!("-{s}"),
         };
 
         Ok(match suffix {

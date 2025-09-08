@@ -70,7 +70,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -131,7 +131,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -192,7 +192,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -253,7 +253,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -314,7 +314,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -375,7 +375,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -436,7 +436,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -497,7 +497,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -558,7 +558,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -619,7 +619,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -680,7 +680,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -741,7 +741,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -802,7 +802,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -863,7 +863,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -924,7 +924,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -985,7 +985,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(

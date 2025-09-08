@@ -93,7 +93,7 @@ impl Serialize for LibSlNode<'_, AccessId> {
     where
         S: serde::Serializer,
     {
-        self.map(|&qid| &self.libsl().qualified_accesses[qid])
+        self.map(|&id| &self.libsl().accesses[id])
             .serialize(serializer)
     }
 }
@@ -178,7 +178,7 @@ impl Serialize for LibSlNode<'_, ast::Expr> {
     }
 }
 
-impl Serialize for LibSlNode<'_, ast::QualifiedAccess> {
+impl Serialize for LibSlNode<'_, ast::Access> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,

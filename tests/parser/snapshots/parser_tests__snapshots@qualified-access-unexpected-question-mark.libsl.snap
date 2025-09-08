@@ -1,6 +1,6 @@
 ---
 source: tests/parser/main.rs
-description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary expr_has_concept_has_spelled_wrong;\n\nfun test() {\n    ?';\n}\n"
+description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary qualified_access_unexpected_question_mark;\n\nfun test() {\n    ?';\n}\n"
 input_file: tests/parser/test-data/qualified-access-unexpected-question-mark.libsl
 ---
-Err("encountered a syntax error at L6:4: unexpected token `?`")
+Err("encountered a syntax error at L6:4: mismatched input \'?\' expecting {\'}\', \'(\', \'[\', \'+\', \'-\', \'!\', \'~\', \'var\', \'val\', \'new\', \'action\', \'requires\', \'ensures\', \'assigns\', \'true\', \'false\', \'if\', \'null\', IntegerLit, \'@\', FloatLit, Identifier, StringLit, CharacterLit}")

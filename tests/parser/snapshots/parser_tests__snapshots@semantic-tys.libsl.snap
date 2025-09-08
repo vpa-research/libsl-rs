@@ -76,7 +76,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         kind: Simple,
@@ -132,7 +132,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         kind: Enumerated([

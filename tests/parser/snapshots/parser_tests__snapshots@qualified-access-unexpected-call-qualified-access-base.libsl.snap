@@ -3,4 +3,4 @@ source: tests/parser/main.rs
 description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary qualified_access_unexpected_call_qualified_access_base;\n\nfun test() {\n    qualified[access].ThisIs(wrong).noreally(yes);\n}\n"
 input_file: tests/parser/test-data/qualified-access-unexpected-call-qualified-access-base.libsl
 ---
-Err("encountered a syntax error at L6:35: mismatched input \'.\' expecting {\';\', \'==\', \'<\', \'>\', \'*\', \'/\', \'%\', \'+\', \'-\', \'!=\', \'<=\', \'>=\', \'&\', \'&&\', \'|\', \'||\', \'^\', \'is\', \'as\'}")
+Err("encountered a syntax error at L6:35: mismatched input \'.\' expecting {SEMICOLON, \'==\', \'<\', \'>\', \'*\', \'/\', \'%\', \'+\', \'-\', \'!=\', \'<=\', \'>=\', \'&\', \'&&\', \'|\', \'||\', \'^\', \'is\', \'as\'}")

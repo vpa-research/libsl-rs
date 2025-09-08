@@ -20,7 +20,9 @@ use crate::grammar::libslparser::{
     AddBinOpContextAll, BitShiftOpContextAll, ConstructorArgContextAll, ExprAdditiveContext,
     ExprAndContext, ExprBitAndContext, ExprBitOrContext, ExprBitXorContext, ExprCastContext,
     ExprMultiplicativeContext, ExprOrContext, ExprRelationalContext, ExprShiftContext,
-    ExprTypeComparisonContext, MulBinOpContextAll, RelOpContextAll,
+    ExprTypeComparisonContext, ImportDeclContextAll, ImportDeclContextAttrs, IncludeDeclContextAll,
+    IncludeDeclContextAttrs, MulBinOpContextAll, PathBareContextAttrs, PathContextAll,
+    PathStringLitContextAttrs, RelOpContextAll,
 };
 use crate::grammar::parser::{
     ActionCallExprContextAll, ActionDeclContextAll, ActionParamContextAll, AnnotationArgContextAll,
@@ -130,33 +132,6 @@ fn parse_string_lit(token: &CommonToken<'_>) -> String {
 
 fn parse_ident(token: &CommonToken<'_>) -> String {
     strip_surrounding(&token.text, '`', '`').into()
-}
-
-fn strip_prefix_ascii_case_insensitive<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
-    let (p, tail) = s.split_at_checked(prefix.len())?;
-
-    p.eq_ignore_ascii_case(prefix).then_some(tail)
-}
-
-fn parse_import_or_include(ctx: &Terminal<'_>, kw: &str, rule_name: &str) -> Result<String> {
-    let Some(tail) = strip_prefix_ascii_case_insensitive(&ctx.symbol.text, kw) else {
-        panic!("a terminal `{rule_name}` does not start with '{kw}': {ctx:?}");
-    };
-    let Some(path) = tail.strip_suffix(';') else {
-        panic!("a terminal `{rule_name}` does not end with `;`: {ctx:?}");
-    };
-
-    let path = path.trim_ascii();
-
-    if path.is_empty() {
-        Err(ParseError::Syntax {
-            line: ctx.symbol.line,
-            column: ctx.symbol.column,
-            msg: format!("no path specified for the {kw} declaration"),
-        })
-    } else {
-        Ok(path.into())
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -388,11 +363,11 @@ impl<'a> AstConstructor<'a> {
     fn process_global_decl(&mut self, ctx: &GlobalDeclContextAll<'_>) -> Result<Vec<DeclId>> {
         Ok(match ctx {
             GlobalDeclContextAll::GlobalDeclImportContext(ctx) => {
-                vec![self.process_import_decl(&ctx.ImportDecl().unwrap())?]
+                vec![self.process_import_decl(&ctx.importDecl().unwrap())?]
             }
 
             GlobalDeclContextAll::GlobalDeclIncludeContext(ctx) => {
-                vec![self.process_include_decl(&ctx.IncludeDecl().unwrap())?]
+                vec![self.process_include_decl(&ctx.includeDecl().unwrap())?]
             }
 
             GlobalDeclContextAll::GlobalDeclSemanticTypeSectionContext(ctx) => ctx
@@ -439,10 +414,9 @@ impl<'a> AstConstructor<'a> {
         })
     }
 
-    fn process_import_decl(&mut self, ctx: &Terminal<'_>) -> Result<DeclId> {
-        debug_assert_eq!(ctx.symbol.token_type, grammar::parser::ImportDecl);
-        let path = parse_import_or_include(ctx, "import", "ImportDecl")?;
-        let loc = self.get_loc(&ctx.symbol, &ctx.symbol);
+    fn process_import_decl(&mut self, ctx: &ImportDeclContextAll<'_>) -> Result<DeclId> {
+        let path = self.process_path(&ctx.path().unwrap());
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
         Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
             id,
@@ -451,16 +425,27 @@ impl<'a> AstConstructor<'a> {
         }))
     }
 
-    fn process_include_decl(&mut self, ctx: &Terminal<'_>) -> Result<DeclId> {
-        debug_assert_eq!(ctx.symbol.token_type, grammar::parser::IncludeDecl);
-        let path = parse_import_or_include(ctx, "include", "IncludeDecl")?;
-        let loc = self.get_loc(&ctx.symbol, &ctx.symbol);
+    fn process_include_decl(&mut self, ctx: &IncludeDeclContextAll<'_>) -> Result<DeclId> {
+        let path = self.process_path(&ctx.path().unwrap());
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
         Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
             id,
             loc,
             kind: ast::DeclInclude { path }.into(),
         }))
+    }
+
+    fn process_path(&mut self, ctx: &PathContextAll<'_>) -> String {
+        match ctx {
+            PathContextAll::PathStringLitContext(ctx) => {
+                parse_string_lit(&ctx.StringLit().unwrap().symbol)
+            }
+
+            PathContextAll::PathBareContext(ctx) => ctx.BarePath().unwrap().symbol.text.to_string(),
+
+            PathContextAll::Error(_) => unreachable!(),
+        }
     }
 
     fn process_semantic_type_decl(

@@ -611,7 +611,7 @@ impl<'a> AstConstructor<'a> {
     fn process_signed_int_lit(&mut self, ctx: &SignedIntLitContextAll<'_>) -> Result<ast::IntLit> {
         let sign = self.process_sign(&ctx.sign().unwrap());
 
-        self.process_int_lit(sign, &ctx.IntegerLiteral().unwrap())
+        self.process_integer_lit(sign, &ctx.IntegerLit().unwrap())
     }
 
     fn process_sign(&mut self, ctx: &SignContextAll<'_>) -> Sign {
@@ -1368,19 +1368,9 @@ impl<'a> AstConstructor<'a> {
         ctx: &TypeConstraintContextAll<'_>,
     ) -> Result<ast::TyConstraint> {
         let param = self.process_name(ctx.param.as_ref().unwrap());
+        let bound = self.process_type_expr(ctx.bound.as_ref().unwrap())?;
 
-        let variance = ctx
-            .variance
-            .as_ref()
-            .map(|ctx| self.process_variance_spec(ctx));
-
-        let bound = self.process_type_arg(ctx.bound.as_ref().unwrap())?;
-
-        Ok(ast::TyConstraint {
-            param,
-            variance,
-            bound,
-        })
+        Ok(ast::TyConstraint { param, bound })
     }
 
     fn process_generics(&mut self, ctx: &GenericsContextAll<'_>) -> Vec<ast::Generic> {
@@ -1531,7 +1521,12 @@ impl<'a> AstConstructor<'a> {
     fn process_type_arg(&mut self, ctx: &TypeArgContextAll<'_>) -> Result<ast::TyArg> {
         Ok(match ctx {
             TypeArgContextAll::TypeArgTypeExprContext(ctx) => {
-                ast::TyArg::TyExpr(self.process_type_expr(&ctx.typeExpr().unwrap())?)
+                let variance = ctx
+                    .variance
+                    .as_ref()
+                    .map(|ctx| self.process_variance_spec(ctx));
+
+                ast::TyArg::TyExpr(variance, self.process_type_expr(&ctx.typeExpr().unwrap())?)
             }
 
             TypeArgContextAll::TypeArgWildcardContext(ctx) => {
@@ -1704,7 +1699,7 @@ impl<'a> AstConstructor<'a> {
             SignedNumLitContextAll::SignedNumLitIntContext(ctx) => {
                 let sign = self.process_sign(&ctx.sign().unwrap());
 
-                self.process_int_lit(sign, &ctx.IntLit().unwrap())?.into()
+                self.process_integer_lit(sign, &ctx.IntegerLit().unwrap())?.into()
             }
 
             SignedNumLitContextAll::SignedNumLitFloatContext(ctx) => {
@@ -1810,7 +1805,7 @@ impl<'a> AstConstructor<'a> {
     ) -> Result<ast::PrimitiveLit> {
         match ctx {
             PrimitiveLitContextAll::PrimitiveLitIntContext(ctx) => self
-                .process_int_lit(Sign::Plus, &ctx.IntegerLit().unwrap())
+                .process_integer_lit(Sign::Plus, &ctx.IntegerLit().unwrap())
                 .map(Into::into),
 
             PrimitiveLitContextAll::PrimitiveLitFloatContext(ctx) => self
@@ -1837,7 +1832,7 @@ impl<'a> AstConstructor<'a> {
         }
     }
 
-    fn process_int_lit(&mut self, sign: Sign, ctx: &Terminal<'_>) -> Result<ast::IntLit> {
+    fn process_integer_lit(&mut self, sign: Sign, ctx: &Terminal<'_>) -> Result<ast::IntLit> {
         debug_assert_eq!(ctx.symbol.token_type, grammar::parser::IntegerLit);
 
         enum Suffix {
@@ -2137,7 +2132,7 @@ impl<'a> AstConstructor<'a> {
                 if let ExprContextAll::ExprPrimitiveLitContext(ctx) = &**ctx.rhs.as_ref().unwrap() {
                     let lit = match &**ctx.lit.as_ref().unwrap() {
                         PrimitiveLitContextAll::PrimitiveLitIntContext(ctx) => self
-                            .process_int_lit(sign, &ctx.IntegerLit().unwrap())?
+                            .process_integer_lit(sign, &ctx.IntegerLit().unwrap())?
                             .into(),
 
                         PrimitiveLitContextAll::PrimitiveLitFloatContext(ctx) => self

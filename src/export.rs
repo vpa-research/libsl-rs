@@ -2301,11 +2301,17 @@ make_display_struct!(TyArgDisplay { t } for ast::TyArg);
 impl Display for TyArgDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.t {
-            ast::TyArg::TyExpr(ty_expr_id) => write!(
-                f,
-                "{}",
-                self.libsl.ty_exprs[*ty_expr_id].display(self.libsl),
-            ),
+            ast::TyArg::TyExpr(variance, ty_expr_id) => {
+                if let Some(variance) = variance {
+                    write!(f, "{variance} ")?;
+                }
+
+                write!(
+                    f,
+                    "{}",
+                    self.libsl.ty_exprs[*ty_expr_id].display(self.libsl),
+                )
+            }
 
             ast::TyArg::Wildcard(_) => write!(f, "?"),
         }
@@ -2317,12 +2323,7 @@ make_display_struct!(TyConstraintDisplay { t } for ast::TyConstraint);
 impl Display for TyConstraintDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}: ", self.t.param)?;
-
-        if let Some(variance) = &self.t.variance {
-            write!(f, "{variance} ")?;
-        }
-
-        write!(f, "{}", self.t.bound.display(self.libsl))
+        write!(f, "{}", self.libsl.ty_exprs[self.t.bound].display(self.libsl))
     }
 }
 

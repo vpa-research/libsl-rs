@@ -3,7 +3,7 @@
 //! The top-level struct is [`File`]; all other nodes are descendants of it.
 
 use crate::loc::Loc;
-use crate::{DeclId, ExprId, AccessId, StmtId, TyExprId, WithLibSl};
+use crate::{AccessId, DeclId, ExprId, StmtId, TyExprId, WithLibSl};
 
 /// A single LibSL file.
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
@@ -890,12 +890,8 @@ pub struct TyConstraint {
     /// The name of the type parameter bounded by this constraint.
     pub param: Name,
 
-    /// An explicit variance specification, if any.
-    #[cfg_attr(feature = "serde", no_wrap)]
-    pub variance: Option<Variance>,
-
     /// The bound for the type parameter.
-    pub bound: TyArg,
+    pub bound: TyExprId,
 }
 
 impl WithLibSl for TyConstraint {}
@@ -1080,7 +1076,7 @@ impl WithLibSl for TyExprUnion {}
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub enum TyArg {
     /// An arbitrary type expression.
-    TyExpr(TyExprId),
+    TyExpr(#[cfg_attr(feature = "serde", no_wrap)] Option<Variance>, TyExprId),
 
     /// A type wildcard, useful in situations where the exact type for the parameter is not
     /// required.
@@ -1836,7 +1832,6 @@ pub struct AccessName {
 }
 
 impl WithLibSl for AccessName {}
-
 
 /// An access referring to a field of a base entity, such as `foo.bar`.
 #[derive(Debug, Clone)]

@@ -471,6 +471,9 @@ pub struct DeclAutomaton {
     /// A list of concepts implemented by this automaton.
     pub implemented_concepts: Vec<Name>,
 
+    /// Type parameter constraints, specified in a `where`-clause.
+    pub ty_constraints: Vec<TyConstraint>,
+
     /// Entities defines as members of this automaton.
     pub decls: Vec<DeclId>,
 }
@@ -1458,7 +1461,7 @@ impl WithLibSl for ExprInstantiate {}
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub enum ConstructorArg {
     /// An automaton state assignment.
-    State(ExprId),
+    State(Name),
 
     /// A value for a constructor variable.
     Var(Name, ExprId),
@@ -1801,6 +1804,9 @@ pub enum AccessKind {
 
     /// An indexed element of an outer entity: the `[42]` in `foo[42]`.
     Index(AccessIndex),
+
+    /// A field of an automaton corresponding to an entity.
+    AutomatonField(AccessAutomatonField),
 }
 
 impl From<AccessName> for AccessKind {
@@ -1821,6 +1827,12 @@ impl From<AccessIndex> for AccessKind {
     }
 }
 
+impl From<AccessAutomatonField> for AccessKind {
+    fn from(access: AccessAutomatonField) -> Self {
+        Self::AutomatonField(access)
+    }
+}
+
 impl WithLibSl for AccessKind {}
 
 /// An access referring to a plain identifier, such as `foo`.
@@ -1833,7 +1845,8 @@ pub struct AccessName {
 
 impl WithLibSl for AccessName {}
 
-/// An access referring to a field of a base entity, such as `foo.bar`.
+/// An access referring to a field (or, when used as a callee, a method) of a base entity,
+/// such as `foo.bar`.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct AccessField {
@@ -1858,3 +1871,23 @@ pub struct AccessIndex {
 }
 
 impl WithLibSl for AccessIndex {}
+
+/// An access referring a field (or, when used as a callee, a method) of an automaton corresponding
+/// to a base entity, such as `Automaton(foo).bar`.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
+pub struct AccessAutomatonField {
+    /// The name of an automaton to cast the base entity to.
+    pub automaton_name: Name,
+
+    /// Type arguments for the automaton's type parameters.
+    pub generics: Option<Vec<TyArg>>,
+
+    /// The base entity being cast to an automaton.
+    pub base: AccessId,
+
+    /// The field this access refers to.
+    pub field: Name,
+}
+
+impl WithLibSl for AccessAutomatonField {}

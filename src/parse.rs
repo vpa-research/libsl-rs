@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::cell::RefCell;
 use std::error::Error;
 use std::fmt::{self, Debug, Display};
@@ -9,20 +8,22 @@ use antlr_rust::common_token_stream::CommonTokenStream;
 use antlr_rust::error_listener::ErrorListener;
 use antlr_rust::errors::ANTLRError;
 use antlr_rust::parser_rule_context::ParserRuleContext;
-use antlr_rust::token::{CommonToken, GenericToken};
+use antlr_rust::token::CommonToken;
 use antlr_rust::token_factory::TokenFactory;
-use antlr_rust::tree::TerminalNode;
+use antlr_rust::tree::{ParseTree, TerminalNode};
 use antlr_rust::{InputStream, Parser};
 
 use crate::grammar::lexer::LibSLLexer;
 use crate::grammar::libslparser::{
-    AccessContextAll, AccessFieldContext, AccessIndexContext, AccessNameContext,
-    AddBinOpContextAll, BitShiftOpContextAll, ConstructorArgContextAll, ExprAdditiveContext,
-    ExprAndContext, ExprBitAndContext, ExprBitOrContext, ExprBitXorContext, ExprCastContext,
+    AccessAutomatonFieldContext, AccessAutomatonFieldContextAttrs, AccessContextAll,
+    AccessFieldContext, AccessIndexContext, AccessNameContext, AddBinOpContextAll,
+    BitShiftOpContextAll, ConstructorArgContextAll, ExprAdditiveContext, ExprAndContext,
+    ExprBitAndContext, ExprBitOrContext, ExprBitXorContext, ExprCastContext,
     ExprMultiplicativeContext, ExprOrContext, ExprRelationalContext, ExprShiftContext,
-    ExprTypeComparisonContext, ImportDeclContextAll, ImportDeclContextAttrs, IncludeDeclContextAll,
-    IncludeDeclContextAttrs, MulBinOpContextAll, PathBareContextAttrs, PathContextAll,
-    PathStringLitContextAttrs, RelOpContextAll,
+    ExprTypeComparisonContext, IdentContextAll, ImportDeclContextAll, ImportDeclContextAttrs,
+    IncludeDeclContextAll, IncludeDeclContextAttrs, MulBinOpContextAll, PathBareContextAttrs,
+    PathContextAll, PathStringLitContextAttrs, RelOpContextAll,
+    ShiftSourceStateShorthandContextAttrs,
 };
 use crate::grammar::parser::{
     ActionCallExprContextAll, ActionDeclContextAll, ActionParamContextAll, AnnotationArgContextAll,
@@ -56,17 +57,16 @@ use crate::grammar::parser::{
     ProcCallExprContextAll, ProcDeclContextAll, QualifiedTypeNameContextAll,
     RequiresContractContextAll, SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs,
     SemanticTypeDefContextAll, ShiftByContextAll, ShiftDeclContextAll, ShiftSourceStateContextAll,
-    ShiftSourceStateShorthandContextAttrs, SignContextAll, SignedIntLitContextAll,
-    SignedIntLitContextAttrs, SignedNumLitContextAll, SignedNumLitFloatContextAttrs,
-    SignedNumLitIntContextAttrs, StateDeclContextAll, StateKindContextAll, StmtAssignContextAttrs,
-    StmtContextAll, StmtExprContext, StmtIfContextAttrs, StmtVariableDeclContext,
-    StmtVariableDeclContextAttrs, StructDeclContextAll, StructDefDeclContextAll,
-    StructDefDeclFunctionContextAttrs, StructDefDeclVariableContextAttrs, TypeAliasDeclContextAll,
-    TypeArgContextAll, TypeArgSpecContextAll, TypeArgTypeExprContextAttrs,
-    TypeConstraintContextAll, TypeExprContextAll, TypeExprIntersectionContext,
-    TypeExprNameContextAttrs, TypeExprPointerContextAttrs, TypeExprPrimitiveLitContext,
-    TypeExprUnionContext, UnOpContextAll, VariableDeclContextAll, VariableKindContextAll,
-    VarianceSpecContextAll, WhereClauseContextAll,
+    SignContextAll, SignedIntLitContextAll, SignedIntLitContextAttrs, SignedNumLitContextAll,
+    SignedNumLitFloatContextAttrs, SignedNumLitIntContextAttrs, StateDeclContextAll,
+    StateKindContextAll, StmtAssignContextAttrs, StmtContextAll, StmtExprContext,
+    StmtIfContextAttrs, StmtVariableDeclContext, StmtVariableDeclContextAttrs,
+    StructDeclContextAll, StructDefDeclContextAll, StructDefDeclFunctionContextAttrs,
+    StructDefDeclVariableContextAttrs, TypeAliasDeclContextAll, TypeArgContextAll,
+    TypeArgSpecContextAll, TypeArgTypeExprContextAttrs, TypeConstraintContextAll,
+    TypeExprContextAll, TypeExprIntersectionContext, TypeExprNameContextAttrs,
+    TypeExprPointerContextAttrs, TypeExprPrimitiveLitContext, TypeExprUnionContext, UnOpContextAll,
+    VariableDeclContextAll, VariableKindContextAll, VarianceSpecContextAll, WhereClauseContextAll,
 };
 use crate::grammar::parser::{FileContextAll, LibSLParser};
 use crate::loc::{FileId, Loc, Span};
@@ -75,8 +75,6 @@ use crate::{AccessId, DeclId, ExprId, LibSl, StmtId, TyExprId, ast, grammar};
 type Result<T, E = ParseError> = std::result::Result<T, E>;
 
 type Terminal<'a> = TerminalNode<'a, LibSLParserContextType>;
-
-type Token<'a> = GenericToken<Cow<'a, str>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Sign {
@@ -130,8 +128,8 @@ fn parse_string_lit(token: &CommonToken<'_>) -> String {
     strip_surrounding(&token.text, '"', '"').replace("\\\'", "\'")
 }
 
-fn parse_ident(token: &CommonToken<'_>) -> String {
-    strip_surrounding(&token.text, '`', '`').into()
+fn parse_ident(ctx: &IdentContextAll<'_>) -> String {
+    strip_surrounding(&ctx.get_text(), '`', '`').into()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -466,7 +464,7 @@ impl<'a> AstConstructor<'a> {
                 ast::SemanticTyKind::Enumerated(
                     ctx.values
                         .iter()
-                        .map(|ctx| self.process_enum_semantic_type_value(&ctx))
+                        .map(|ctx| self.process_enum_semantic_type_value(ctx))
                         .collect::<Result<_>>()?,
                 )
             }
@@ -760,6 +758,13 @@ impl<'a> AstConstructor<'a> {
             })
             .unwrap_or_default();
 
+        let ty_constraints = ctx
+            .typeConstraints
+            .as_ref()
+            .map(|ctx| self.process_where_clause(ctx))
+            .transpose()?
+            .unwrap_or_default();
+
         let mut decls = Vec::with_capacity(ctx.decls.len());
 
         for ctx in &ctx.decls {
@@ -806,6 +811,7 @@ impl<'a> AstConstructor<'a> {
                 constructor_variables,
                 ty_expr,
                 implemented_concepts,
+                ty_constraints,
                 decls,
             }
             .into(),
@@ -987,7 +993,7 @@ impl<'a> AstConstructor<'a> {
 
         let from = match &**ctx.from.as_ref().unwrap() {
             ShiftSourceStateContextAll::ShiftSourceStateShorthandContext(ctx) => {
-                vec![self.process_name(&ctx.Identifier().unwrap().symbol)]
+                vec![self.process_name(&ctx.ident().unwrap())]
             }
 
             ShiftSourceStateContextAll::ShiftSourceStateListContext(ctx) => ctx
@@ -1345,10 +1351,9 @@ impl<'a> AstConstructor<'a> {
         ast::FullName { components }
     }
 
-    fn process_name(&mut self, token: &Token<'_>) -> ast::Name {
-        debug_assert_eq!(token.token_type, grammar::parser::Identifier);
-        let loc = self.get_loc(token, token);
-        let name = parse_ident(token);
+    fn process_name(&mut self, ctx: &IdentContextAll<'_>) -> ast::Name {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let name = parse_ident(ctx);
 
         ast::Name { loc, name }
     }
@@ -1450,7 +1455,7 @@ impl<'a> AstConstructor<'a> {
         let generics = ctx
             .typeArgs
             .as_ref()
-            .map(|ctx| self.process_type_arg_spec(&ctx))
+            .map(|ctx| self.process_type_arg_spec(ctx))
             .transpose()?;
 
         Ok(self.libsl.ty_exprs.insert_with_key(|id| ast::TyExpr {
@@ -1699,7 +1704,8 @@ impl<'a> AstConstructor<'a> {
             SignedNumLitContextAll::SignedNumLitIntContext(ctx) => {
                 let sign = self.process_sign(&ctx.sign().unwrap());
 
-                self.process_integer_lit(sign, &ctx.IntegerLit().unwrap())?.into()
+                self.process_integer_lit(sign, &ctx.IntegerLit().unwrap())?
+                    .into()
             }
 
             SignedNumLitContextAll::SignedNumLitFloatContext(ctx) => {
@@ -1985,7 +1991,7 @@ impl<'a> AstConstructor<'a> {
         let generics = ctx
             .typeArgs
             .as_ref()
-            .map(|ctx| self.process_type_arg_spec(&ctx))
+            .map(|ctx| self.process_type_arg_spec(ctx))
             .transpose()?;
 
         let args = ctx
@@ -2089,7 +2095,7 @@ impl<'a> AstConstructor<'a> {
     ) -> Result<ast::ConstructorArg> {
         Ok(match ctx {
             ConstructorArgContextAll::ConstructorArgStateContext(ctx) => {
-                let value = self.process_atomic_expr(ctx.value.as_ref().unwrap())?;
+                let value = self.process_name(ctx.state.as_ref().unwrap());
 
                 ast::ConstructorArg::State(value)
             }
@@ -2128,26 +2134,26 @@ impl<'a> AstConstructor<'a> {
         };
 
         'signed_lit: {
-            if let Some(sign) = sign {
-                if let ExprContextAll::ExprPrimitiveLitContext(ctx) = &**ctx.rhs.as_ref().unwrap() {
-                    let lit = match &**ctx.lit.as_ref().unwrap() {
-                        PrimitiveLitContextAll::PrimitiveLitIntContext(ctx) => self
-                            .process_integer_lit(sign, &ctx.IntegerLit().unwrap())?
-                            .into(),
+            if let Some(sign) = sign
+                && let ExprContextAll::ExprPrimitiveLitContext(ctx) = &**ctx.rhs.as_ref().unwrap()
+            {
+                let lit = match &**ctx.lit.as_ref().unwrap() {
+                    PrimitiveLitContextAll::PrimitiveLitIntContext(ctx) => self
+                        .process_integer_lit(sign, &ctx.IntegerLit().unwrap())?
+                        .into(),
 
-                        PrimitiveLitContextAll::PrimitiveLitFloatContext(ctx) => self
-                            .process_float_lit(sign, &ctx.FloatLit().unwrap())?
-                            .into(),
+                    PrimitiveLitContextAll::PrimitiveLitFloatContext(ctx) => self
+                        .process_float_lit(sign, &ctx.FloatLit().unwrap())?
+                        .into(),
 
-                        _ => break 'signed_lit,
-                    };
+                    _ => break 'signed_lit,
+                };
 
-                    return Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
-                        id,
-                        loc,
-                        kind: ast::ExprPrimitiveLit { lit }.into(),
-                    }));
-                }
+                return Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+                    id,
+                    loc,
+                    kind: ast::ExprPrimitiveLit { lit }.into(),
+                }));
             }
         }
 
@@ -2378,6 +2384,10 @@ impl<'a> AstConstructor<'a> {
 
             AccessContextAll::AccessIndexContext(ctx) => self.process_access_index(ctx),
 
+            AccessContextAll::AccessAutomatonFieldContext(ctx) => {
+                self.process_access_automaton_field(ctx)
+            }
+
             AccessContextAll::Error(_) => unreachable!(),
         }
     }
@@ -2414,6 +2424,35 @@ impl<'a> AstConstructor<'a> {
             id,
             loc,
             kind: ast::AccessIndex { base, index }.into(),
+        }))
+    }
+
+    fn process_access_automaton_field(
+        &mut self,
+        ctx: &AccessAutomatonFieldContext<'_>,
+    ) -> Result<AccessId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let automaton_name = self.process_name(ctx.name.as_ref().unwrap());
+
+        let generics = ctx
+            .typeArgs
+            .as_ref()
+            .map(|ctx| self.process_type_arg_spec(ctx))
+            .transpose()?;
+
+        let base = self.process_access(&ctx.access().unwrap())?;
+        let field = self.process_name(ctx.field.as_ref().unwrap());
+
+        Ok(self.libsl.accesses.insert_with_key(|id| ast::Access {
+            id,
+            loc,
+            kind: ast::AccessAutomatonField {
+                automaton_name,
+                generics,
+                base,
+                field,
+            }
+            .into(),
         }))
     }
 }

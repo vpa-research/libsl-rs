@@ -3,4 +3,4 @@ source: tests/parser/main.rs
 description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary qualified_access_unexpected_question_mark;\n\nfun test() {\n    ?';\n}\n"
 input_file: tests/parser/test-data/qualified-access-unexpected-question-mark.libsl
 ---
-Err("encountered a syntax error at L6:4: mismatched input \'?\' expecting {\'}\', \'(\', \'[\', \'+\', \'-\', \'!\', \'~\', \'var\', \'val\', \'new\', \'action\', \'requires\', \'ensures\', \'assigns\', \'true\', \'false\', \'if\', \'null\', IntegerLit, \'@\', FloatLit, Identifier, StringLit, CharacterLit}")
+Err("encountered a syntax error at L6:4: mismatched input \'?\' expecting {\'}\', \'(\', \'[\', \'+\', \'-\', \'!\', \'~\', \'var\', \'val\', \'new\', \'action\', \'requires\', \'ensures\', \'assigns\', \'true\', \'false\', \'if\', \'null\', \'implements\', \'static\', IntegerLit, \'@\', FloatLit, Identifier, StringLit, CharacterLit}")

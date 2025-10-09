@@ -3,4 +3,4 @@ source: tests/parser/main.rs
 description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary decl_type_alias_lhs_literal;\n\ntypealias \"this is wrong\" = VeryWrong;\n"
 input_file: tests/parser/test-data/decl-type-alias-lhs-literal.libsl
 ---
-Err("encountered a syntax error at L5:10: mismatched input \'\"this is wrong\"\' expecting Identifier")
+Err("encountered a syntax error at L5:10: mismatched input \'\"this is wrong\"\' expecting {\'implements\', \'static\', Identifier}")

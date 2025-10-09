@@ -888,6 +888,18 @@ impl Display for DeclAutomatonDisplay<'_> {
             writeln!(f)?;
         }
 
+        if !self.d.ty_constraints.is_empty() {
+            write!(
+                IndentedWriter::new(INDENT, f),
+                "\n{}",
+                WhereClauseDisplay {
+                    ty_constraints: &self.d.ty_constraints,
+                    libsl: self.libsl,
+                }
+            )?;
+        }
+
+
         display_list(
             f,
             ("{", "", "}"),
@@ -1910,21 +1922,19 @@ impl Display for ExprInstantiateDisplay<'_> {
                     write!(f, ", ")?;
                 }
 
-                let expr_id = match arg {
-                    ast::ConstructorArg::State(expr_id) => {
-                        write!(f, "state = ")?;
-
-                        *expr_id
+                match arg {
+                    ast::ConstructorArg::State(name) => {
+                        write!(f, "state = {name}")?;
                     }
 
                     ast::ConstructorArg::Var(name, expr_id) => {
-                        write!(f, "{name} = ")?;
-
-                        *expr_id
+                        write!(
+                            f,
+                            "{name} = {}",
+                            self.libsl.exprs[*expr_id].display(self.libsl),
+                        )?;
                     }
-                };
-
-                write!(f, "{}", self.libsl.exprs[expr_id].display(self.libsl))?;
+                }
             }
 
             write!(f, ")")
@@ -2207,6 +2217,7 @@ impl Display for AccessDisplay<'_> {
             ast::AccessKind::Name(a) => write!(f, "{}", a.display(self.libsl)),
             ast::AccessKind::Field(a) => write!(f, "{}", a.display(self.libsl)),
             ast::AccessKind::Index(a) => write!(f, "{}", a.display(self.libsl)),
+            ast::AccessKind::AutomatonField(a) => write!(f, "{}", a.display(self.libsl)),
         }
     }
 }
@@ -2242,6 +2253,37 @@ impl Display for AccessIndexDisplay<'_> {
             base = self.libsl.accesses[self.a.base].display(self.libsl),
             index = self.libsl.exprs[self.a.index].display(self.libsl),
         )
+    }
+}
+
+make_display_struct!(AccessAutomatonFieldDisplay { a } for ast::AccessAutomatonField);
+
+impl Display for AccessAutomatonFieldDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.a.automaton_name)?;
+
+        if let Some(generics) = &self.a.generics {
+            write!(f, "<")?;
+
+            for (idx, ty_arg) in generics.iter().enumerate() {
+                if idx > 0 {
+                    write!(f, ", ")?;
+                }
+
+                write!(f, "{}", ty_arg.display(self.libsl))?;
+            }
+
+            write!(f, ">")?;
+        }
+
+        write!(
+            f,
+            "({base}).{field}",
+            base = self.libsl.accesses[self.a.base].display(self.libsl),
+            field = self.a.field,
+        )?;
+
+        Ok(())
     }
 }
 
@@ -2323,7 +2365,11 @@ make_display_struct!(TyConstraintDisplay { t } for ast::TyConstraint);
 impl Display for TyConstraintDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}: ", self.t.param)?;
-        write!(f, "{}", self.libsl.ty_exprs[self.t.bound].display(self.libsl))
+        write!(
+            f,
+            "{}",
+            self.libsl.ty_exprs[self.t.bound].display(self.libsl)
+        )
     }
 }
 

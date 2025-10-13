@@ -20,10 +20,11 @@ use crate::grammar::libslparser::{
     AtomicExprSetLitContextAttrs, BitShiftOpContextAll, ConstructorArgContextAll,
     ExprAdditiveContext, ExprAndContext, ExprBitAndContext, ExprBitOrContext, ExprBitXorContext,
     ExprCastContext, ExprMultiplicativeContext, ExprOrContext, ExprRelationalContext,
-    ExprSetLitContextAttrs, ExprShiftContext, ExprTypeComparisonContext, IdentContextAll,
-    ImportDeclContextAll, ImportDeclContextAttrs, IncludeDeclContextAll, IncludeDeclContextAttrs,
-    MulBinOpContextAll, PathBareContextAttrs, PathContextAll, PathStringLitContextAttrs,
-    RelOpContextAll, SetLitExprContextAll, ShiftSourceStateShorthandContextAttrs,
+    ExprSetLitContextAttrs, ExprShiftContext, ExprTypeComparisonContext,
+    GlobalDeclProcContextAttrs, IdentContextAll, ImportDeclContextAll, ImportDeclContextAttrs,
+    IncludeDeclContextAll, IncludeDeclContextAttrs, MulBinOpContextAll, PathBareContextAttrs,
+    PathContextAll, PathStringLitContextAttrs, RelOpContextAll, SetLitExprContextAll,
+    ShiftSourceStateShorthandContextAttrs,
 };
 use crate::grammar::parser::{
     ActionCallExprContextAll, ActionDeclContextAll, ActionParamContextAll, AnnotationArgContextAll,
@@ -402,6 +403,10 @@ impl<'a> AstConstructor<'a> {
 
             GlobalDeclContextAll::GlobalDeclFunctionContext(ctx) => {
                 vec![self.process_function_decl(&ctx.functionDecl().unwrap())?]
+            }
+
+            GlobalDeclContextAll::GlobalDeclProcContext(ctx) => {
+                vec![self.process_proc_decl(&ctx.procDecl().unwrap())?]
             }
 
             GlobalDeclContextAll::GlobalDeclVariableContext(ctx) => {

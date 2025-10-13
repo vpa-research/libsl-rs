@@ -1698,6 +1698,7 @@ make_display_struct!(
         ast::ExprKind::Dummy => ExprPrec::MAX,
         ast::ExprKind::PrimitiveLit(e) => e.precedence(),
         ast::ExprKind::ArrayLit(e) => e.precedence(),
+        ast::ExprKind::SetLit(e) => e.precedence(),
         ast::ExprKind::Access(e) => e.precedence(),
         ast::ExprKind::Prev(e) => e.precedence(),
         ast::ExprKind::ProcCall(e) => e.precedence(),
@@ -1719,6 +1720,7 @@ impl Display for ExprDisplay<'_> {
                 write!(f, "{}", e.display_prec(self.libsl, self.prec))
             }
             ast::ExprKind::ArrayLit(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
+            ast::ExprKind::SetLit(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
             ast::ExprKind::Access(e) => {
                 write!(f, "{}", e.display_prec(self.libsl, self.prec))
             }
@@ -1767,6 +1769,29 @@ impl Display for ExprArrayLitDisplay<'_> {
             }
 
             write!(f, "]")
+        })
+    }
+}
+
+make_display_struct!(
+    ExprSetLitDisplay { e } for ast::ExprSetLit
+    where precedence: ExprPrec = ExprPrec::Atomic,
+);
+
+impl Display for ExprSetLitDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        display_parens(f, self.e.precedence(), self.prec, |f| {
+            write!(f, "{{")?;
+
+            for (idx, &expr_id) in self.e.elems.iter().enumerate() {
+                if idx > 0 {
+                    write!(f, ", ")?;
+                }
+
+                write!(f, "{}", self.libsl.exprs[expr_id].display(self.libsl))?;
+            }
+
+            write!(f, "}}")
         })
     }
 }

@@ -1262,6 +1262,9 @@ pub enum ExprKind {
     /// An array literal expression.
     ArrayLit(ExprArrayLit),
 
+    /// A set literal expression.
+    SetLit(ExprSetLit),
+
     /// A variable/element access expression.
     Access(ExprAccess),
 
@@ -1302,6 +1305,12 @@ impl From<ExprPrimitiveLit> for ExprKind {
 impl From<ExprArrayLit> for ExprKind {
     fn from(expr: ExprArrayLit) -> Self {
         Self::ArrayLit(expr)
+    }
+}
+
+impl From<ExprSetLit> for ExprKind {
+    fn from(expr: ExprSetLit) -> Self {
+        Self::SetLit(expr)
     }
 }
 
@@ -1387,6 +1396,14 @@ pub struct ExprArrayLit {
 }
 
 impl WithLibSl for ExprArrayLit {}
+
+/// A set literal expression.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
+pub struct ExprSetLit {
+    /// A list of set elements.
+    pub elems: Vec<ExprId>,
+}
 
 /// A variable/element access expression.
 #[derive(Debug, Clone)]

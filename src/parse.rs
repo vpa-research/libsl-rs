@@ -17,13 +17,13 @@ use crate::grammar::lexer::LibSLLexer;
 use crate::grammar::libslparser::{
     AccessAutomatonFieldContext, AccessAutomatonFieldContextAttrs, AccessContextAll,
     AccessFieldContext, AccessIndexContext, AccessNameContext, AddBinOpContextAll,
-    BitShiftOpContextAll, ConstructorArgContextAll, ExprAdditiveContext, ExprAndContext,
-    ExprBitAndContext, ExprBitOrContext, ExprBitXorContext, ExprCastContext,
-    ExprMultiplicativeContext, ExprOrContext, ExprRelationalContext, ExprShiftContext,
-    ExprTypeComparisonContext, IdentContextAll, ImportDeclContextAll, ImportDeclContextAttrs,
-    IncludeDeclContextAll, IncludeDeclContextAttrs, MulBinOpContextAll, PathBareContextAttrs,
-    PathContextAll, PathStringLitContextAttrs, RelOpContextAll,
-    ShiftSourceStateShorthandContextAttrs,
+    AtomicExprSetLitContextAttrs, BitShiftOpContextAll, ConstructorArgContextAll,
+    ExprAdditiveContext, ExprAndContext, ExprBitAndContext, ExprBitOrContext, ExprBitXorContext,
+    ExprCastContext, ExprMultiplicativeContext, ExprOrContext, ExprRelationalContext,
+    ExprSetLitContextAttrs, ExprShiftContext, ExprTypeComparisonContext, IdentContextAll,
+    ImportDeclContextAll, ImportDeclContextAttrs, IncludeDeclContextAll, IncludeDeclContextAttrs,
+    MulBinOpContextAll, PathBareContextAttrs, PathContextAll, PathStringLitContextAttrs,
+    RelOpContextAll, SetLitExprContextAll, ShiftSourceStateShorthandContextAttrs,
 };
 use crate::grammar::parser::{
     ActionCallExprContextAll, ActionDeclContextAll, ActionParamContextAll, AnnotationArgContextAll,
@@ -1671,6 +1671,10 @@ impl<'a> AstConstructor<'a> {
                 self.process_array_lit_expr(&ctx.arrayLitExpr().unwrap())
             }
 
+            AtomicExprContextAll::AtomicExprSetLitContext(ctx) => {
+                self.process_set_lit_expr(&ctx.setLitExpr().unwrap())
+            }
+
             AtomicExprContextAll::AtomicExprAccessContext(ctx) => {
                 self.process_atomic_expr_access(ctx)
             }
@@ -1744,6 +1748,10 @@ impl<'a> AstConstructor<'a> {
 
             ExprContextAll::ExprArrayLitContext(ctx) => {
                 self.process_array_lit_expr(&ctx.arrayLitExpr().unwrap())
+            }
+
+            ExprContextAll::ExprSetLitContext(ctx) => {
+                self.process_set_lit_expr(&ctx.setLitExpr().unwrap())
             }
 
             ExprContextAll::ExprPrevContext(ctx) => self.process_expr_prev(ctx),
@@ -1970,6 +1978,28 @@ impl<'a> AstConstructor<'a> {
             id,
             loc,
             kind: ast::ExprArrayLit { elems }.into(),
+        }))
+    }
+
+    fn process_set_lit_expr(&mut self, ctx: &SetLitExprContextAll<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+
+        let elems = ctx
+            .elems
+            .as_ref()
+            .map(|ctx| {
+                ctx.exprs
+                    .iter()
+                    .map(|ctx| self.process_expr(ctx))
+                    .collect::<Result<_>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprSetLit { elems }.into(),
         }))
     }
 

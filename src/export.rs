@@ -111,26 +111,23 @@ define_prec! {
 define_prec! {
     /// Precedence levels of expressions.
     pub enum ExprPrec {
-        /// Logical and (`&&`) expressions.
-        And,
-
         /// Logical or (`||`) expressions.
         Or,
 
-        /// Bitwise and (`&`) expressions.
-        BitAnd,
+        /// Logical and (`&&`) expressions.
+        And,
 
-        /// Bitwise xor (`^`) expressions.
-        BitXor,
+        /// Comparison expressions.
+        Cmp,
 
         /// Bitwise or (`|`) expressions.
         BitOr,
 
-        /// Type comparison expressions.
-        TyCmp,
+        /// Bitwise xor (`^`) expressions.
+        BitXor,
 
-        /// Comparison expressions.
-        Cmp,
+        /// Bitwise and (`&`) expressions.
+        BitAnd,
 
         /// Bit shift expressions.
         Shift,
@@ -141,7 +138,7 @@ define_prec! {
         /// Multiplicative expressions: multiplication, division, modulus.
         Mul,
 
-        /// Cast and has-concept expressions.
+        /// Cast, type comparison, and has-concept expressions.
         Cast,
 
         /// Unary operator expressions.
@@ -898,7 +895,6 @@ impl Display for DeclAutomatonDisplay<'_> {
                 }
             )?;
         }
-
 
         display_list(
             f,
@@ -1980,7 +1976,7 @@ impl Display for ExprCastDisplay<'_> {
 
 make_display_struct!(
     ExprTyCompareDisplay { e } for ast::ExprTyCompare
-    where precedence: ExprPrec = ExprPrec::TyCmp,
+    where precedence: ExprPrec = ExprPrec::Cast,
 );
 
 impl Display for ExprTyCompareDisplay<'_> {
@@ -2046,7 +2042,8 @@ make_display_struct!(
         | ast::BinOp::Gt
         | ast::BinOp::Ge
         | ast::BinOp::Eq
-        | ast::BinOp::Ne => ExprPrec::Cmp,
+        | ast::BinOp::Ne
+        | ast::BinOp::In => ExprPrec::Cmp,
 
         ast::BinOp::Or => ExprPrec::Or,
         ast::BinOp::And => ExprPrec::And,
@@ -2078,7 +2075,8 @@ impl Display for ExprBinaryDisplay<'_> {
             | ast::BinOp::Gt
             | ast::BinOp::Ge
             | ast::BinOp::Eq
-            | ast::BinOp::Ne => {
+            | ast::BinOp::Ne
+            | ast::BinOp::In => {
                 write!(
                     f,
                     "{lhs} {op} {rhs}",
@@ -2107,7 +2105,7 @@ impl Display for ExprBinaryDisplay<'_> {
 
             ast::BinOp::Or | ast::BinOp::And => {
                 // skip over a bunch of precedence levels straight to bitwise AND for clarity
-                // because these operator's precedence is very confusing.
+                // because these operators' precedence is very confusing.
                 let non_assoc_prec = ExprPrec::BitAnd;
 
                 write!(
@@ -2147,6 +2145,7 @@ impl Display for ast::BinOp {
                 ast::BinOp::Ge => ">=",
                 ast::BinOp::Eq => "==",
                 ast::BinOp::Ne => "!=",
+                ast::BinOp::In => "in",
                 ast::BinOp::Or => "||",
                 ast::BinOp::And => "&&",
             },

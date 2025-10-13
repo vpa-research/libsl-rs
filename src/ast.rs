@@ -1616,6 +1616,9 @@ pub enum BinOp {
     /// Not equals.
     Ne,
 
+    /// Member of.
+    In,
+
     /// Logical or.
     Or,
 

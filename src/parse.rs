@@ -2330,6 +2330,7 @@ impl<'a> AstConstructor<'a> {
             RelOpContextAll::BinOpGreaterContext(_) => ast::BinOp::Gt,
             RelOpContextAll::BinOpEqualsContext(_) => ast::BinOp::Eq,
             RelOpContextAll::BinOpNotEqualsContext(_) => ast::BinOp::Ne,
+            RelOpContextAll::BinOpInContext(_) => ast::BinOp::In,
             RelOpContextAll::Error(_) => unreachable!(),
         };
 

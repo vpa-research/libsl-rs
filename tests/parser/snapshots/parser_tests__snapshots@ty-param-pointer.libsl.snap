@@ -3,4 +3,4 @@ source: tests/parser/main.rs
 description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary ty_param_pointer;\n\ntypealias Wrong<*Very> = Wrong;\n"
 input_file: tests/parser/test-data/ty-param-pointer.libsl
 ---
-Err("encountered a syntax error at L5:16: extraneous input \'*\' expecting {\'>\', \'in\', \'out\', \'implements\', \'static\', Identifier}")
+Err("encountered a syntax error at L5:16: extraneous input \'*\' expecting {\'>\', \'in\', \'out\', \'implements\', \'static\', \'pure\', Identifier}")

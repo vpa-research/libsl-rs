@@ -1,26 +1,26 @@
 ---
 source: tests/parser/main.rs
-description: "// Input file:\nlibsl \"2.0.0\";\n\nlibrary decl_proc_top_level;\n\nproc foo() {}\n"
-input_file: tests/parser/test-data/decl-proc-top-level.libsl
+description: "// Input file:\nlibsl \"2.0.0\";\n\nlibrary decl_proc_pure;\n\npure proc pure() {}\n"
+input_file: tests/parser/test-data/decl-proc-pure.libsl
 ---
 Ok(File(
   loc: Span(
     start: 0,
-    len: 59,
-    file: "tests/parser/test-data/decl-proc-top-level.libsl",
+    len: 60,
+    file: "tests/parser/test-data/decl-proc-pure.libsl",
     line: Some(1),
     col: None,
   ),
   header: Some(Header(
     loc: Span(
       start: 0,
-      len: 43,
-      file: "tests/parser/test-data/decl-proc-top-level.libsl",
+      len: 38,
+      file: "tests/parser/test-data/decl-proc-pure.libsl",
       line: Some(1),
       col: None,
     ),
     libsl_version: "2.0.0",
-    library_name: "decl_proc_top_level",
+    library_name: "decl_proc_pure",
     version: None,
     language: None,
     url: None,
@@ -28,25 +28,25 @@ Ok(File(
   decls: [
     Decl(
       loc: Span(
-        start: 46,
-        len: 12,
-        file: "tests/parser/test-data/decl-proc-top-level.libsl",
+        start: 41,
+        len: 18,
+        file: "tests/parser/test-data/decl-proc-pure.libsl",
         line: Some(5),
         col: None,
       ),
       kind: Proc(DeclProc(
         annotations: [],
-        is_pure: false,
+        is_pure: true,
         is_method: false,
         name: Name(
           loc: Span(
             start: 51,
-            len: 2,
-            file: "tests/parser/test-data/decl-proc-top-level.libsl",
+            len: 3,
+            file: "tests/parser/test-data/decl-proc-pure.libsl",
             line: Some(5),
-            col: Some(5),
+            col: Some(10),
           ),
-          name: "foo",
+          name: "pure",
         ),
         generics: [],
         params: [],

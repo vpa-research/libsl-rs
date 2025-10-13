@@ -21,10 +21,10 @@ use crate::grammar::libslparser::{
     ExprAdditiveContext, ExprAndContext, ExprBitAndContext, ExprBitOrContext, ExprBitXorContext,
     ExprCastContext, ExprMultiplicativeContext, ExprOrContext, ExprRelationalContext,
     ExprSetLitContextAttrs, ExprShiftContext, ExprTypeComparisonContext,
-    GlobalDeclProcContextAttrs, IdentContextAll, ImportDeclContextAll, ImportDeclContextAttrs,
-    IncludeDeclContextAll, IncludeDeclContextAttrs, MulBinOpContextAll, PathBareContextAttrs,
-    PathContextAll, PathStringLitContextAttrs, RelOpContextAll, SetLitExprContextAll,
-    ShiftSourceStateShorthandContextAttrs,
+    FunctionModifierContextAll, GlobalDeclProcContextAttrs, IdentContextAll, ImportDeclContextAll,
+    ImportDeclContextAttrs, IncludeDeclContextAll, IncludeDeclContextAttrs, MulBinOpContextAll,
+    PathBareContextAttrs, PathContextAll, PathStringLitContextAttrs, ProcModifierContextAll,
+    RelOpContextAll, SetLitExprContextAll, ShiftSourceStateShorthandContextAttrs,
 };
 use crate::grammar::parser::{
     ActionCallExprContextAll, ActionDeclContextAll, ActionParamContextAll, AnnotationArgContextAll,
@@ -856,7 +856,19 @@ impl<'a> AstConstructor<'a> {
     fn process_function_decl(&mut self, ctx: &FunctionDeclContextAll<'_>) -> Result<DeclId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
         let annotations = self.process_annotations(&ctx.annotations)?;
-        let is_static = ctx.r#static.is_some();
+
+        let mut is_static = false;
+
+        for modifier in &ctx.modifiers {
+            match &**modifier {
+                FunctionModifierContextAll::FunctionModifierStaticContext(_) => {
+                    is_static = true;
+                }
+
+                FunctionModifierContextAll::Error(_) => unreachable!(),
+            }
+        }
+
         let extension_for = ctx
             .extensionFor
             .as_ref()
@@ -1159,6 +1171,19 @@ impl<'a> AstConstructor<'a> {
     fn process_proc_decl(&mut self, ctx: &ProcDeclContextAll<'_>) -> Result<DeclId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
         let annotations = self.process_annotations(&ctx.annotations)?;
+
+        let mut is_pure = false;
+
+        for modifier in &ctx.modifiers {
+            match &**modifier {
+                ProcModifierContextAll::ProcModifierPureContext(_) => {
+                    is_pure = true;
+                }
+
+                ProcModifierContextAll::Error(_) => unreachable!(),
+            }
+        }
+
         let is_method = ctx.method.is_some();
         let name = self.process_name(ctx.name.as_ref().unwrap());
 
@@ -1200,6 +1225,7 @@ impl<'a> AstConstructor<'a> {
             loc,
             kind: ast::DeclProc {
                 annotations,
+                is_pure,
                 is_method,
                 name,
                 generics,

@@ -692,7 +692,11 @@ pub struct DeclProc {
     /// A list of annotations for this declaration.
     pub annotations: Vec<Annotation>,
 
-    /// Whether the procedure has a `static` modifier.
+    /// Whether the procedure is marked as `pure`.
+    #[cfg_attr(feature = "serde", no_wrap)]
+    pub is_pure: bool,
+
+    /// Whether the procedure is a method (uses `*.` in its name).
     #[cfg_attr(feature = "serde", no_wrap)]
     pub is_method: bool,
 

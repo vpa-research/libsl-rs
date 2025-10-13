@@ -1,0 +1,235 @@
+---
+source: tests/parser/main.rs
+description: "// Input file:\nlibsl \"2.0.0\";\n\nlibrary expr_set_lit;\n\nfun test() {\n    {};\n    {1};\n    {1, 2, 3};\n    {1, 2, 3,};\n}\n"
+input_file: tests/parser/test-data/expr-set-lit.libsl
+---
+Ok(File(
+  loc: Span(
+    start: 0,
+    len: 101,
+    file: "tests/parser/test-data/expr-set-lit.libsl",
+    line: Some(1),
+    col: None,
+  ),
+  header: Some(Header(
+    loc: Span(
+      start: 0,
+      len: 36,
+      file: "tests/parser/test-data/expr-set-lit.libsl",
+      line: Some(1),
+      col: None,
+    ),
+    libsl_version: "2.0.0",
+    library_name: "expr_set_lit",
+    version: None,
+    language: None,
+    url: None,
+  )),
+  decls: [
+    Decl(
+      loc: Span(
+        start: 39,
+        len: 61,
+        file: "tests/parser/test-data/expr-set-lit.libsl",
+        line: Some(5),
+        col: None,
+      ),
+      kind: Function(DeclFunction(
+        annotations: [],
+        is_static: false,
+        extension_for: None,
+        is_method: false,
+        name: Name(
+          loc: Span(
+            start: 43,
+            len: 3,
+            file: "tests/parser/test-data/expr-set-lit.libsl",
+            line: Some(5),
+            col: Some(4),
+          ),
+          name: "test",
+        ),
+        generics: [],
+        params: [],
+        ret_ty_expr: None,
+        ty_constraints: [],
+        body: Some(FunctionBody(
+          contracts: [],
+          stmts: [
+            Stmt(
+              loc: Span(
+                start: 56,
+                len: 2,
+                file: "tests/parser/test-data/expr-set-lit.libsl",
+                line: Some(6),
+                col: Some(4),
+              ),
+              kind: Expr(Expr(
+                loc: Span(
+                  start: 56,
+                  len: 1,
+                  file: "tests/parser/test-data/expr-set-lit.libsl",
+                  line: Some(6),
+                  col: Some(4),
+                ),
+                kind: SetLit(ExprSetLit(
+                  elems: [],
+                )),
+              )),
+            ),
+            Stmt(
+              loc: Span(
+                start: 64,
+                len: 3,
+                file: "tests/parser/test-data/expr-set-lit.libsl",
+                line: Some(7),
+                col: Some(4),
+              ),
+              kind: Expr(Expr(
+                loc: Span(
+                  start: 64,
+                  len: 2,
+                  file: "tests/parser/test-data/expr-set-lit.libsl",
+                  line: Some(7),
+                  col: Some(4),
+                ),
+                kind: SetLit(ExprSetLit(
+                  elems: [
+                    Expr(
+                      loc: Span(
+                        start: 65,
+                        len: 0,
+                        file: "tests/parser/test-data/expr-set-lit.libsl",
+                        line: Some(7),
+                        col: Some(5),
+                      ),
+                      kind: PrimitiveLit(ExprPrimitiveLit(
+                        lit: Int(I32(1)),
+                      )),
+                    ),
+                  ],
+                )),
+              )),
+            ),
+            Stmt(
+              loc: Span(
+                start: 73,
+                len: 9,
+                file: "tests/parser/test-data/expr-set-lit.libsl",
+                line: Some(8),
+                col: Some(4),
+              ),
+              kind: Expr(Expr(
+                loc: Span(
+                  start: 73,
+                  len: 8,
+                  file: "tests/parser/test-data/expr-set-lit.libsl",
+                  line: Some(8),
+                  col: Some(4),
+                ),
+                kind: SetLit(ExprSetLit(
+                  elems: [
+                    Expr(
+                      loc: Span(
+                        start: 74,
+                        len: 0,
+                        file: "tests/parser/test-data/expr-set-lit.libsl",
+                        line: Some(8),
+                        col: Some(5),
+                      ),
+                      kind: PrimitiveLit(ExprPrimitiveLit(
+                        lit: Int(I32(1)),
+                      )),
+                    ),
+                    Expr(
+                      loc: Span(
+                        start: 77,
+                        len: 0,
+                        file: "tests/parser/test-data/expr-set-lit.libsl",
+                        line: Some(8),
+                        col: Some(8),
+                      ),
+                      kind: PrimitiveLit(ExprPrimitiveLit(
+                        lit: Int(I32(2)),
+                      )),
+                    ),
+                    Expr(
+                      loc: Span(
+                        start: 80,
+                        len: 0,
+                        file: "tests/parser/test-data/expr-set-lit.libsl",
+                        line: Some(8),
+                        col: Some(11),
+                      ),
+                      kind: PrimitiveLit(ExprPrimitiveLit(
+                        lit: Int(I32(3)),
+                      )),
+                    ),
+                  ],
+                )),
+              )),
+            ),
+            Stmt(
+              loc: Span(
+                start: 88,
+                len: 10,
+                file: "tests/parser/test-data/expr-set-lit.libsl",
+                line: Some(9),
+                col: Some(4),
+              ),
+              kind: Expr(Expr(
+                loc: Span(
+                  start: 88,
+                  len: 9,
+                  file: "tests/parser/test-data/expr-set-lit.libsl",
+                  line: Some(9),
+                  col: Some(4),
+                ),
+                kind: SetLit(ExprSetLit(
+                  elems: [
+                    Expr(
+                      loc: Span(
+                        start: 89,
+                        len: 0,
+                        file: "tests/parser/test-data/expr-set-lit.libsl",
+                        line: Some(9),
+                        col: Some(5),
+                      ),
+                      kind: PrimitiveLit(ExprPrimitiveLit(
+                        lit: Int(I32(1)),
+                      )),
+                    ),
+                    Expr(
+                      loc: Span(
+                        start: 92,
+                        len: 0,
+                        file: "tests/parser/test-data/expr-set-lit.libsl",
+                        line: Some(9),
+                        col: Some(8),
+                      ),
+                      kind: PrimitiveLit(ExprPrimitiveLit(
+                        lit: Int(I32(2)),
+                      )),
+                    ),
+                    Expr(
+                      loc: Span(
+                        start: 95,
+                        len: 0,
+                        file: "tests/parser/test-data/expr-set-lit.libsl",
+                        line: Some(9),
+                        col: Some(11),
+                      ),
+                      kind: PrimitiveLit(ExprPrimitiveLit(
+                        lit: Int(I32(3)),
+                      )),
+                    ),
+                  ],
+                )),
+              )),
+            ),
+          ],
+        )),
+      )),
+    ),
+  ],
+))

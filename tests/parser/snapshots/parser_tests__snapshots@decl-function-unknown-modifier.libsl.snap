@@ -3,4 +3,4 @@ source: tests/parser/main.rs
 description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary decl_function_unknown_modifier;\n\nfoobar fun wrong_modifier();\n"
 input_file: tests/parser/test-data/decl-function-unknown-modifier.libsl
 ---
-Err("encountered a syntax error at L5:0: extraneous input \'foobar\' expecting {<EOF>, \'import\', \'include\', \'typealias\', \'type\', \'types\', \'enum\', \'annotation\', \'automaton\', \'var\', \'val\', \'fun\', \'define\', \'static\', \'@\'}")
+Err("encountered a syntax error at L5:0: extraneous input \'foobar\' expecting {<EOF>, \'import\', \'include\', \'typealias\', \'type\', \'types\', \'enum\', \'annotation\', \'automaton\', \'var\', \'val\', \'fun\', \'proc\', \'define\', \'static\', \'@\'}")

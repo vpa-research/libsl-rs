@@ -1,0 +1,149 @@
+---
+source: tests/parser/main.rs
+description: "// Input file:\nlibsl \"2.0.0\";\n\nlibrary expr_in;\n\nfun test() {\n    x in y;\n}\n"
+input_file: tests/parser/test-data/expr-in.libsl
+---
+Ok(File(
+  loc: Span(
+    start: 0,
+    len: 60,
+    file: "tests/parser/test-data/expr-in.libsl",
+    line: Some(1),
+    col: None,
+  ),
+  header: Some(Header(
+    loc: Span(
+      start: 0,
+      len: 31,
+      file: "tests/parser/test-data/expr-in.libsl",
+      line: Some(1),
+      col: None,
+    ),
+    libsl_version: "2.0.0",
+    library_name: "expr_in",
+    version: None,
+    language: None,
+    url: None,
+  )),
+  decls: [
+    Decl(
+      loc: Span(
+        start: 34,
+        len: 25,
+        file: "tests/parser/test-data/expr-in.libsl",
+        line: Some(5),
+        col: None,
+      ),
+      kind: Function(DeclFunction(
+        annotations: [],
+        is_static: false,
+        extension_for: None,
+        is_method: false,
+        name: Name(
+          loc: Span(
+            start: 38,
+            len: 3,
+            file: "tests/parser/test-data/expr-in.libsl",
+            line: Some(5),
+            col: Some(4),
+          ),
+          name: "test",
+        ),
+        generics: [],
+        params: [],
+        ret_ty_expr: None,
+        ty_constraints: [],
+        body: Some(FunctionBody(
+          contracts: [],
+          stmts: [
+            Stmt(
+              loc: Span(
+                start: 51,
+                len: 6,
+                file: "tests/parser/test-data/expr-in.libsl",
+                line: Some(6),
+                col: Some(4),
+              ),
+              kind: Expr(Expr(
+                loc: Span(
+                  start: 51,
+                  len: 5,
+                  file: "tests/parser/test-data/expr-in.libsl",
+                  line: Some(6),
+                  col: Some(4),
+                ),
+                kind: Binary(ExprBinary(
+                  lhs: Expr(
+                    loc: Span(
+                      start: 51,
+                      len: 0,
+                      file: "tests/parser/test-data/expr-in.libsl",
+                      line: Some(6),
+                      col: Some(4),
+                    ),
+                    kind: Access(ExprAccess(
+                      access: QualifiedAccess(
+                        loc: Span(
+                          start: 51,
+                          len: 0,
+                          file: "tests/parser/test-data/expr-in.libsl",
+                          line: Some(6),
+                          col: Some(4),
+                        ),
+                        kind: Name(AccessName(
+                          name: Name(
+                            loc: Span(
+                              start: 51,
+                              len: 0,
+                              file: "tests/parser/test-data/expr-in.libsl",
+                              line: Some(6),
+                              col: Some(4),
+                            ),
+                            name: "x",
+                          ),
+                        )),
+                      ),
+                    )),
+                  ),
+                  op: In,
+                  rhs: Expr(
+                    loc: Span(
+                      start: 56,
+                      len: 0,
+                      file: "tests/parser/test-data/expr-in.libsl",
+                      line: Some(6),
+                      col: Some(9),
+                    ),
+                    kind: Access(ExprAccess(
+                      access: QualifiedAccess(
+                        loc: Span(
+                          start: 56,
+                          len: 0,
+                          file: "tests/parser/test-data/expr-in.libsl",
+                          line: Some(6),
+                          col: Some(9),
+                        ),
+                        kind: Name(AccessName(
+                          name: Name(
+                            loc: Span(
+                              start: 56,
+                              len: 0,
+                              file: "tests/parser/test-data/expr-in.libsl",
+                              line: Some(6),
+                              col: Some(9),
+                            ),
+                            name: "y",
+                          ),
+                        )),
+                      ),
+                    )),
+                  ),
+                )),
+              )),
+            ),
+          ],
+        )),
+      )),
+    ),
+  ],
+))

@@ -1,0 +1,7 @@
+libsl "2.0.0";
+
+library expr_in;
+
+fun test() {
+    x in y;
+}

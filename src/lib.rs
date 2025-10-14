@@ -88,6 +88,9 @@ new_key_type! {
 
     /// An [access][ast::QualifiedAccess] identifier.
     pub struct AccessId;
+
+    /// A [predicate][ast::Pred] identifier.
+    pub struct PredId;
 }
 
 /// The top-level struct that stores all parsed AST nodes and allows access to them via an
@@ -113,6 +116,9 @@ pub struct LibSl {
 
     /// Access AST nodes.
     pub accesses: SlotMap<AccessId, ast::Access>,
+
+    /// Predicate AST nodes.
+    pub preds: SlotMap<PredId, ast::Pred>,
 }
 
 impl LibSl {

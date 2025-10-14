@@ -14,51 +14,55 @@ use antlr_rust::tree::{ParseTree, TerminalNode};
 use antlr_rust::{InputStream, Parser};
 
 use crate::grammar::lexer::LibSLLexer;
-use crate::grammar::libslparser::{
-    AccessAutomatonFieldContext, AccessAutomatonFieldContextAttrs, AccessContextAll,
-    AccessFieldContext, AccessIndexContext, AccessNameContext, AddBinOpContextAll,
-    AtomicExprSetLitContextAttrs, BitShiftOpContextAll, ConstructorArgContextAll,
-    ExprAdditiveContext, ExprAndContext, ExprBitAndContext, ExprBitOrContext, ExprBitXorContext,
-    ExprCastContext, ExprMultiplicativeContext, ExprOrContext, ExprRelationalContext,
-    ExprSetLitContextAttrs, ExprShiftContext, ExprTypeComparisonContext,
-    FunctionModifierContextAll, GlobalDeclProcContextAttrs, IdentContextAll, ImportDeclContextAll,
-    ImportDeclContextAttrs, IncludeDeclContextAll, IncludeDeclContextAttrs, MulBinOpContextAll,
-    PathBareContextAttrs, PathContextAll, PathStringLitContextAttrs, ProcModifierContextAll,
-    RelOpContextAll, SetLitExprContextAll, ShiftSourceStateShorthandContextAttrs,
-};
 use crate::grammar::parser::{
-    ActionCallExprContextAll, ActionDeclContextAll, ActionParamContextAll, AnnotationArgContextAll,
+    AccessAutomatonFieldContext, AccessAutomatonFieldContextAttrs, AccessContextAll,
+    AccessFieldContext, AccessIndexContext, AccessNameContext, ActionCallExprContextAll,
+    ActionDeclContextAll, ActionParamContextAll, AddBinOpContextAll, AnnotationArgContextAll,
     AnnotationContextAll, AnnotationDeclContextAll, AnnotationParamContextAll,
     ArrayLitExprContextAll, AssignOpContextAll, AssignStmtContextAll, AssignsContractContextAll,
     AtomicExprAccessContext, AtomicExprAccessContextAttrs, AtomicExprArrayLitContextAttrs,
-    AtomicExprContextAll, AtomicExprPrimitiveLitContext, AtomicExprSignedNumLitContext,
-    AtomicExprSignedNumLitContextAttrs, AutomatonDeclContextAll,
+    AtomicExprContextAll, AtomicExprPrimitiveLitContext, AtomicExprSetLitContextAttrs,
+    AtomicExprSignedNumLitContext, AtomicExprSignedNumLitContextAttrs, AutomatonDeclContextAll,
     AutomatonDefDeclConstructorContextAttrs, AutomatonDefDeclContextAll,
     AutomatonDefDeclDestructorContextAttrs, AutomatonDefDeclFunctionContextAttrs,
     AutomatonDefDeclProcContextAttrs, AutomatonDefDeclShiftContextAttrs,
-    AutomatonDefDeclStateContextAttrs, AutomatonDefDeclVariableContextAttrs, BlockContextAll,
-    BlockLoneStmtContextAttrs, ConstructorDeclContextAll, ConstructorVariableContextAll,
-    ContractAssignsContextAttrs, ContractContextAll, ContractEnsuresContextAttrs,
-    ContractRequiresContextAttrs, DestructorDeclContextAll, EnsuresContractContextAll,
-    EnumDeclContextAll, EnumDeclVariantContextAll, EnumSemanticTypeValueContextAll,
-    ExprAccessContext, ExprAccessContextAttrs, ExprActionCallContextAttrs,
-    ExprArrayLitContextAttrs, ExprContextAll, ExprHasConceptContext, ExprInstantiationContextAttrs,
+    AutomatonDefDeclStateContextAttrs, AutomatonDefDeclVariableContextAttrs, BitShiftOpContextAll,
+    BlockContextAll, BlockLoneStmtContextAttrs, BlockPredicateContextAll, ConstructorArgContextAll,
+    ConstructorDeclContextAll, ConstructorVariableContextAll, ContractAssignsContextAttrs,
+    ContractContextAll, ContractEnsuresContextAttrs, ContractPredicateBlockContextAttrs,
+    ContractPredicateContextAll, ContractPredicateExprContextAttrs,
+    ContractPredicateIfContextAttrs, ContractRequiresContextAttrs, DestructorDeclContextAll,
+    EnsuresContractContextAll, EnumDeclContextAll, EnumDeclVariantContextAll,
+    EnumSemanticTypeValueContextAll, ExprAccessContext, ExprAccessContextAttrs,
+    ExprActionCallContextAttrs, ExprAdditiveContext, ExprAndContext, ExprArrayLitContextAttrs,
+    ExprBitAndContext, ExprBitOrContext, ExprBitXorContext, ExprCastContext, ExprContextAll,
+    ExprHasConceptContext, ExprInstantiationContextAttrs, ExprMultiplicativeContext, ExprOrContext,
+    ExprPredicateBlockContextAttrs, ExprPredicateContextAll, ExprPredicateExprContextAttrs,
     ExprPrevContext, ExprPrimitiveLitContext, ExprPrimitiveLitContextAttrs,
-    ExprProcCallContextAttrs, ExprUnaryContext, FileContextAttrs, FullNameContextAll,
-    FunctionBodyContextAll, FunctionDeclContextAll, FunctionDefBracedContextAttrs,
-    FunctionDefContextAll, FunctionParamContextAll, FunctionSignatureContextAll, GenericContextAll,
-    GenericsContextAll, GlobalDeclActionContextAttrs, GlobalDeclAnnotationContextAttrs,
+    ExprProcCallContextAttrs, ExprRelationalContext, ExprSetLitContextAttrs, ExprShiftContext,
+    ExprTypeComparisonContext, ExprUnaryContext, FileContextAll, FileContextAttrs,
+    FullNameContextAll, FunctionBodyContextAll, FunctionDeclContextAll,
+    FunctionDefBracedContextAttrs, FunctionDefContextAll, FunctionModifierContextAll,
+    FunctionParamContextAll, FunctionSignatureContextAll, GenericContextAll, GenericsContextAll,
+    GlobalDeclActionContextAttrs, GlobalDeclAnnotationContextAttrs,
     GlobalDeclAutomatonContextAttrs, GlobalDeclContextAll, GlobalDeclEnumContextAttrs,
     GlobalDeclFunctionContextAttrs, GlobalDeclImportContextAttrs, GlobalDeclIncludeContextAttrs,
-    GlobalDeclSemanticTypeSectionContextAttrs, GlobalDeclStructContextAttrs,
-    GlobalDeclTypeAliasContextAttrs, GlobalDeclVariableContextAttrs, HeaderContextAll,
-    IfStmtContextAll, InstantiationExprContextAll, LibSLParserContextType, NameTypeExprContextAll,
-    PointerTypeExprContextAll, PrimitiveLitCharContextAttrs, PrimitiveLitContextAll,
-    PrimitiveLitFloatContextAttrs, PrimitiveLitIntContextAttrs, PrimitiveLitStringLitContextAttrs,
-    ProcCallExprContextAll, ProcDeclContextAll, QualifiedTypeNameContextAll,
+    GlobalDeclProcContextAttrs, GlobalDeclSemanticTypeSectionContextAttrs,
+    GlobalDeclStructContextAttrs, GlobalDeclTypeAliasContextAttrs, GlobalDeclVariableContextAttrs,
+    HeaderContextAll, IdentContextAll, IfPredicateContextAll, IfStmtContextAll,
+    ImportDeclContextAll, ImportDeclContextAttrs, IncludeDeclContextAll, IncludeDeclContextAttrs,
+    InstantiationExprContextAll, LibSLParser, LibSLParserContextType, MulBinOpContextAll,
+    NameTypeExprContextAll, PathBareContextAttrs, PathContextAll, PathStringLitContextAttrs,
+    PointerTypeExprContextAll, PredicateBlockContextAttrs, PredicateContextAll,
+    PredicateExprContextAttrs, PredicateIfContextAttrs, PredicateNamedContext,
+    PredicateNamedContextAttrs, PredicateVariableDeclContextAttrs, PrimitiveLitCharContextAttrs,
+    PrimitiveLitContextAll, PrimitiveLitFloatContextAttrs, PrimitiveLitIntContextAttrs,
+    PrimitiveLitStringLitContextAttrs, ProcCallExprContextAll, ProcDeclContextAll,
+    ProcModifierContextAll, QualifiedTypeNameContextAll, RelOpContextAll,
     RequiresContractContextAll, SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs,
-    SemanticTypeDefContextAll, ShiftByContextAll, ShiftDeclContextAll, ShiftSourceStateContextAll,
-    SignContextAll, SignedIntLitContextAll, SignedIntLitContextAttrs, SignedNumLitContextAll,
+    SemanticTypeDefContextAll, SetLitExprContextAll, ShiftByContextAll, ShiftDeclContextAll,
+    ShiftSourceStateContextAll, ShiftSourceStateShorthandContextAttrs, SignContextAll,
+    SignedIntLitContextAll, SignedIntLitContextAttrs, SignedNumLitContextAll,
     SignedNumLitFloatContextAttrs, SignedNumLitIntContextAttrs, StateDeclContextAll,
     StateKindContextAll, StmtAssignContextAttrs, StmtContextAll, StmtExprContext,
     StmtIfContextAttrs, StmtVariableDeclContext, StmtVariableDeclContextAttrs,
@@ -69,9 +73,8 @@ use crate::grammar::parser::{
     TypeExprPointerContextAttrs, TypeExprPrimitiveLitContext, TypeExprUnionContext, UnOpContextAll,
     VariableDeclContextAll, VariableKindContextAll, VarianceSpecContextAll, WhereClauseContextAll,
 };
-use crate::grammar::parser::{FileContextAll, LibSLParser};
 use crate::loc::{FileId, Loc, Span};
-use crate::{AccessId, DeclId, ExprId, LibSl, StmtId, TyExprId, ast, grammar};
+use crate::{AccessId, DeclId, ExprId, LibSl, PredId, StmtId, TyExprId, ast, grammar};
 
 type Result<T, E = ParseError> = std::result::Result<T, E>;
 
@@ -1295,10 +1298,9 @@ impl<'a> AstConstructor<'a> {
         ctx: &RequiresContractContextAll<'_>,
     ) -> Result<ast::ContractRequires> {
         let name = ctx.name.as_ref().map(|ctx| self.process_name(ctx));
+        let pred = self.process_contract_predicate(ctx.spec.as_ref().unwrap())?;
 
-        let expr = self.process_expr(ctx.spec.as_ref().unwrap())?;
-
-        Ok(ast::ContractRequires { name, expr })
+        Ok(ast::ContractRequires { name, pred })
     }
 
     fn process_ensures_contract(
@@ -1306,10 +1308,9 @@ impl<'a> AstConstructor<'a> {
         ctx: &EnsuresContractContextAll<'_>,
     ) -> Result<ast::ContractEnsures> {
         let name = ctx.name.as_ref().map(|ctx| self.process_name(ctx));
+        let pred = self.process_contract_predicate(ctx.spec.as_ref().unwrap())?;
 
-        let expr = self.process_expr(ctx.spec.as_ref().unwrap())?;
-
-        Ok(ast::ContractEnsures { name, expr })
+        Ok(ast::ContractEnsures { name, pred })
     }
 
     fn process_assigns_contract(
@@ -1317,10 +1318,146 @@ impl<'a> AstConstructor<'a> {
         ctx: &AssignsContractContextAll<'_>,
     ) -> Result<ast::ContractAssigns> {
         let name = ctx.name.as_ref().map(|ctx| self.process_name(ctx));
-
         let expr = self.process_expr(ctx.spec.as_ref().unwrap())?;
 
         Ok(ast::ContractAssigns { name, expr })
+    }
+
+    fn process_contract_predicate(
+        &mut self,
+        ctx: &ContractPredicateContextAll<'_>,
+    ) -> Result<PredId> {
+        match ctx {
+            ContractPredicateContextAll::ContractPredicateIfContext(ctx) => {
+                self.process_if_predicate(&ctx.ifPredicate().unwrap())
+            }
+
+            ContractPredicateContextAll::ContractPredicateExprContext(ctx) => self
+                .process_predicate_expr(
+                    &ctx.expr().unwrap(),
+                    self.get_loc(&ctx.start(), &ctx.stop()),
+                ),
+
+            ContractPredicateContextAll::ContractPredicateBlockContext(ctx) => {
+                self.process_block_predicate(&ctx.blockPredicate().unwrap())
+            }
+
+            ContractPredicateContextAll::Error(_) => unreachable!(),
+        }
+    }
+
+    fn process_expr_predicate(&mut self, ctx: &ExprPredicateContextAll<'_>) -> Result<PredId> {
+        match ctx {
+            ExprPredicateContextAll::ExprPredicateBlockContext(ctx) => {
+                self.process_block_predicate(&ctx.blockPredicate().unwrap())
+            }
+
+            ExprPredicateContextAll::ExprPredicateExprContext(ctx) => self.process_predicate_expr(
+                &ctx.expr().unwrap(),
+                self.get_loc(&ctx.start(), &ctx.stop()),
+            ),
+
+            ExprPredicateContextAll::Error(_) => unreachable!(),
+        }
+    }
+
+    fn process_predicate(&mut self, ctx: &PredicateContextAll<'_>) -> Result<PredId> {
+        match ctx {
+            PredicateContextAll::PredicateExprContext(ctx) => self.process_predicate_expr(
+                &ctx.expr().unwrap(),
+                self.get_loc(&ctx.start(), &ctx.stop()),
+            ),
+
+            PredicateContextAll::PredicateNamedContext(ctx) => self.process_predicate_named(ctx),
+
+            PredicateContextAll::PredicateIfContext(ctx) => {
+                self.process_if_predicate(&ctx.ifPredicate().unwrap())
+            }
+
+            PredicateContextAll::PredicateVariableDeclContext(ctx) => {
+                self.process_predicate_variable_decl(&ctx.variableDecl().unwrap())
+            }
+
+            PredicateContextAll::PredicateBlockContext(ctx) => {
+                self.process_block_predicate(&ctx.blockPredicate().unwrap())
+            }
+
+            PredicateContextAll::Error(_) => unreachable!(),
+        }
+    }
+
+    fn process_block_predicate(&mut self, ctx: &BlockPredicateContextAll<'_>) -> Result<PredId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+
+        let preds = ctx
+            .predicates
+            .iter()
+            .map(|ctx| self.process_predicate(ctx))
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(self.libsl.preds.insert_with_key(|id| ast::Pred {
+            id,
+            loc,
+            kind: ast::PredBlock { preds }.into(),
+        }))
+    }
+
+    fn process_predicate_named(&mut self, ctx: &PredicateNamedContext<'_>) -> Result<PredId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let name = self.process_name(ctx.name.as_ref().unwrap());
+        let pred = self.process_predicate(&ctx.predicate().unwrap())?;
+
+        Ok(self.libsl.preds.insert_with_key(|id| ast::Pred {
+            id,
+            loc,
+            kind: ast::PredNamed { name, pred }.into(),
+        }))
+    }
+
+    fn process_predicate_variable_decl(
+        &mut self,
+        ctx: &VariableDeclContextAll<'_>,
+    ) -> Result<PredId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let decl_id = self.process_variable_decl(ctx)?;
+
+        Ok(self.libsl.preds.insert_with_key(|id| ast::Pred {
+            id,
+            loc,
+            kind: decl_id.into(),
+        }))
+    }
+
+    fn process_if_predicate(&mut self, ctx: &IfPredicateContextAll<'_>) -> Result<PredId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let cond = self.process_expr_predicate(ctx.condition.as_ref().unwrap())?;
+        let then_branch = self.process_predicate(ctx.thenBranch.as_ref().unwrap())?;
+        let else_branch = ctx
+            .elseBranch
+            .as_ref()
+            .map(|ctx| self.process_predicate(ctx))
+            .transpose()?;
+
+        Ok(self.libsl.preds.insert_with_key(|id| ast::Pred {
+            id,
+            loc,
+            kind: ast::PredIf {
+                cond,
+                then_branch,
+                else_branch,
+            }
+            .into(),
+        }))
+    }
+
+    fn process_predicate_expr(&mut self, ctx: &ExprContextAll<'_>, loc: Loc) -> Result<PredId> {
+        let expr_id = self.process_expr(ctx)?;
+
+        Ok(self.libsl.preds.insert_with_key(|id| ast::Pred {
+            id,
+            loc,
+            kind: expr_id.into(),
+        }))
     }
 
     fn process_annotations(

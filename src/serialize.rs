@@ -4,7 +4,7 @@ use serde::Serialize;
 use serde::ser::{SerializeSeq, SerializeStruct};
 
 use crate::loc::{Loc, Span};
-use crate::{DeclId, ExprId, LibSlNode, AccessId, StmtId, TyExprId, WithLibSl, ast};
+use crate::{AccessId, DeclId, ExprId, LibSlNode, PredId, StmtId, TyExprId, WithLibSl, ast};
 
 impl<'a, T> Serialize for LibSlNode<'a, [T]>
 where
@@ -78,6 +78,16 @@ impl Serialize for LibSlNode<'_, ExprId> {
     }
 }
 
+impl Serialize for LibSlNode<'_, PredId> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.map(|&pred_id| &self.libsl().preds[pred_id])
+            .serialize(serializer)
+    }
+}
+
 impl Serialize for LibSlNode<'_, StmtId> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -132,6 +142,19 @@ impl Serialize for LibSlNode<'_, ast::Decl> {
         S: serde::Serializer,
     {
         let mut state = serializer.serialize_struct("Decl", 2)?;
+        state.serialize_field("loc", &self.map(|decl| &decl.loc))?;
+        state.serialize_field("kind", &self.map(|decl| &decl.kind))?;
+
+        state.end()
+    }
+}
+
+impl Serialize for LibSlNode<'_, ast::Pred> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_struct("Pred", 2)?;
         state.serialize_field("loc", &self.map(|decl| &decl.loc))?;
         state.serialize_field("kind", &self.map(|decl| &decl.kind))?;
 

@@ -3,7 +3,7 @@
 //! The top-level struct is [`File`]; all other nodes are descendants of it.
 
 use crate::loc::Loc;
-use crate::{AccessId, DeclId, ExprId, StmtId, TyExprId, WithLibSl};
+use crate::{AccessId, DeclId, ExprId, PredId, StmtId, TyExprId, WithLibSl};
 
 /// A single LibSL file.
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
@@ -791,8 +791,8 @@ pub struct ContractRequires {
     /// The contract's name.
     pub name: Option<Name>,
 
-    /// The contract expression.
-    pub expr: ExprId,
+    /// The contract predicate.
+    pub pred: PredId,
 }
 
 impl WithLibSl for ContractRequires {}
@@ -804,8 +804,8 @@ pub struct ContractEnsures {
     /// The contract's name.
     pub name: Option<Name>,
 
-    /// The contract expression.
-    pub expr: ExprId,
+    /// The contract predicate.
+    pub pred: PredId,
 }
 
 impl WithLibSl for ContractEnsures {}
@@ -1083,7 +1083,10 @@ impl WithLibSl for TyExprUnion {}
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub enum TyArg {
     /// An arbitrary type expression.
-    TyExpr(#[cfg_attr(feature = "serde", no_wrap)] Option<Variance>, TyExprId),
+    TyExpr(
+        #[cfg_attr(feature = "serde", no_wrap)] Option<Variance>,
+        TyExprId,
+    ),
 
     /// A type wildcard, useful in situations where the exact type for the parameter is not
     /// required.
@@ -1091,6 +1094,123 @@ pub enum TyArg {
 }
 
 impl WithLibSl for TyArg {}
+
+/// A predicate in a contract's specification.
+#[derive(Debug, Default, Clone)]
+pub struct Pred {
+    /// A unique identifier for this predicate, usable as a (secondary) slotmap key.
+    ///
+    /// This allowed to associate additional information with the statement as well as refer to it
+    /// without violating borrowing rules.
+    pub id: PredId,
+
+    /// The predicate's location in the source text.
+    pub loc: Loc,
+
+    /// What kind of predicate this is.
+    ///
+    /// The variants hold data specific to each predicate kind.
+    pub kind: PredKind,
+}
+
+impl WithLibSl for Pred {}
+
+/// An enumeration of all possible predicate kinds.
+#[derive(Debug, Default, Clone)]
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
+pub enum PredKind {
+    /// A dummy predicate, the default value of `PredKind`.
+    /// Allows using `mem::take` to take ownership of the value.
+    #[default]
+    Dummy,
+
+    /// A predicate block, representing a conjunction of predicates.
+    Block(PredBlock),
+
+    /// A predicate prefixed with a name.
+    Named(PredNamed),
+
+    /// A variable declaration.
+    Decl(DeclId),
+
+    /// A conditional predicate (representing an implication).
+    If(PredIf),
+
+    /// An expression predicate.
+    Expr(ExprId),
+}
+
+impl WithLibSl for PredKind {}
+
+impl From<PredBlock> for PredKind {
+    fn from(value: PredBlock) -> Self {
+        Self::Block(value)
+    }
+}
+
+impl From<PredNamed> for PredKind {
+    fn from(value: PredNamed) -> Self {
+        Self::Named(value)
+    }
+}
+
+impl From<DeclId> for PredKind {
+    fn from(value: DeclId) -> Self {
+        Self::Decl(value)
+    }
+}
+
+impl From<PredIf> for PredKind {
+    fn from(value: PredIf) -> Self {
+        Self::If(value)
+    }
+}
+
+impl From<ExprId> for PredKind {
+    fn from(value: ExprId) -> Self {
+        Self::Expr(value)
+    }
+}
+
+/// A predicate block, representing a conjunction of predicates.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
+pub struct PredBlock {
+    /// The sub-predicates this predicate is composed of.
+    pub preds: Vec<PredId>,
+}
+
+impl WithLibSl for PredBlock {}
+
+/// A named predicate.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
+pub struct PredNamed {
+    /// The name assigned to this predicate.
+    pub name: Name,
+
+    /// The predicate being named.
+    pub pred: PredId,
+}
+
+impl WithLibSl for PredNamed {}
+
+/// A conditional predicate, representing an implication.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
+pub struct PredIf {
+    /// The condition (the antecedent of the implication).
+    pub cond: PredId,
+
+    /// The consequent of the implication, which determines the truth value of the predicate when the condition is true.
+    pub then_branch: PredId,
+
+    /// The alternative, which determines the truth value of the predicate when the condition is
+    /// false.
+    pub else_branch: Option<PredId>,
+}
+
+impl WithLibSl for PredIf {}
 
 /// A statement in a function body.
 #[derive(Debug, Default, Clone)]
@@ -1106,7 +1226,7 @@ pub struct Stmt {
 
     /// What kind of statement this is.
     ///
-    /// The variants hold data specific to each declaration kind.
+    /// The variants hold data specific to each statement kind.
     pub kind: StmtKind,
 }
 

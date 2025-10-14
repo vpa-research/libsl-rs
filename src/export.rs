@@ -177,6 +177,47 @@ macro_rules! make_display_struct {
         }
     };
 
+    ($name:ident { $field:ident } for $ast:ty where opts: $opts_ty:ty $(,)?) => {
+        impl $ast {
+            #[doc = concat!("Returns an object that implements [Display] to convert the [", stringify!($ast), "] back to LibSL source text.")]
+            ///
+            /// This is analogous to calling [`display_with_opts`][Self::display_with_opts] with the
+            /// default options.
+            pub fn display<'a>(&'a self, libsl: &'a LibSl) -> $name<'a> {
+                self.display_with_opts(libsl, Default::default())
+            }
+
+            #[doc = concat!("Returns an object that implements [Display] to convert the [", stringify!($ast), "] back to LibSL source text.")]
+            ///
+            /// The parameter `opts` provides additional options for formatting.
+            pub fn display_with_opts<'a>(&'a self, libsl: &'a LibSl, opts: $opts_ty) -> $name<'a> {
+                $name {
+                    $field: self,
+                    libsl,
+                    opts,
+                }
+            }
+        }
+
+        #[doc = concat!("A helper struct that writes the [", stringify!($ast), "] out as LibSL source text.")]
+        #[derive(Debug, Clone)]
+        pub struct $name<'a> {
+            $field: &'a $ast,
+
+            #[allow(unused)]
+            libsl: &'a LibSl,
+
+            #[allow(unused)]
+            opts: $opts_ty,
+        }
+
+        impl<'a> Display for LibSlNode<'a, $ast> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                self.inner().display(self.libsl()).fmt(f)
+            }
+        }
+    };
+
     ($name:ident { $field:ident } for $ast:ty where precedence: $prec_ty:ty = $prec:expr $(,)?) => {
         impl $ast {
             /// The precedence level of this expression.
@@ -1396,7 +1437,7 @@ impl Display for ContractRequiresDisplay<'_> {
             write!(f, "{name}: ")?;
         }
 
-        write!(f, "{};", self.libsl.exprs[self.c.expr].display(self.libsl))
+        write!(f, "{};", self.libsl.preds[self.c.pred].display(self.libsl))
     }
 }
 
@@ -1410,7 +1451,7 @@ impl Display for ContractEnsuresDisplay<'_> {
             write!(f, "{name}: ")?;
         }
 
-        write!(f, "{};", self.libsl.exprs[self.c.expr].display(self.libsl))
+        write!(f, "{};", self.libsl.preds[self.c.pred].display(self.libsl))
     }
 }
 
@@ -1425,6 +1466,162 @@ impl Display for ContractAssignsDisplay<'_> {
         }
 
         write!(f, "{};", self.libsl.exprs[self.c.expr].display(self.libsl))
+    }
+}
+
+/// Controls how a [predicate](ast::Pred) is displayed.
+#[derive(Debug, Default, Clone, Copy)]
+pub enum PredDisplayOpts {
+    /// Format as occurring in a statement-like context.
+    ///
+    /// In particular, puts a semicolon after expression predicates.
+    #[default]
+    StmtLike,
+
+    /// Format as occurring in an if predicate's then-branch context.
+    ///
+    /// In particular, wraps the predicate in braces, unless it's a block predicate.
+    ThenBranch,
+
+    /// Format as occurring in an if predicate's else-branch context.
+    ///
+    /// In particular, wraps the predicate in braces, unless it's another if or a block predicate.
+    ElseBranch,
+
+    /// Format as occuring in an expression-like context.
+    ///
+    /// In particular, does not terminate expression predicates with a semicolon.
+    ExprLike,
+}
+
+impl PredDisplayOpts {
+    fn fmt_branch(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        fmt_inner: impl FnOnce(&mut dyn fmt::Write) -> fmt::Result,
+    ) -> fmt::Result {
+        if matches!(self, Self::ThenBranch | Self::ElseBranch) {
+            write!(f, "{{\n")?;
+            fmt_inner(&mut IndentedWriter::new(INDENT, f))?;
+            write!(f, "\n}}")?;
+        } else {
+            fmt_inner(f)?;
+        }
+
+        Ok(())
+    }
+}
+
+make_display_struct!(
+    PredDisplay { p } for ast::Pred
+    where opts: PredDisplayOpts,
+);
+
+impl Display for PredDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.p.kind {
+            ast::PredKind::Dummy => Ok(()),
+            ast::PredKind::Block(p) => write!(f, "{}", p.display_with_opts(self.libsl, self.opts)),
+            ast::PredKind::Named(p) => write!(f, "{}", p.display_with_opts(self.libsl, self.opts)),
+
+            ast::PredKind::Decl(decl_id) => self.opts.fmt_branch(f, |f| {
+                write!(f, "{}", self.libsl.decls[*decl_id].display(self.libsl))
+            }),
+
+            ast::PredKind::If(p) => write!(f, "{}", p.display_with_opts(self.libsl, self.opts)),
+
+            ast::PredKind::Expr(expr_id) => self.opts.fmt_branch(f, |f| {
+                write!(f, "{}", self.libsl.exprs[*expr_id].display(self.libsl))?;
+
+                if !matches!(self.opts, PredDisplayOpts::ExprLike) {
+                    write!(f, ";")?;
+                }
+
+                Ok(())
+            }),
+        }
+    }
+}
+
+make_display_struct!(
+    PredBlockDisplay { p } for ast::PredBlock
+    where opts: PredDisplayOpts,
+);
+impl Display for PredBlockDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        display_list(
+            f,
+            ("{", "", "}"),
+            false,
+            false,
+            self.p.preds.iter().map(|&pred_id| {
+                move |f: &mut dyn fmt::Write| {
+                    write!(f, "{}", self.libsl.preds[pred_id].display(self.libsl))
+                }
+            }),
+        )
+    }
+}
+
+make_display_struct!(
+    PredNamedDisplay { p } for ast::PredNamed
+    where opts: PredDisplayOpts,
+);
+
+impl Display for PredNamedDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.opts.fmt_branch(f, |f| {
+            write!(
+                f,
+                "{}: {}",
+                self.p.name,
+                self.libsl.preds[self.p.pred].display_with_opts(
+                    self.libsl,
+                    match self.opts {
+                        PredDisplayOpts::ThenBranch => PredDisplayOpts::StmtLike,
+                        opts => opts,
+                    }
+                ),
+            )
+        })
+    }
+}
+
+make_display_struct!(
+    PredIfDisplay { p } for ast::PredIf
+    where opts: PredDisplayOpts,
+);
+
+impl Display for PredIfDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let fmt_inner = |f: &mut dyn fmt::Write| {
+            write!(
+                f,
+                "if ({}) {}",
+                self.libsl.preds[self.p.cond].display(self.libsl),
+                self.libsl.preds[self.p.then_branch]
+                    .display_with_opts(self.libsl, PredDisplayOpts::ThenBranch),
+            )?;
+
+            if let Some(else_branch) = self.p.else_branch {
+                write!(
+                    f,
+                    " else {}",
+                    self.libsl.preds[else_branch]
+                        .display_with_opts(self.libsl, PredDisplayOpts::ElseBranch)
+                )?;
+            }
+
+            Ok(())
+        };
+
+        if !matches!(self.opts, PredDisplayOpts::ElseBranch) {
+            self.opts.fmt_branch(f, fmt_inner)?
+        } else {
+            fmt_inner(f)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -1606,7 +1803,7 @@ impl Display for StmtIfDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "if {} ",
+            "if ({}) ",
             self.libsl.exprs[self.s.cond].display(self.libsl)
         )?;
 

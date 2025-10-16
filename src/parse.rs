@@ -1347,6 +1347,7 @@ impl<'a> AstConstructor<'a> {
         }
     }
 
+    #[allow(unused)]
     fn process_expr_predicate(&mut self, ctx: &ExprPredicateContextAll<'_>) -> Result<PredId> {
         match ctx {
             ExprPredicateContextAll::ExprPredicateBlockContext(ctx) => {
@@ -1431,7 +1432,7 @@ impl<'a> AstConstructor<'a> {
 
     fn process_if_predicate(&mut self, ctx: &IfPredicateContextAll<'_>) -> Result<PredId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
-        let cond = self.process_expr_predicate(ctx.condition.as_ref().unwrap())?;
+        let cond = self.process_expr(ctx.condition.as_ref().unwrap())?;
         let then_branch = self.process_predicate(ctx.thenBranch.as_ref().unwrap())?;
         let else_branch = ctx
             .elseBranch

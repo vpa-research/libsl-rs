@@ -1600,7 +1600,7 @@ impl Display for PredIfDisplay<'_> {
             write!(
                 f,
                 "if ({}) {}",
-                self.libsl.preds[self.p.cond].display(self.libsl),
+                self.libsl.exprs[self.p.cond].display(self.libsl),
                 self.libsl.preds[self.p.then_branch]
                     .display_with_opts(self.libsl, PredDisplayOpts::ThenBranch),
             )?;

@@ -1200,7 +1200,7 @@ impl WithLibSl for PredNamed {}
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct PredIf {
     /// The condition (the antecedent of the implication).
-    pub cond: PredId,
+    pub cond: ExprId,
 
     /// The consequent of the implication, which determines the truth value of the predicate when the condition is true.
     pub then_branch: PredId,

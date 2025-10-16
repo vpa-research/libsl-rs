@@ -1250,6 +1250,9 @@ pub enum StmtKind {
     /// A variable assignment statement.
     Assign(StmtAssign),
 
+    /// A state transition cancellation statement.
+    Cancel(StmtCancel),
+
     /// An expression statement.
     Expr(ExprId),
 }
@@ -1269,6 +1272,12 @@ impl From<StmtIf> for StmtKind {
 impl From<StmtAssign> for StmtKind {
     fn from(stmt: StmtAssign) -> Self {
         Self::Assign(stmt)
+    }
+}
+
+impl From<StmtCancel> for StmtKind {
+    fn from(stmt: StmtCancel) -> Self {
+        Self::Cancel(stmt)
     }
 }
 
@@ -1312,6 +1321,11 @@ pub struct StmtAssign {
 }
 
 impl WithLibSl for StmtAssign {}
+
+/// A state transition cancellation statement.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
+pub struct StmtCancel;
 
 /// An in-place update operator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

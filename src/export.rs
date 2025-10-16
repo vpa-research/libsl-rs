@@ -1578,7 +1578,9 @@ impl Display for PredNamedDisplay<'_> {
                 self.libsl.preds[self.p.pred].display_with_opts(
                     self.libsl,
                     match self.opts {
-                        PredDisplayOpts::ThenBranch => PredDisplayOpts::StmtLike,
+                        PredDisplayOpts::ThenBranch | PredDisplayOpts::ElseBranch =>
+                            PredDisplayOpts::StmtLike,
+
                         opts => opts,
                     }
                 ),
@@ -1790,6 +1792,7 @@ impl Display for StmtDisplay<'_> {
             }
             ast::StmtKind::If(s) => write!(f, "{}", s.display(self.libsl)),
             ast::StmtKind::Assign(s) => write!(f, "{}", s.display(self.libsl)),
+            ast::StmtKind::Cancel(s) => write!(f, "{}", s.display(self.libsl)),
             ast::StmtKind::Expr(expr_id) => {
                 write!(f, "{};", self.libsl.exprs[*expr_id].display(self.libsl))
             }
@@ -1869,6 +1872,17 @@ impl Display for StmtAssignDisplay<'_> {
         }
 
         write!(f, " {};", self.libsl.exprs[self.s.rhs].display(self.libsl))
+    }
+}
+
+make_display_struct!(StmtCancelDisplay { s } for ast::StmtCancel);
+
+impl Display for StmtCancelDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // silence #[warn(unused)].
+        let _ = self.s;
+
+        write!(f, "cancel;")
     }
 }
 

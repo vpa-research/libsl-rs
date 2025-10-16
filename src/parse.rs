@@ -14,6 +14,7 @@ use antlr_rust::tree::{ParseTree, TerminalNode};
 use antlr_rust::{InputStream, Parser};
 
 use crate::grammar::lexer::LibSLLexer;
+use crate::grammar::libslparser::{CancelStmtContextAll, StmtCancelContextAttrs};
 use crate::grammar::parser::{
     AccessAutomatonFieldContext, AccessAutomatonFieldContextAttrs, AccessContextAll,
     AccessFieldContext, AccessIndexContext, AccessNameContext, ActionCallExprContextAll,
@@ -1736,6 +1737,10 @@ impl<'a> AstConstructor<'a> {
                 self.process_assign_stmt(&ctx.assignStmt().unwrap())
             }
 
+            StmtContextAll::StmtCancelContext(ctx) => {
+                self.process_cancel_stmt(&ctx.cancelStmt().unwrap())
+            }
+
             StmtContextAll::StmtExprContext(ctx) => self.process_stmt_expr(ctx),
 
             StmtContextAll::Error(_) => unreachable!(),
@@ -1807,6 +1812,16 @@ impl<'a> AstConstructor<'a> {
                 rhs,
             }
             .into(),
+        }))
+    }
+
+    fn process_cancel_stmt(&mut self, ctx: &CancelStmtContextAll<'_>) -> Result<StmtId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+
+        Ok(self.libsl.stmts.insert_with_key(|id| ast::Stmt {
+            id,
+            loc,
+            kind: ast::StmtCancel.into(),
         }))
     }
 

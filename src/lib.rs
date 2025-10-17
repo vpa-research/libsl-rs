@@ -73,6 +73,7 @@ pub mod loc;
 mod parse;
 #[cfg(feature = "serde")]
 mod serialize;
+pub mod visit;
 
 new_key_type! {
     /// An [entity declaration][ast::Decl] identifier.

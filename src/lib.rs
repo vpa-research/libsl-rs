@@ -70,6 +70,7 @@ pub mod diag;
 pub mod export;
 pub mod grammar;
 pub mod loc;
+pub mod sema;
 mod parse;
 #[cfg(feature = "serde")]
 mod serialize;

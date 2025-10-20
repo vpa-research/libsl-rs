@@ -116,8 +116,69 @@ where
             ast::StmtKind::Expr(expr_id) => expr_id.walk(self)?,
         }
 
-        ControlFlow::Continue(())
+        stmt.walk(self)
     }
 
-    // TODO: the rest of the owl.
+    fn visit_expr(&mut self, expr: &'ast ast::Expr) -> ControlFlow<()> {
+        match &expr.kind {
+            ast::ExprKind::Dummy => panic!("encountered a dummy expr"),
+            ast::ExprKind::PrimitiveLit(_) => {}
+            ast::ExprKind::ArrayLit(_) => {}
+            ast::ExprKind::SetLit(_) => {}
+            ast::ExprKind::Access(_) => {}
+
+            ast::ExprKind::Prev(_) => {
+                self.ctx
+                    .record_err(make_err(expr.loc.clone(), "a previous-value expression"));
+            }
+
+            ast::ExprKind::ProcCall(_) => {
+                // TODO: allow calls to pure procedures (requires name resolution).
+                self.ctx
+                    .record_err(make_err(expr.loc.clone(), "a procedure call"));
+            }
+
+            ast::ExprKind::ActionCall(_) => {
+                self.ctx
+                    .record_err(make_err(expr.loc.clone(), "an action call"));
+            }
+
+            ast::ExprKind::Instantiate(_) => {
+                self.ctx
+                    .record_err(make_err(expr.loc.clone(), "an automaton instantiation"));
+            }
+
+            ast::ExprKind::HasConcept(_) => {}
+            ast::ExprKind::Cast(_) => {}
+            ast::ExprKind::TyCompare(_) => {}
+            ast::ExprKind::Unary(_) => {}
+            ast::ExprKind::Binary(_) => {}
+        }
+
+        expr.walk(self)
+    }
+
+    fn visit_access(&mut self, access: &'ast ast::Access) -> ControlFlow<()> {
+        match &access.kind {
+            ast::AccessKind::Dummy => panic!("encountered a dummy access"),
+
+            // TODO: allow access to locals.
+            ast::AccessKind::Name(_) => {
+                self.ctx
+                    .record_err(make_err(access.loc.clone(), "a name access expression"));
+            }
+
+            ast::AccessKind::Field(_) => {}
+            ast::AccessKind::Index(_) => {}
+
+            ast::AccessKind::AutomatonField(_) => {
+                self.ctx.record_err(make_err(
+                    access.loc.clone(),
+                    "an automaton field access expression",
+                ));
+            }
+        }
+
+        access.walk(self)
+    }
 }

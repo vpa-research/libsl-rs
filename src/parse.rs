@@ -261,7 +261,7 @@ impl LibSl {
         &mut self,
         file_name: String,
         contents: &str,
-    ) -> Result<ast::File, ParseError> {
+    ) -> Result<FileId, ParseError> {
         let input_stream = InputStream::new(contents);
         let lexer = LibSLLexer::new(input_stream);
         let token_stream = CommonTokenStream::new(lexer);
@@ -292,7 +292,12 @@ impl LibSl {
             }
         };
 
-        AstConstructor::new(self, file_name).construct(&tree)
+        let ctor = AstConstructor::new(self, file_name);
+        let file_id = ctor.file_id;
+        let file = ctor.construct(&tree)?;
+        self.files[file_id.0] = file;
+
+        Ok(file_id)
     }
 }
 
@@ -305,6 +310,7 @@ impl<'a> AstConstructor<'a> {
     fn new(libsl: &'a mut LibSl, file_name: String) -> Self {
         let file_idx = libsl.file_names.len();
         libsl.file_names.push(file_name);
+        libsl.files.push(Default::default());
 
         Self {
             libsl,

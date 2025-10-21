@@ -9,7 +9,7 @@ use crate::{AccessId, DeclId, ExprId, PredId, StmtId, TyExprId, WithLibSl};
 
 /// A single LibSL file.
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct File {
     /// The file's location in the source text.
     pub loc: Loc,

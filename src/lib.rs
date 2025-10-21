@@ -12,7 +12,8 @@
 //! # val x: I32 = 42;
 //! # "#;
 //! let mut libsl = LibSl::new();
-//! let file = libsl.parse_file(file_name, contents)?;
+//! let file_id = libsl.parse_file(file_name, contents)?;
+//! let file = libsl.file_by_id(file_id);
 //! # Ok(())
 //! # }
 //! ```
@@ -33,7 +34,8 @@
 //! # val x: I32 = 42;
 //! # "#;
 //! let mut libsl = LibSl::new();
-//! let file = libsl.parse_file(file_name, contents)?;
+//! let file_id = libsl.parse_file(file_name, contents)?;
+//! let file = libsl.file_by_id(file_id);
 //! println!("{:?}", libsl.decls[file.decls[0]]);
 //! # Ok(())
 //! # }
@@ -53,7 +55,8 @@
 //! # val x: I32 = 42;
 //! # "#;
 //! let mut libsl = LibSl::new();
-//! let file = libsl.parse_file(file_name, contents)?;
+//! let file_id = libsl.parse_file(file_name, contents)?;
+//! let file = libsl.file_by_id(file_id);
 //! println!("{}", libsl.decls[file.decls[0]].display(&libsl));
 //! # Ok(())
 //! # }
@@ -104,6 +107,7 @@ new_key_type! {
 #[derive(Debug, Default, Clone)]
 pub struct LibSl {
     file_names: Vec<String>,
+    files: Vec<ast::File>,
 
     /// Declaration AST nodes.
     pub decls: SlotMap<DeclId, ast::Decl>,
@@ -133,6 +137,16 @@ impl LibSl {
     /// Returns the file name corresponding to the given `id`.
     pub fn filename_by_id(&self, id: FileId) -> &str {
         &self.file_names[id.0]
+    }
+
+    /// Returns a reference to the [parsed file][ast::File] with the given `id`.
+    pub fn file_by_id(&self, id: FileId) -> &ast::File {
+        &self.files[id.0]
+    }
+
+    /// Returns a mutable reference to the [parsed file][ast::File] with the given `id`.
+    pub fn file_by_id_mut(&mut self, id: FileId) -> &mut ast::File {
+        &mut self.files[id.0]
     }
 }
 

@@ -139,6 +139,11 @@ impl LibSl {
         &self.file_names[id.0]
     }
 
+    /// Returns a slice of all parsed files.
+    pub fn files(&self) -> &[ast::File] {
+        &self.files
+    }
+
     /// Returns a reference to the [parsed file][ast::File] with the given `id`.
     pub fn file_by_id(&self, id: FileId) -> &ast::File {
         &self.files[id.0]

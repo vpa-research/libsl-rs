@@ -257,11 +257,16 @@ impl LibSl {
     /// Parses the `contents` as a LibSL file with the given name.
     ///
     /// If the file has syntax errors, returns an `Err(ParserError)`.
-    pub fn parse_file(
-        &mut self,
-        file_name: String,
-        contents: &str,
-    ) -> Result<FileId, ParseError> {
+    ///
+    /// The name is treated opaquely and only used for emitting diagnostic messages. It can, but
+    /// does not have to, be a file path.
+    ///
+    /// Note that loading the same file twice, even with the same file name, means you'll get two
+    /// distinct [`ast::File`]s back. They will be treated as if they were different files whose
+    /// contents that just happened to be same. For this reason this method is **not**
+    /// an appropriate choice for resolving imports unless you implement deduplication and file name
+    /// canonicalization.
+    pub fn parse_file(&mut self, file_name: String, contents: &str) -> Result<FileId, ParseError> {
         let input_stream = InputStream::new(contents);
         let lexer = LibSLLexer::new(input_stream);
         let token_stream = CommonTokenStream::new(lexer);

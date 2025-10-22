@@ -10,6 +10,7 @@ edition = "2024"
 [dependencies]
 antlr-rust = { path = "tool/antlr4-rust-target/runtime/Rust" }
 libsl-derive = { path = "libsl-derive" }
+relative-path = "2.0.1"
 serde = { version = "1.0.219", features = ["derive"], optional = true }
 slotmap = "1.0.7"
 static_assertions = "1.1.0"

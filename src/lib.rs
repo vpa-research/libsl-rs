@@ -71,6 +71,7 @@ use slotmap::{SlotMap, new_key_type};
 pub mod ast;
 pub mod diag;
 pub mod export;
+pub mod file;
 pub mod grammar;
 pub mod loc;
 pub mod sema;

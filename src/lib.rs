@@ -68,6 +68,8 @@
 use loc::FileId;
 use slotmap::{SlotMap, new_key_type};
 
+use crate::file::FileLoader;
+
 pub mod ast;
 pub mod diag;
 pub mod export;

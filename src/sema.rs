@@ -5,6 +5,7 @@ mod purity;
 
 use slotmap::SparseSecondaryMap;
 
+use crate::file::FileLoader;
 use crate::loc::FileId;
 use crate::{DeclId, LibSl};
 
@@ -30,7 +31,7 @@ pub struct Sema<'ast> {
 }
 
 impl<'ast> Sema<'ast> {
-    fn from_import_ctx<L>(ctx: ImportCtx<'ast, '_, L>) -> Self {
+    fn from_import_ctx<L: FileLoader>(ctx: ImportCtx<'ast, '_, L>) -> Self {
         Self {
             libsl: ctx.libsl,
             imports: ctx.imports,

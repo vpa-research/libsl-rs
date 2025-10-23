@@ -65,22 +65,20 @@
 #![warn(missing_docs)]
 #![warn(missing_debug_implementations)]
 
-use loc::FileId;
-use slotmap::{SlotMap, new_key_type};
-
-use crate::file::FileLoader;
-
 pub mod ast;
 pub mod diag;
 pub mod export;
 pub mod file;
 pub mod grammar;
 pub mod loc;
-pub mod sema;
 mod parse;
+pub mod sema;
 #[cfg(feature = "serde")]
 mod serialize;
 pub mod visit;
+
+use loc::FileId;
+use slotmap::{SlotMap, new_key_type};
 
 new_key_type! {
     /// An [entity declaration][ast::Decl] identifier.

@@ -1,12 +1,12 @@
 //! File loading and name canonicalization.
 
 use std::collections::HashMap;
-use std::fmt::{self, Display};
+use std::fmt::{self, Debug, Display};
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 
-use relative_path::{PathExt, RelativePath, RelativePathBuf};
+use relative_path::{PathExt, RelativePathBuf};
 
 /// The canonical name of a file.
 ///
@@ -19,28 +19,16 @@ use relative_path::{PathExt, RelativePath, RelativePathBuf};
 /// While breaking these laws won't lead to unsafety, it will cause suprising behavior.
 ///
 /// The [`Display`] representation is used to user-visible messages (such as diagnostics).
-pub trait CanonicalName<'a>: Display + Eq + Hash {}
+pub trait CanonicalName: Debug + Display + Clone + Eq + Hash {}
 
 /// The result of loading a file.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LoadedFile<'a, C> {
-    /// The file has already been loaded previously and assigned a canonical name.
-    AlreadyLoaded {
-        /// The canonical name for this file.
-        canonical_name: C,
+pub struct LoadedFile<'a, C> {
+    /// The canonical name for this file.
+    pub canonical_name: C,
 
-        /// The contents of the file.
-        contents: &'a str,
-    },
-
-    /// The file has not been loaded previously.
-    New {
-        /// The canonical name for this file.
-        canonical_name: C,
-
-        /// The contents of the file.
-        contents: &'a str,
-    },
+    /// The contents of the file.
+    pub contents: &'a str,
 }
 
 /// Implements loading files by path and name canonicalization.
@@ -51,9 +39,7 @@ pub enum LoadedFile<'a, C> {
 /// memory.
 pub trait FileLoader {
     /// The canonical name type this file loader uses.
-    type CanonicalName<'a>: CanonicalName<'a>
-    where
-        Self: 'a;
+    type CanonicalName: CanonicalName;
 
     /// The type of an error that may be produced while loading a file.
     type Error;
@@ -63,10 +49,10 @@ pub trait FileLoader {
     fn load<'a>(
         &'a mut self,
         path: &str,
-    ) -> Result<LoadedFile<'a, Self::CanonicalName<'a>>, Self::Error>;
+    ) -> Result<LoadedFile<'a, Self::CanonicalName>, Self::Error>;
 
     /// Returns the contents of an already-loaded file by its canonical name.
-    fn get<'a>(&'a self, name: Self::CanonicalName<'a>) -> &'a str;
+    fn get<'a>(&'a self, name: &Self::CanonicalName) -> &'a str;
 }
 
 /// A [`FileLoader`] that loads files from the file system.
@@ -79,25 +65,25 @@ pub struct FsFileLoader {
 }
 
 /// A [`CanonicalName`] based on the relative path.
-#[derive(Debug, PartialEq, Eq, Hash)]
-pub struct PathCanonicalName<'a>(&'a RelativePath);
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PathCanonicalName(RelativePathBuf);
 
-impl Display for PathCanonicalName<'_> {
+impl Display for PathCanonicalName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
+        Display::fmt(&self.0, f)
     }
 }
 
-impl<'a> CanonicalName<'a> for PathCanonicalName<'a> {}
+impl CanonicalName for PathCanonicalName {}
 
 impl FileLoader for FsFileLoader {
-    type CanonicalName<'a> = PathCanonicalName<'a>;
+    type CanonicalName = PathCanonicalName;
     type Error = io::Error;
 
     fn load<'a>(
         &'a mut self,
         path: &str,
-    ) -> Result<LoadedFile<'a, Self::CanonicalName<'a>>, Self::Error> {
+    ) -> Result<LoadedFile<'a, Self::CanonicalName>, Self::Error> {
         let path = Path::new(path).canonicalize()?;
         let relative_path = path
             .relative_to(&self.base_dir)
@@ -106,9 +92,9 @@ impl FileLoader for FsFileLoader {
         if self.loaded_files.contains_key(&relative_path) {
             let (relative_path, contents) =
                 self.loaded_files.get_key_value(&relative_path).unwrap();
-            let canonical_name = PathCanonicalName(relative_path);
+            let canonical_name = PathCanonicalName(relative_path.clone());
 
-            return Ok(LoadedFile::AlreadyLoaded {
+            return Ok(LoadedFile {
                 canonical_name,
                 contents,
             });
@@ -118,15 +104,15 @@ impl FileLoader for FsFileLoader {
         let contents = fs::read_to_string(path)?;
         self.loaded_files.insert(relative_path.clone(), contents);
         let (relative_path, contents) = self.loaded_files.get_key_value(&relative_path).unwrap();
-        let canonical_name = PathCanonicalName(relative_path);
+        let canonical_name = PathCanonicalName(relative_path.clone());
 
-        Ok(LoadedFile::New {
+        Ok(LoadedFile {
             canonical_name,
             contents,
         })
     }
 
-    fn get<'a>(&'a self, name: Self::CanonicalName<'a>) -> &'a str {
-        self.loaded_files.get(name.0).unwrap()
+    fn get<'a>(&'a self, name: &Self::CanonicalName) -> &'a str {
+        self.loaded_files.get(&name.0).unwrap()
     }
 }

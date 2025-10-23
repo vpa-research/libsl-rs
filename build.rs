@@ -103,7 +103,49 @@ fn generate_grammar() -> Result {
 
     eprintln!("The ANTLR tool finished successfully with {status}");
 
+    rename_generated_files(&gen_grammar_dir)?;
     generate_grammar_mod_rs(&gen_grammar_dir)?;
+
+    Ok(())
+}
+
+static NAME_MAP: &[(&str, &str)] = &[
+    ("libsllexer.rs", "lexer.rs"),
+    ("libslparser.rs", "parser.rs"),
+    ("libslparserlistener.rs", "parser_listener.rs"),
+];
+
+fn rename_generated_files(path: impl AsRef<Path>) -> Result {
+    let path = path.as_ref();
+
+    for entry in
+        fs::read_dir(path).map_err(|e| format!("could not list `{}`: {e}", path.display()))?
+    {
+        let entry = entry.map_err(|e| {
+            format!(
+                "failed to read a directory entry of `{}`: {e}",
+                path.display(),
+            )
+        })?;
+
+        let Some((_, rename_to)) = NAME_MAP
+            .iter()
+            .copied()
+            .find(|&(k, _)| k == entry.file_name().to_string_lossy().as_ref())
+        else {
+            continue;
+        };
+
+        let src = entry.path();
+        let dst = src.with_file_name(rename_to);
+        fs::rename(&src, &dst).map_err(|e| {
+            format!(
+                "could not rename `{}` to `{}`: {e}",
+                src.display(),
+                dst.display(),
+            )
+        })?;
+    }
 
     Ok(())
 }
@@ -126,13 +168,21 @@ fn generate_grammar_mod_rs(path: impl AsRef<Path>) -> Result {
             let _ = writeln!(mod_rs);
         }
 
+        let name = path.file_stem().unwrap().to_string_lossy();
+
         let _ = writeln!(mod_rs, "#[allow(unused_parens)]");
         let _ = writeln!(mod_rs, "#[allow(clippy::all)]");
-        let _ = writeln!(
-            mod_rs,
-            "pub mod {};",
-            path.file_stem().unwrap().to_string_lossy()
-        );
+        let _ = writeln!(mod_rs, "pub mod {name};");
+
+        if let Some((orig, _)) = NAME_MAP
+            .iter()
+            .copied()
+            .find(|(_, v)| *v == path.file_name().unwrap().to_string_lossy())
+        {
+            let orig_name = orig.strip_suffix(".rs").unwrap();
+            let _ = writeln!(mod_rs, "#[allow(unused_imports)]");
+            let _ = writeln!(mod_rs, "use {name} as {orig_name};");
+        }
     }
 
     fs::write(&mod_rs_path, mod_rs)

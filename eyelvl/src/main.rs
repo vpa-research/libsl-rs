@@ -189,9 +189,10 @@ fn ouroboros(path: PathBuf, emit_diff: bool) -> Result<()> {
     let contents = fs::read_to_string(&path)
         .with_context(|| format!("could not read `{}`", path.display()))?;
     let mut libsl = LibSl::new();
-    let file = libsl
+    let file_id = libsl
         .parse_file(path.display().to_string(), &contents)
         .with_context(|| eyre!("could not parse `{}`", path.display()))?;
+    let file = libsl.file_by_id(file_id);
     let dump = file.display(&libsl).to_string();
 
     if !emit_diff {
@@ -209,16 +210,15 @@ fn check_idempotence(path: PathBuf) -> Result<ExitCode> {
     let contents = fs::read_to_string(&path)
         .with_context(|| format!("could not read `{}`", path.display()))?;
     let mut libsl = LibSl::new();
-    let first_dump = libsl
+    let first_file_id = libsl
         .parse_file(path.display().to_string(), &contents)
-        .with_context(|| eyre!("could not parse `{}`", path.display()))?
-        .display(&libsl)
-        .to_string();
-    let second_dump = libsl
+        .with_context(|| eyre!("could not parse `{}`", path.display()))?;
+    let second_file_id = libsl
         .parse_file(path.display().to_string(), &contents)
-        .context("could not parse the first dump")?
-        .display(&libsl)
-        .to_string();
+        .context("could not parse the first dump")?;
+
+    let first_dump = libsl.file_by_id(first_file_id).display(&libsl).to_string();
+    let second_dump = libsl.file_by_id(second_file_id).display(&libsl).to_string();
 
     if first_dump == second_dump {
         println!("{}", "The dumps are equal".bright_green());

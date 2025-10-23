@@ -85,9 +85,7 @@ impl FileLoader for FsFileLoader {
         path: &str,
     ) -> Result<LoadedFile<'a, Self::CanonicalName>, Self::Error> {
         let path = Path::new(path).canonicalize()?;
-        let relative_path = path
-            .relative_to(&self.base_dir)
-            .map_err(|e| io::Error::other(e))?;
+        let relative_path = path.relative_to(&self.base_dir).map_err(io::Error::other)?;
 
         if self.loaded_files.contains_key(&relative_path) {
             let (relative_path, contents) =

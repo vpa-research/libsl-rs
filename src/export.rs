@@ -1501,7 +1501,7 @@ impl PredDisplayOpts {
         fmt_inner: impl FnOnce(&mut dyn fmt::Write) -> fmt::Result,
     ) -> fmt::Result {
         if matches!(self, Self::ThenBranch | Self::ElseBranch) {
-            write!(f, "{{\n")?;
+            writeln!(f, "{{")?;
             fmt_inner(&mut IndentedWriter::new(INDENT, f))?;
             write!(f, "\n}}")?;
         } else {

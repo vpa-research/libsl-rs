@@ -127,6 +127,7 @@ fn generate_grammar_mod_rs(path: impl AsRef<Path>) -> Result {
         }
 
         let _ = writeln!(mod_rs, "#[allow(unused_parens)]");
+        let _ = writeln!(mod_rs, "#[allow(clippy::all)]");
         let _ = writeln!(
             mod_rs,
             "pub mod {};",

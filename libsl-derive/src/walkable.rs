@@ -62,7 +62,7 @@ fn make_field_pattern(fields: &Fields) -> TokenStream {
         }
 
         Fields::Unnamed(fields) => {
-            let names = (0..fields.unnamed.len()).map(|idx| field_binding_ident(idx));
+            let names = (0..fields.unnamed.len()).map(field_binding_ident);
 
             quote! {
                 (#(#names),*)

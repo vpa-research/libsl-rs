@@ -4,7 +4,7 @@ exclude = ["tool/antlr4-rust-target/runtime/Rust"]
 
 [package]
 name = "libsl"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 [dependencies]

@@ -71,7 +71,7 @@ pub mod export;
 pub mod file;
 pub mod grammar;
 pub mod loc;
-mod parse;
+pub mod parse;
 pub mod sema;
 #[cfg(feature = "serde")]
 mod serialize;

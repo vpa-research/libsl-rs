@@ -1,3 +1,5 @@
+//! A parser working with a single file at a time.
+
 use std::cell::RefCell;
 use std::error::Error;
 use std::fmt::{self, Debug, Display};
@@ -75,7 +77,7 @@ use crate::grammar::parser::{
     VariableDeclContextAll, VariableKindContextAll, VarianceSpecContextAll, WhereClauseContextAll,
 };
 use crate::loc::{Loc, Span};
-use crate::{ast, grammar, AccessId, DeclId, ExprId, FileId, LibSl, PredId, StmtId, TyExprId};
+use crate::{AccessId, DeclId, ExprId, FileId, LibSl, PredId, StmtId, TyExprId, ast, grammar};
 
 type Result<T, E = ParseError> = std::result::Result<T, E>;
 
@@ -137,11 +139,19 @@ fn parse_ident(ctx: &IdentContextAll<'_>) -> String {
     strip_surrounding(&ctx.get_text(), '`', '`').into()
 }
 
+/// The radix of an integer literal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Radix {
+    /// Binary (`0b` prefix).
     Binary,
+
+    /// Octal (`0` prefix).
     Octal,
+
+    /// Decimal (no prefix).
     Decimal,
+
+    /// Hexadecimal (`0x` prefix).
     Hexadecimal,
 }
 
@@ -167,16 +177,47 @@ impl From<Radix> for u32 {
     }
 }
 
+fn parse_line_or_col(number: isize) -> Option<NonZeroUsize> {
+    if number > 0 {
+        Some(NonZeroUsize::new(number as usize).unwrap())
+    } else {
+        None
+    }
+}
+
+fn fmt_line_col(line: Option<NonZeroUsize>, col: Option<NonZeroUsize>) -> impl Display {
+    struct Fmt {
+        line: Option<NonZeroUsize>,
+        column: Option<NonZeroUsize>,
+    }
+
+    impl Display for Fmt {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match (self.line, self.column) {
+                (Some(line), Some(column)) => write!(f, "L{line}:{column}"),
+                (Some(line), None) => write!(f, "L{line}"),
+                (None, Some(column)) => write!(f, "L<unknown>:{column}"),
+                (None, None) => write!(f, "<unknown>"),
+            }
+        }
+    }
+
+    Fmt { line, column: col }
+}
+
 /// An error that occurred while parsing a file.
 #[derive(Debug, Clone)]
 pub enum ParseError {
     /// A syntax error.
     Syntax {
+        /// The identifier of the file being parsed.
+        file_id: FileId,
+
         /// The line number (1-based) this error occurred in.
-        line: isize,
+        line: Option<NonZeroUsize>,
 
         /// The column number (1-based) this error occurred in.
-        column: isize,
+        col: Option<NonZeroUsize>,
 
         /// The error message.
         msg: String,
@@ -184,32 +225,58 @@ pub enum ParseError {
 
     /// Could not parse an integer literal.
     Int {
+        /// The radix of the integer literal.
         radix: Radix,
-        line: isize,
-        column: isize,
+
+        /// The identifier of the file being parsed.
+        file_id: FileId,
+
+        /// The line number (1-based) this error occurred in.
+        line: Option<NonZeroUsize>,
+
+        /// The column number (1-based) this error occurred in.
+        col: Option<NonZeroUsize>,
+
+        /// The underlying error.
         inner: ParseIntError,
     },
+}
+
+impl ParseError {
+    /// Returns the identifier of the file that caused this error.
+    pub fn file_id(&self) -> FileId {
+        match *self {
+            Self::Syntax { file_id, .. } => file_id,
+            Self::Int { file_id, .. } => file_id,
+        }
+    }
 }
 
 impl Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ParseError::Syntax { line, column, msg } => {
-                write!(f, "encountered a syntax error at L{line}:{column}: {msg}")
+            ParseError::Syntax { line, col, msg, .. } => {
+                write!(
+                    f,
+                    "encountered a syntax error at {loc}: {msg}",
+                    loc = fmt_line_col(*line, *col),
+                )
             }
 
             ParseError::Int {
                 radix,
                 line,
-                column,
+                col,
                 inner,
+                ..
             } => write!(
                 f,
-                "could not parse {radix_article} {radix} integer literal at L{line}:{column}: {inner}",
+                "could not parse {radix_article} {radix} integer literal at {loc}: {inner}",
                 radix_article = match radix {
                     Radix::Octal => "an",
                     _ => "a",
                 },
+                loc = fmt_line_col(*line, *col),
             ),
         }
     }
@@ -225,13 +292,22 @@ impl Error for ParseError {
 }
 
 #[derive(Debug, Clone)]
-struct ErrorCollector(Rc<RefCell<Vec<ParseError>>>);
+struct ErrorCollector {
+    errors: Rc<RefCell<Vec<ParseError>>>,
+    file_id: FileId,
+}
 
 impl ErrorCollector {
-    fn new() -> (Self, Rc<RefCell<Vec<ParseError>>>) {
+    fn new(file_id: FileId) -> (Self, Rc<RefCell<Vec<ParseError>>>) {
         let errors: Rc<RefCell<Vec<ParseError>>> = Default::default();
 
-        (Self(errors.clone()), errors)
+        (
+            Self {
+                errors: errors.clone(),
+                file_id,
+            },
+            errors,
+        )
     }
 }
 
@@ -245,10 +321,11 @@ impl<'input, T: Parser<'input>> ErrorListener<'input, T> for ErrorCollector {
         msg: &str,
         _error: Option<&ANTLRError>,
     ) {
-        self.0.borrow_mut().push(ParseError::Syntax {
-            line,
-            column,
+        self.errors.borrow_mut().push(ParseError::Syntax {
+            line: parse_line_or_col(line),
+            col: parse_line_or_col(column),
             msg: msg.into(),
+            file_id: self.file_id,
         });
     }
 }
@@ -256,7 +333,7 @@ impl<'input, T: Parser<'input>> ErrorListener<'input, T> for ErrorCollector {
 impl LibSl {
     /// Parses the `contents` as a LibSL file with the given name.
     ///
-    /// If the file has syntax errors, returns an `Err(ParserError)`.
+    /// If the file has syntax errors, returns an `Err(ParseError)`.
     ///
     /// The name is treated opaquely and only used for emitting diagnostic messages. It can, but
     /// does not have to, be a file path.
@@ -267,12 +344,15 @@ impl LibSl {
     /// an appropriate choice for resolving imports unless you implement deduplication and file name
     /// canonicalization.
     pub fn parse_file(&mut self, file_name: String, contents: &str) -> Result<FileId, ParseError> {
+        let ctor = AstConstructor::new(self, file_name.clone());
+        let file_id = ctor.file_id;
+
         let input_stream = InputStream::new(contents);
         let lexer = LibSLLexer::new(input_stream);
         let token_stream = CommonTokenStream::new(lexer);
         let mut parser = LibSLParser::new(token_stream);
         parser.remove_error_listeners();
-        let (error_listener, errors) = ErrorCollector::new();
+        let (error_listener, errors) = ErrorCollector::new(file_id);
         parser.add_error_listener(Box::new(error_listener));
 
         let tree = match parser.file() {
@@ -297,8 +377,6 @@ impl LibSl {
             }
         };
 
-        let ctor = AstConstructor::new(self, file_name);
-        let file_id = ctor.file_id;
         let file = ctor.construct(&tree)?;
         self.files[file_id] = file;
 
@@ -320,8 +398,8 @@ impl<'a> AstConstructor<'a> {
     }
 
     fn get_loc(&self, start: &CommonToken<'_>, stop: &CommonToken<'_>) -> Loc {
-        let line = (start.line > 0).then(|| NonZeroUsize::new(start.line as usize).unwrap());
-        let col = (start.column > 0).then(|| NonZeroUsize::new(start.column as usize).unwrap());
+        let line = parse_line_or_col(start.line);
+        let col = parse_line_or_col(start.column);
 
         Span {
             start: start.start as usize,
@@ -2101,8 +2179,9 @@ impl<'a> AstConstructor<'a> {
 
         n.map_err(|inner| ParseError::Int {
             radix,
-            line: ctx.symbol.line,
-            column: ctx.symbol.column,
+            file_id: self.file_id,
+            line: parse_line_or_col(ctx.symbol.line),
+            col: parse_line_or_col(ctx.symbol.column),
             inner,
         })
     }

@@ -15,6 +15,8 @@ pub use crate::sema::purity::check_pure;
 ///
 /// Semantic analysis is split into multiple steps (called passes). For this reason some fields may
 /// not have correct values before you run a pass that initializes them.
+///
+/// The first pass 
 #[allow(missing_debug_implementations)]
 pub struct Sema<'ast> {
     /// The AST being analyzed.

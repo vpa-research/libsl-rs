@@ -6,11 +6,11 @@ use std::fmt::{self, Debug, Display};
 
 use slotmap::{SecondaryMap, SparseSecondaryMap};
 
-use crate::{ast, FileId};
 use crate::file::FileLoader;
 use crate::parse::ParseError;
 use crate::sema::Sema;
 use crate::{DeclId, LibSl};
+use crate::{FileId, ast};
 
 /// Describes how a file was loaded.
 #[derive(Debug, Clone)]
@@ -41,14 +41,25 @@ pub struct ImportCtx<'ast, 'ld, L: FileLoader> {
 }
 
 /// An enumeration of possible errors that may occur during file loading and import resolution.
-// TODO: store the load chain.
 #[derive(Debug, Clone)]
 pub enum LoadError<L: FileLoader> {
     /// A parsing error.
-    Parse(ParseError),
+    Parse {
+        /// The underlying cause.
+        err: ParseError,
+
+        /// The reason this file was being loaded.
+        load_reason: LoadReason,
+    },
 
     /// A file loading error.
-    File(L::Error),
+    File {
+        /// The underlying cause.
+        err: L::Error,
+
+        /// The reason this file was being loaded.
+        load_reason: LoadReason,
+    },
 }
 
 impl<L: FileLoader> Display for LoadError<L>
@@ -57,8 +68,8 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Parse(e) => Display::fmt(e, f),
-            Self::File(e) => Display::fmt(e, f),
+            Self::Parse { err, .. } => Display::fmt(err, f),
+            Self::File { err, .. } => Display::fmt(err, f),
         }
     }
 }
@@ -70,8 +81,8 @@ where
 {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::Parse(e) => Some(e),
-            Self::File(e) => Some(e),
+            Self::Parse { err, .. } => Some(err),
+            Self::File { err, .. } => Some(err),
         }
     }
 }
@@ -108,7 +119,15 @@ impl<'ast, 'ld, L: FileLoader> ImportCtx<'ast, 'ld, L> {
         let mut root_file_id: Option<FileId> = None;
 
         while let Some(req) = self.load_reqs.pop() {
-            let f = self.loader.load(&req.path).map_err(LoadError::File)?;
+            let load_reason = match req.import_decl_id {
+                Some(decl_id) => LoadReason::Imported(decl_id),
+                None => LoadReason::TopLevel(req.path.clone()),
+            };
+
+            let f = self.loader.load(&req.path).map_err(|err| LoadError::File {
+                err,
+                load_reason: load_reason.clone(),
+            })?;
 
             let file_id = if let Some(&file_id) = self.files.get(&f.canonical_name) {
                 file_id
@@ -116,15 +135,13 @@ impl<'ast, 'ld, L: FileLoader> ImportCtx<'ast, 'ld, L> {
                 let file_id = self
                     .libsl
                     .parse_file(f.canonical_name.to_string(), f.contents)
-                    .map_err(LoadError::Parse)?;
+                    .map_err(|err| LoadError::Parse {
+                        err,
+                        load_reason: load_reason.clone(),
+                    })?;
                 self.files.insert(f.canonical_name.clone(), file_id);
 
-                let reason = match req.import_decl_id {
-                    Some(decl_id) => LoadReason::Imported(decl_id),
-                    None => LoadReason::TopLevel(req.path.clone()),
-                };
-
-                self.load_reasons.insert(file_id, reason);
+                self.load_reasons.insert(file_id, load_reason);
 
                 for &decl_id in &self.libsl.file_by_id(file_id).decls {
                     let decl = &self.libsl.decls[decl_id];

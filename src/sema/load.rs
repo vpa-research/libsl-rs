@@ -4,14 +4,23 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{self, Debug, Display};
 
-use slotmap::SparseSecondaryMap;
+use slotmap::{SecondaryMap, SparseSecondaryMap};
 
-use crate::ast;
+use crate::{ast, FileId};
 use crate::file::FileLoader;
-use crate::loc::FileId;
 use crate::parse::ParseError;
 use crate::sema::Sema;
 use crate::{DeclId, LibSl};
+
+/// Describes how a file was loaded.
+#[derive(Debug, Clone)]
+pub enum LoadReason {
+    /// The file was loaded due to an import declaration with the given [`DeclId`].
+    Imported(DeclId),
+
+    /// The file was loaded due to an explicit top-level request for the given path.
+    TopLevel(String),
+}
 
 #[derive(Debug)]
 struct LoadReq {
@@ -28,6 +37,7 @@ pub struct ImportCtx<'ast, 'ld, L: FileLoader> {
     pub(super) imports: SparseSecondaryMap<DeclId, FileId>,
     load_reqs: Vec<LoadReq>,
     files: HashMap<L::CanonicalName, FileId>,
+    pub(super) load_reasons: SecondaryMap<FileId, LoadReason>,
 }
 
 /// An enumeration of possible errors that may occur during file loading and import resolution.
@@ -75,6 +85,7 @@ impl<'ast, 'ld, L: FileLoader> ImportCtx<'ast, 'ld, L> {
             imports: Default::default(),
             load_reqs: Default::default(),
             files: Default::default(),
+            load_reasons: Default::default(),
         }
     }
 
@@ -107,6 +118,13 @@ impl<'ast, 'ld, L: FileLoader> ImportCtx<'ast, 'ld, L> {
                     .parse_file(f.canonical_name.to_string(), f.contents)
                     .map_err(LoadError::Parse)?;
                 self.files.insert(f.canonical_name.clone(), file_id);
+
+                let reason = match req.import_decl_id {
+                    Some(decl_id) => LoadReason::Imported(decl_id),
+                    None => LoadReason::TopLevel(req.path.clone()),
+                };
+
+                self.load_reasons.insert(file_id, reason);
 
                 for &decl_id in &self.libsl.file_by_id(file_id).decls {
                     let decl = &self.libsl.decls[decl_id];

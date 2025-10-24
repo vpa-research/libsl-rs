@@ -74,8 +74,8 @@ use crate::grammar::parser::{
     TypeExprPointerContextAttrs, TypeExprPrimitiveLitContext, TypeExprUnionContext, UnOpContextAll,
     VariableDeclContextAll, VariableKindContextAll, VarianceSpecContextAll, WhereClauseContextAll,
 };
-use crate::loc::{FileId, Loc, Span};
-use crate::{AccessId, DeclId, ExprId, LibSl, PredId, StmtId, TyExprId, ast, grammar};
+use crate::loc::{Loc, Span};
+use crate::{ast, grammar, AccessId, DeclId, ExprId, FileId, LibSl, PredId, StmtId, TyExprId};
 
 type Result<T, E = ParseError> = std::result::Result<T, E>;
 
@@ -300,7 +300,7 @@ impl LibSl {
         let ctor = AstConstructor::new(self, file_name);
         let file_id = ctor.file_id;
         let file = ctor.construct(&tree)?;
-        self.files[file_id.0] = file;
+        self.files[file_id] = file;
 
         Ok(file_id)
     }
@@ -313,14 +313,10 @@ struct AstConstructor<'a> {
 
 impl<'a> AstConstructor<'a> {
     fn new(libsl: &'a mut LibSl, file_name: String) -> Self {
-        let file_idx = libsl.file_names.len();
-        libsl.file_names.push(file_name);
-        libsl.files.push(Default::default());
+        let file_id = libsl.files.insert(Default::default());
+        libsl.file_names.insert(file_id, file_name);
 
-        Self {
-            libsl,
-            file_id: FileId(file_idx),
-        }
+        Self { libsl, file_id }
     }
 
     fn get_loc(&self, start: &CommonToken<'_>, stop: &CommonToken<'_>) -> Loc {

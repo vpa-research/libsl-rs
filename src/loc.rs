@@ -6,11 +6,7 @@
 
 use std::num::NonZeroUsize;
 
-use crate::WithLibSl;
-
-/// A file identifier for use in [`Span`s][Span] to avoid lifetime parameters.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FileId(pub(crate) usize);
+use crate::{FileId, WithLibSl};
 
 /// A contiguous range of bytes in a source file.
 #[derive(Debug, Clone, PartialEq, Eq)]

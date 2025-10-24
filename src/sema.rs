@@ -3,13 +3,12 @@
 mod load;
 mod purity;
 
-use slotmap::SparseSecondaryMap;
+use slotmap::{SecondaryMap, SparseSecondaryMap};
 
 use crate::file::FileLoader;
-use crate::loc::FileId;
-use crate::{DeclId, LibSl};
+use crate::{DeclId, FileId, LibSl};
 
-pub use crate::sema::load::{ImportCtx, LoadError};
+pub use crate::sema::load::{ImportCtx, LoadError, LoadReason};
 pub use crate::sema::purity::check_pure;
 
 /// A semantic analyzer for LibSL.
@@ -28,6 +27,9 @@ pub struct Sema<'ast> {
 
     /// Maps each import declaration to the file its path resolves to.
     pub imports: SparseSecondaryMap<DeclId, FileId>,
+
+    /// Maps each file to its load reason.
+    pub load_reasons: SecondaryMap<FileId, LoadReason>,
 }
 
 impl<'ast> Sema<'ast> {
@@ -35,6 +37,7 @@ impl<'ast> Sema<'ast> {
         Self {
             libsl: ctx.libsl,
             imports: ctx.imports,
+            load_reasons: ctx.load_reasons,
         }
     }
 }

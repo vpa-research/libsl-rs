@@ -77,10 +77,12 @@ pub mod sema;
 mod serialize;
 pub mod visit;
 
-use loc::FileId;
-use slotmap::{SlotMap, new_key_type};
+use slotmap::{SecondaryMap, SlotMap, new_key_type};
 
 new_key_type! {
+    /// A file identifier.
+    pub struct FileId;
+
     /// An [entity declaration][ast::Decl] identifier.
     pub struct DeclId;
 
@@ -107,8 +109,8 @@ new_key_type! {
 /// files.
 #[derive(Debug, Default, Clone)]
 pub struct LibSl {
-    file_names: Vec<String>,
-    files: Vec<ast::File>,
+    files: SlotMap<FileId, ast::File>,
+    file_names: SecondaryMap<FileId, String>,
 
     /// Declaration AST nodes.
     pub decls: SlotMap<DeclId, ast::Decl>,
@@ -137,22 +139,22 @@ impl LibSl {
 
     /// Returns the file name corresponding to the given `id`.
     pub fn filename_by_id(&self, id: FileId) -> &str {
-        &self.file_names[id.0]
+        &self.file_names[id]
     }
 
-    /// Returns a slice of all parsed files.
-    pub fn files(&self) -> &[ast::File] {
-        &self.files
+    /// Returns an iterator over all parsed files.
+    pub fn files<'a>(&'a self) -> impl Iterator<Item = &'a ast::File> + ExactSizeIterator {
+        self.files.values()
     }
 
     /// Returns a reference to the [parsed file][ast::File] with the given `id`.
     pub fn file_by_id(&self, id: FileId) -> &ast::File {
-        &self.files[id.0]
+        &self.files[id]
     }
 
     /// Returns a mutable reference to the [parsed file][ast::File] with the given `id`.
     pub fn file_by_id_mut(&mut self, id: FileId) -> &mut ast::File {
-        &mut self.files[id.0]
+        &mut self.files[id]
     }
 }
 

@@ -143,7 +143,7 @@ impl LibSl {
     }
 
     /// Returns an iterator over all parsed files.
-    pub fn files<'a>(&'a self) -> impl Iterator<Item = &'a ast::File> + ExactSizeIterator {
+    pub fn files(&self) -> impl ExactSizeIterator<Item = &ast::File> {
         self.files.values()
     }
 

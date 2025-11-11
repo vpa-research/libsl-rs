@@ -2,21 +2,24 @@
 
 mod load;
 mod purity;
+mod resolve;
+mod ty;
 
 use slotmap::{SecondaryMap, SparseSecondaryMap};
 
 use crate::file::FileLoader;
+use crate::sema::resolve::NameRes;
 use crate::{DeclId, FileId, LibSl};
 
 pub use crate::sema::load::{ImportCtx, LoadError, LoadReason};
 pub use crate::sema::purity::check_pure;
 
+pub type Result<T = (), E = ()> = std::result::Result<T, E>;
+
 /// A semantic analyzer for LibSL.
 ///
 /// Semantic analysis is split into multiple steps (called passes). For this reason some fields may
 /// not have correct values before you run a pass that initializes them.
-///
-/// The first pass 
 #[allow(missing_debug_implementations)]
 pub struct Sema<'ast> {
     /// The AST being analyzed.
@@ -32,6 +35,9 @@ pub struct Sema<'ast> {
 
     /// Maps each file to its load reason.
     pub load_reasons: SecondaryMap<FileId, LoadReason>,
+
+    /// The results of name resolution.
+    pub name_res: NameRes,
 }
 
 impl<'ast> Sema<'ast> {
@@ -40,6 +46,7 @@ impl<'ast> Sema<'ast> {
             libsl: ctx.libsl,
             imports: ctx.imports,
             load_reasons: ctx.load_reasons,
+            name_res: Default::default(),
         }
     }
 }

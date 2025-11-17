@@ -1,5 +1,6 @@
 //! Semantic analysis passes for LibSL.
 
+mod def;
 mod load;
 mod purity;
 mod resolve;

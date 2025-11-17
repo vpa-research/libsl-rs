@@ -2,39 +2,16 @@
 
 use std::collections::HashMap;
 
-use slotmap::{SecondaryMap, SlotMap, new_key_type};
+use slotmap::{SecondaryMap, SlotMap, SparseSecondaryMap, new_key_type};
 
 use crate::diag::DiagCtx;
 use crate::loc::Loc;
-use crate::sema::ty::TyId;
+use crate::sema::def::{Def, DefId, DefKind, Variable, VariableKind};
 use crate::sema::{Result, Sema};
-use crate::{DeclId, FileId};
+use crate::{DeclId, FileId, ast};
 
 new_key_type! {
-    pub struct DefId;
     pub struct ScopeId;
-}
-
-#[derive(Debug)]
-pub struct Def {
-    pub id: DefId,
-    pub loc: Loc,
-    pub kind: DefKind,
-}
-
-#[derive(Debug, Default)]
-pub enum DefKind {
-    #[default]
-    Dummy,
-
-    Import(Import),
-    Ty(TyId),
-}
-
-#[derive(Debug, Clone)]
-pub struct Import {
-    pub import_decl_id: DeclId,
-    pub imported: DefId,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -81,6 +58,10 @@ pub enum ScopeKind {
     Prelude,
     Import(FileId),
     File(FileScope),
+    SemanticTyEnum(DefId),
+    Struct(DefId),
+    Enum(DefId),
+    Automaton(DefId),
 }
 
 /// Definitions in the prelude scope.
@@ -144,6 +125,9 @@ pub struct NameRes {
     /// Maps each file to its top-level scope (note that .
     pub file_scopes: SecondaryMap<FileId, ScopeId>,
 
+    /// Maps entities to scopes for their members.
+    pub def_member_scopes: SparseSecondaryMap<DefId, ScopeId>,
+
     /// The prelude scope.
     pub prelude_scope_id: ScopeId,
 
@@ -158,6 +142,16 @@ impl Sema<'_> {
     pub fn resolve_scopes(&mut self, diag: &mut impl DiagCtx) -> Result {
         Pass::new(self, diag).run()
     }
+}
+
+enum DeclCtx {
+    Global(FileId),
+    Struct(DefId),
+
+    Automaton {
+        def_id: DefId,
+        is_constructor_var: bool,
+    },
 }
 
 struct Pass<'ast, 's, D> {
@@ -176,6 +170,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         let mut result = Ok(());
         result = result.and(self.collect_symbols());
+        result = result.and(self.add_imports());
         result = result.and(self.resolve_defs());
 
         result
@@ -224,10 +219,294 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn collect_symbols(&mut self) -> Result {
+    fn add_def(
+        &mut self,
+        scope_id: ScopeId,
+        ns: Ns,
+        name: String,
+        loc: Loc,
+        kind: DefKind,
+    ) -> Result<DefId> {
         todo!()
     }
+}
 
+// Phase 1: collect globally available symbols.
+impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
+    fn collect_symbols(&mut self) -> Result {
+        let mut result = Ok(());
+
+        for (file_id, file) in &self.sema.libsl.files {
+            for &decl_id in &file.decls {
+                result = result.and(self.process_decl_symbol(DeclCtx::Global(file_id), decl_id));
+            }
+        }
+
+        result
+    }
+
+    fn process_decl_symbol(&mut self, ctx: DeclCtx, decl_id: DeclId) -> Result {
+        let decl = &self.sema.libsl.decls[decl_id];
+
+        let outer_scope_id = match ctx {
+            DeclCtx::Global(file_id) => self.sema.name_res.file_scopes[file_id],
+            DeclCtx::Struct(def_id) => self.sema.name_res.def_member_scopes[def_id],
+            DeclCtx::Automaton { def_id, .. } => self.sema.name_res.def_member_scopes[def_id],
+        };
+
+        let mut result = Ok(());
+
+        match &decl.kind {
+            ast::DeclKind::Dummy => unreachable!(),
+
+            ast::DeclKind::Import(_) => {}
+            ast::DeclKind::Include(_) => {}
+
+            ast::DeclKind::SemanticTy(decl) => {
+                let def_id = self.add_def(
+                    outer_scope_id,
+                    Ns::Ty,
+                    decl.ty_name.ty_name.to_string(),
+                    decl.ty_name.ty_name.loc.clone(),
+                    DefKind::SemanticTy(decl_id),
+                )?;
+
+                self.sema.name_res.decl_defs.insert(decl_id, def_id);
+
+                match &decl.kind {
+                    ast::SemanticTyKind::Simple => {}
+                    ast::SemanticTyKind::Enumerated(values) => {
+                        let decl_scope_id = self.sema.name_res.scopes.insert(Scope::new(
+                            Some(outer_scope_id),
+                            ScopeKind::SemanticTyEnum(def_id),
+                        ));
+                        self.sema
+                            .name_res
+                            .def_member_scopes
+                            .insert(def_id, decl_scope_id);
+
+                        for (idx, value) in values.iter().enumerate() {
+                            result = result.and(
+                                self.add_def(
+                                    decl_scope_id,
+                                    Ns::Var,
+                                    value.name.to_string(),
+                                    value.name.loc.clone(),
+                                    DefKind::SemanticTyEnumValue {
+                                        semantic_ty_def_id: def_id,
+                                        variant_idx: idx,
+                                    },
+                                )
+                                .map(drop),
+                            );
+                        }
+                    }
+                }
+            }
+
+            ast::DeclKind::TyAlias(decl) => {
+                let def_id = self.add_def(
+                    outer_scope_id,
+                    Ns::Ty,
+                    decl.ty_name.ty_name.to_string(),
+                    decl.ty_name.ty_name.loc.clone(),
+                    DefKind::TyAlias(decl_id),
+                )?;
+                self.sema.name_res.decl_defs.insert(decl_id, def_id);
+            }
+
+            ast::DeclKind::Struct(decl) => {
+                let def_id = self.add_def(
+                    outer_scope_id,
+                    Ns::Ty,
+                    decl.ty_name.ty_name.to_string(),
+                    decl.ty_name.ty_name.loc.clone(),
+                    DefKind::Struct(decl_id),
+                )?;
+                self.sema.name_res.decl_defs.insert(decl_id, def_id);
+
+                let decl_scope_id = self
+                    .sema
+                    .name_res
+                    .scopes
+                    .insert(Scope::new(Some(outer_scope_id), ScopeKind::Struct(def_id)));
+                self.sema
+                    .name_res
+                    .def_member_scopes
+                    .insert(def_id, decl_scope_id);
+
+                for &member_decl_id in &decl.decls {
+                    result = result
+                        .and(self.process_decl_symbol(DeclCtx::Struct(def_id), member_decl_id));
+                }
+            }
+
+            ast::DeclKind::Enum(decl) => {
+                let def_id = self.add_def(
+                    outer_scope_id,
+                    Ns::Ty,
+                    decl.ty_name.ty_name.to_string(),
+                    decl.ty_name.ty_name.loc.clone(),
+                    DefKind::Enum(decl_id),
+                )?;
+                self.sema.name_res.decl_defs.insert(decl_id, def_id);
+
+                let decl_scope_id = self
+                    .sema
+                    .name_res
+                    .scopes
+                    .insert(Scope::new(Some(outer_scope_id), ScopeKind::Enum(def_id)));
+                self.sema
+                    .name_res
+                    .def_member_scopes
+                    .insert(def_id, decl_scope_id);
+
+                for (idx, variant) in decl.variants.iter().enumerate() {
+                    result = result.and(
+                        self.add_def(
+                            decl_scope_id,
+                            Ns::Var,
+                            variant.name.to_string(),
+                            variant.name.loc.clone(),
+                            DefKind::EnumVariant {
+                                enum_def_id: def_id,
+                                variant_idx: idx,
+                            },
+                        )
+                        .map(drop),
+                    );
+                }
+            }
+
+            ast::DeclKind::Annotation(decl) => {
+                let def_id = self.add_def(
+                    outer_scope_id,
+                    Ns::Annotation,
+                    decl.name.to_string(),
+                    decl.name.loc.clone(),
+                    DefKind::Annotation(decl_id),
+                )?;
+                self.sema.name_res.decl_defs.insert(decl_id, def_id);
+            }
+
+            ast::DeclKind::Action(decl) => {
+                let def_id = self.add_def(
+                    outer_scope_id,
+                    Ns::Action,
+                    decl.name.to_string(),
+                    decl.name.loc.clone(),
+                    DefKind::Action(decl_id),
+                )?;
+                self.sema.name_res.decl_defs.insert(decl_id, def_id);
+            }
+
+            ast::DeclKind::Automaton(decl) => {
+                let def_id = self.add_def(
+                    outer_scope_id,
+                    Ns::Automaton,
+                    decl.name.ty_name.to_string(),
+                    decl.name.ty_name.loc.clone(),
+                    DefKind::Automaton(decl_id),
+                )?;
+                self.sema.name_res.decl_defs.insert(decl_id, def_id);
+
+                let decl_scope_id = self.sema.name_res.scopes.insert(Scope::new(
+                    Some(outer_scope_id),
+                    ScopeKind::Automaton(def_id),
+                ));
+                self.sema
+                    .name_res
+                    .def_member_scopes
+                    .insert(def_id, decl_scope_id);
+
+                for &var_decl_id in &decl.constructor_variables {
+                    result = result.and(self.process_decl_symbol(
+                        DeclCtx::Automaton {
+                            def_id,
+                            is_constructor_var: true,
+                        },
+                        var_decl_id,
+                    ))
+                }
+
+                for &member_decl_id in &decl.decls {
+                    result = result.and(self.process_decl_symbol(
+                        DeclCtx::Automaton {
+                            def_id,
+                            is_constructor_var: false,
+                        },
+                        member_decl_id,
+                    ));
+                }
+            }
+
+            ast::DeclKind::Function(decl) => {
+                let def_id = self.add_def(
+                    outer_scope_id,
+                    Ns::Function,
+                    decl.name.to_string(),
+                    decl.name.loc.clone(),
+                    DefKind::Function(decl_id),
+                )?;
+                self.sema.name_res.decl_defs.insert(decl_id, def_id);
+            }
+
+            ast::DeclKind::Variable(decl) => {
+                let kind = match ctx {
+                    DeclCtx::Global(_) => VariableKind::Global,
+                    DeclCtx::Struct(def_id) => VariableKind::Field { of: def_id },
+
+                    DeclCtx::Automaton {
+                        def_id,
+                        is_constructor_var: true,
+                    } => VariableKind::ConstructorVar { of: def_id },
+
+                    DeclCtx::Automaton {
+                        def_id,
+                        is_constructor_var: false,
+                    } => VariableKind::Field { of: def_id },
+                };
+
+                let def_id = self.add_def(
+                    outer_scope_id,
+                    Ns::Var,
+                    decl.name.to_string(),
+                    decl.name.loc.clone(),
+                    DefKind::Variable(Variable { decl_id, kind }),
+                )?;
+                self.sema.name_res.decl_defs.insert(decl_id, def_id);
+            }
+
+            ast::DeclKind::State(decl) => {
+                let def_id = self.add_def(
+                    outer_scope_id,
+                    Ns::State,
+                    decl.name.to_string(),
+                    decl.name.loc.clone(),
+                    DefKind::State(decl_id)
+                )?;
+                self.sema.name_res.decl_defs.insert(decl_id, def_id);
+            }
+
+            ast::DeclKind::Shift(decl) => todo!(),
+            ast::DeclKind::Constructor(decl) => todo!(),
+            ast::DeclKind::Destructor(decl) => todo!(),
+            ast::DeclKind::Proc(decl) => todo!(),
+        }
+
+        result
+    }
+}
+
+// Phase 2: populate import scopes with imported entities while checking for conflicts.
+impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
+    fn add_imports(&mut self) -> Result {
+        todo!()
+    }
+}
+
+// Phase 3: walk function bodies and add local scopes.
+impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn resolve_defs(&mut self) -> Result {
         todo!()
     }

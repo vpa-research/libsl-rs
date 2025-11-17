@@ -903,6 +903,9 @@ impl WithLibSl for QualifiedTyName {}
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct FullName {
+    /// The name's location in the source text.
+    pub loc: Loc,
+
     /// A list of the name's components.
     ///
     /// Each component is a single identifier in the period-separated sequence.

@@ -1597,13 +1597,14 @@ impl<'a> AstConstructor<'a> {
     }
 
     fn process_full_name(&mut self, ctx: &FullNameContextAll<'_>) -> ast::FullName {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
         let components = ctx
             .components
             .iter()
             .map(|ctx| self.process_name(ctx))
             .collect();
 
-        ast::FullName { components }
+        ast::FullName { loc, components }
     }
 
     fn process_name(&mut self, ctx: &IdentContextAll<'_>) -> ast::Name {

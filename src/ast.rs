@@ -670,6 +670,10 @@ pub struct DeclConstructor {
     #[no_walk]
     pub name: Option<Name>,
 
+    /// The location of the `constructor` keyword (to refer succinctly to if `name` is `None`).
+    #[no_walk]
+    pub kw_loc: Loc,
+
     /// A list of the constructor's parameters.
     pub params: Vec<FunctionParam>,
 
@@ -697,6 +701,10 @@ pub struct DeclDestructor {
     /// The destructor's name.
     #[no_walk]
     pub name: Option<Name>,
+
+    /// The location of the `destructor` keyword (to refer succinctly to if `name` is `None`).
+    #[no_walk]
+    pub kw_loc: Loc,
 
     /// A list of the destructor's parameters.
     pub params: Vec<FunctionParam>,

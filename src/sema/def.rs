@@ -50,7 +50,7 @@ pub enum DefKind {
 
     Automaton(DeclId),
 
-    Function(DeclId),
+    Function(Function),
 
     Variable(Variable),
 
@@ -75,4 +75,19 @@ pub enum VariableKind {
     Local,
     Field { of: DefId },
     ConstructorVar { of: DefId },
+}
+
+#[derive(Debug, Clone)]
+pub struct Function {
+    pub decl_id: DeclId,
+    pub kind: FunctionKind,
+    pub is_method: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FunctionKind {
+    Fun { of: Option<DefId> },
+    Proc { of: Option<DefId> },
+    Constructor { of: DefId },
+    Destructor { of: DefId },
 }

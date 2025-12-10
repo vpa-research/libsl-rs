@@ -30,16 +30,16 @@ use crate::grammar::parser::{
     AutomatonDefDeclProcContextAttrs, AutomatonDefDeclShiftContextAttrs,
     AutomatonDefDeclStateContextAttrs, AutomatonDefDeclVariableContextAttrs, BitShiftOpContextAll,
     BlockContextAll, BlockLoneStmtContextAttrs, BlockPredicateContextAll, CancelStmtContextAll,
-    ConstructorArgContextAll, ConstructorDeclContextAll, ConstructorVariableContextAll,
-    ContractAssignsContextAttrs, ContractContextAll, ContractEnsuresContextAttrs,
-    ContractPredicateBlockContextAttrs, ContractPredicateContextAll,
+    ConstructorArgContextAll, ConstructorDeclContextAll, ConstructorDeclContextAttrs,
+    ConstructorVariableContextAll, ContractAssignsContextAttrs, ContractContextAll,
+    ContractEnsuresContextAttrs, ContractPredicateBlockContextAttrs, ContractPredicateContextAll,
     ContractPredicateExprContextAttrs, ContractPredicateIfContextAttrs,
-    ContractRequiresContextAttrs, DestructorDeclContextAll, EnsuresContractContextAll,
-    EnumDeclContextAll, EnumDeclVariantContextAll, EnumSemanticTypeValueContextAll,
-    ExprAccessContext, ExprAccessContextAttrs, ExprActionCallContextAttrs, ExprAdditiveContext,
-    ExprAndContext, ExprArrayLitContextAttrs, ExprBitAndContext, ExprBitOrContext,
-    ExprBitXorContext, ExprCastContext, ExprContextAll, ExprHasConceptContext,
-    ExprInstantiationContextAttrs, ExprMultiplicativeContext, ExprOrContext,
+    ContractRequiresContextAttrs, DestructorDeclContextAll, DestructorDeclContextAttrs,
+    EnsuresContractContextAll, EnumDeclContextAll, EnumDeclVariantContextAll,
+    EnumSemanticTypeValueContextAll, ExprAccessContext, ExprAccessContextAttrs,
+    ExprActionCallContextAttrs, ExprAdditiveContext, ExprAndContext, ExprArrayLitContextAttrs,
+    ExprBitAndContext, ExprBitOrContext, ExprBitXorContext, ExprCastContext, ExprContextAll,
+    ExprHasConceptContext, ExprInstantiationContextAttrs, ExprMultiplicativeContext, ExprOrContext,
     ExprPredicateBlockContextAttrs, ExprPredicateContextAll, ExprPredicateExprContextAttrs,
     ExprPrevContext, ExprPrimitiveLitContext, ExprPrimitiveLitContextAttrs,
     ExprProcCallContextAttrs, ExprRelationalContext, ExprSetLitContextAttrs, ExprShiftContext,
@@ -1178,6 +1178,8 @@ impl<'a> AstConstructor<'a> {
     fn process_constructor_decl(&mut self, ctx: &ConstructorDeclContextAll<'_>) -> Result<DeclId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
         let annotations = self.process_annotations(&ctx.annotations)?;
+        let kw = ctx.CONSTRUCTOR().unwrap();
+        let kw_loc = self.get_loc(&kw.start(), &kw.stop());
         let is_method = ctx.method.is_some();
         let name = ctx.name.as_ref().map(|ctx| self.process_name(ctx));
 
@@ -1208,6 +1210,7 @@ impl<'a> AstConstructor<'a> {
                 annotations,
                 is_method,
                 name,
+                kw_loc,
                 params,
                 ret_ty_expr,
                 body,
@@ -1219,6 +1222,8 @@ impl<'a> AstConstructor<'a> {
     fn process_destructor_decl(&mut self, ctx: &DestructorDeclContextAll<'_>) -> Result<DeclId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
         let annotations = self.process_annotations(&ctx.annotations)?;
+        let kw = ctx.DESTRUCTOR().unwrap();
+        let kw_loc = self.get_loc(&kw.start(), &kw.stop());
         let is_method = ctx.method.is_some();
         let name = ctx.name.as_ref().map(|ctx| self.process_name(ctx));
 
@@ -1249,6 +1254,7 @@ impl<'a> AstConstructor<'a> {
                 annotations,
                 is_method,
                 name,
+                kw_loc,
                 params,
                 ret_ty_expr,
                 body,

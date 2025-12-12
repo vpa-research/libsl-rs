@@ -1,5 +1,7 @@
 //! Entity definitions.
 
+use std::cell::Cell;
+
 use slotmap::new_key_type;
 
 use crate::DeclId;
@@ -60,7 +62,26 @@ pub enum DefKind {
 #[derive(Debug, Clone)]
 pub struct Import {
     pub import_decl_id: DeclId,
-    pub imported: DefId,
+    pub imports: DefId,
+    pub(super) resolution_cache: Cell<DefId>,
+}
+
+impl Import {
+    pub fn new(import_decl_id: DeclId, imports: DefId) -> Self {
+        Self {
+            import_decl_id,
+            imports,
+            resolution_cache: Cell::new(imports),
+        }
+    }
+
+    pub fn new_resolved(import_decl_id: DeclId, imports: DefId, resolved: DefId) -> Self {
+        Self {
+            import_decl_id,
+            imports,
+            resolution_cache: Cell::new(resolved),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

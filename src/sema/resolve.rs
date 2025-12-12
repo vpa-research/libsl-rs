@@ -6,7 +6,9 @@ use slotmap::{SecondaryMap, SlotMap, SparseSecondaryMap, new_key_type};
 
 use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
-use crate::sema::def::{Def, DefId, DefKind, Function, FunctionKind, Variable, VariableKind};
+use crate::sema::def::{
+    Def, DefId, DefKind, Function, FunctionKind, Import, Variable, VariableKind,
+};
 use crate::sema::{Result, Sema};
 use crate::{DeclId, FileId, ast};
 
@@ -133,6 +135,31 @@ pub struct NameRes {
 
     /// Definitions in the prelude.
     pub prelude_defs: PreludeDefs,
+}
+
+impl NameRes {
+    /// If `def_id` is an [import entity][Import], finds the non-import entity it (transitively)
+    /// points to. Otherwise returns `def_id`.
+    ///
+    /// Looks entity definitions up in `defs`. See [`resolve_import`][NameRes::resolve_import] that
+    /// supplies [`NameRes::defs`] at the cost of possible borrowing issues.
+    pub fn resolve_import_in(defs: &SlotMap<DefId, Def>, mut def_id: DefId) -> DefId {
+        while let DefKind::Import(import1) = &defs[def_id].kind {
+            def_id = import1.resolution_cache.get();
+
+            // halve paths.
+            if let DefKind::Import(import2) = &defs[def_id].kind {
+                def_id = import2.resolution_cache.get();
+                import1.resolution_cache.set(def_id);
+            }
+        }
+
+        def_id
+    }
+
+    pub fn resolve_import(&self, def_id: DefId) -> DefId {
+        Self::resolve_import_in(&self.defs, def_id)
+    }
 }
 
 impl Sema<'_> {
@@ -635,7 +662,97 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 // Phase 2: populate import scopes with imported entities while checking for conflicts.
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn add_imports(&mut self) -> Result {
-        todo!()
+        let mut result = Ok(());
+
+        for (file_id, file) in &self.sema.libsl.files {
+            let file_scope_id = self.sema.name_res.file_scopes[file_id];
+
+            let ScopeKind::File(FileScope {
+                import_scope: import_scope_id,
+                ..
+            }) = self.sema.name_res.scopes[file_scope_id].kind
+            else {
+                unreachable!()
+            };
+
+            for &import_decl_id in &file.decls {
+                if !matches!(
+                    self.sema.libsl.decls[import_decl_id].kind,
+                    ast::DeclKind::Import(_)
+                ) {
+                    continue;
+                }
+
+                let import_loc = self.sema.libsl.decls[import_decl_id].loc.clone();
+                let imported_file_id = self.sema.imports[import_decl_id];
+                let imported_scope_id = self.sema.name_res.file_scopes[imported_file_id];
+
+                let [import_scope, &mut ref imported_scope] = self
+                    .sema
+                    .name_res
+                    .scopes
+                    .get_disjoint_mut([import_scope_id, imported_scope_id])
+                    .unwrap();
+
+                for (key @ &(_, ref name), &def_id) in &imported_scope.defs {
+                    let resolved_def_id =
+                        NameRes::resolve_import_in(&self.sema.name_res.defs, def_id);
+
+                    if let Some(&prev_def_id) = import_scope.defs.get(key) {
+                        let DefKind::Import(_) = &self.sema.name_res.defs[prev_def_id].kind else {
+                            panic!("a non-import def found in an import scope");
+                        };
+
+                        let resolved_prev_def_id =
+                            NameRes::resolve_import_in(&self.sema.name_res.defs, prev_def_id);
+
+                        // allow importing the same entity twice by doing nothing.
+                        if resolved_prev_def_id != resolved_def_id {
+                            let prev_import_loc = self.sema.name_res.defs[prev_def_id].loc.clone();
+                            let prev_loc = self.sema.name_res.defs[resolved_def_id].loc.clone();
+                            let loc = self.sema.name_res.defs[resolved_prev_def_id].loc.clone();
+
+                            result = Err(());
+                            self.diag.emit(
+                                Diag::err()
+                                    .at(import_loc.clone())
+                                    .with_msg(format!("name `{name}` is already imported"))
+                                    .with_label(
+                                        Label::primary(import_loc.clone())
+                                            .with_msg("imported here"),
+                                    )
+                                    .with_label(
+                                        Label::secondary(prev_import_loc)
+                                            .with_msg("previously imported here"),
+                                    )
+                                    .with_label(
+                                        Label::secondary(prev_loc)
+                                            .with_msg("this entity cannot be imported"),
+                                    )
+                                    .with_label(Label::secondary(loc).with_msg(
+                                        "this entity was imported previously under the same name",
+                                    ))
+                                    .build(),
+                            );
+                        }
+                    } else {
+                        let new_def_id = self.sema.name_res.defs.insert_with_key(|id| Def {
+                            id,
+                            loc: import_loc.clone(),
+                            kind: DefKind::Import(Import::new_resolved(
+                                import_decl_id,
+                                def_id,
+                                resolved_def_id,
+                            )),
+                        });
+
+                        import_scope.defs.insert(key.clone(), new_def_id);
+                    }
+                }
+            }
+        }
+
+        result
     }
 }
 

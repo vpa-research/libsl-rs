@@ -4,4 +4,5 @@ library expr_in;
 
 fun test() {
     x in y;
+    x !in y;
 }

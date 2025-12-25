@@ -1689,6 +1689,11 @@ pub struct ExprHasConcept {
     /// An entity this expression tests for.
     pub scrutinee: AccessId,
 
+    /// Whether to invert the expectation (testing that the scrutinee does *not* have the concept).
+    #[no_walk]
+    #[cfg_attr(feature = "serde", no_wrap)]
+    pub negate: bool,
+
     /// A concept the scrutinee is tested for.
     #[no_walk]
     pub concept: Name,
@@ -1715,6 +1720,11 @@ impl WithLibSl for ExprCast {}
 pub struct ExprTyCompare {
     /// The expression whose type is tested for.
     pub expr: ExprId,
+
+    /// Whether to invert the expectation (testing that the expression does *not* have the type).
+    #[no_walk]
+    #[cfg_attr(feature = "serde", no_wrap)]
+    pub negate: bool,
 
     /// An expected expression type.
     pub ty_expr: TyExprId,
@@ -1834,6 +1844,9 @@ pub enum BinOp {
 
     /// Member of.
     In,
+
+    /// Not member of.
+    NotIn,
 
     /// Logical or.
     Or,

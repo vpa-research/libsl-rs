@@ -2184,8 +2184,9 @@ impl Display for ExprHasConceptDisplay<'_> {
         display_parens(f, self.e.precedence(), self.prec, |f| {
             write!(
                 f,
-                "{lhs} has {concept}",
+                "{lhs} {negate}has {concept}",
                 lhs = self.libsl.accesses[self.e.scrutinee].display(self.libsl),
+                negate = if self.e.negate { "!" } else { "" },
                 concept = self.e.concept,
             )
         })
@@ -2220,8 +2221,9 @@ impl Display for ExprTyCompareDisplay<'_> {
         display_parens(f, self.e.precedence(), self.prec, |f| {
             write!(
                 f,
-                "{lhs} is {rhs}",
+                "{lhs} {negate}is {rhs}",
                 lhs = self.libsl.exprs[self.e.expr].display_prec(self.libsl, self.e.precedence()),
+                negate = if self.e.negate { "!" } else { "" },
                 rhs = self.libsl.ty_exprs[self.e.ty_expr].display(self.libsl),
             )
         })
@@ -2279,6 +2281,7 @@ make_display_struct!(
         | ast::BinOp::Ge
         | ast::BinOp::Eq
         | ast::BinOp::Ne
+        | ast::BinOp::NotIn
         | ast::BinOp::In => ExprPrec::Cmp,
 
         ast::BinOp::Or => ExprPrec::Or,
@@ -2312,6 +2315,7 @@ impl Display for ExprBinaryDisplay<'_> {
             | ast::BinOp::Ge
             | ast::BinOp::Eq
             | ast::BinOp::Ne
+            | ast::BinOp::NotIn
             | ast::BinOp::In => {
                 write!(
                     f,
@@ -2381,6 +2385,7 @@ impl Display for ast::BinOp {
                 ast::BinOp::Ge => ">=",
                 ast::BinOp::Eq => "==",
                 ast::BinOp::Ne => "!=",
+                ast::BinOp::NotIn => "!in",
                 ast::BinOp::In => "in",
                 ast::BinOp::Or => "||",
                 ast::BinOp::And => "&&",

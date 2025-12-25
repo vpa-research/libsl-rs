@@ -1,0 +1,394 @@
+---
+source: tests/parser/main.rs
+description: "// Input file:\nlibsl \"1.0.0\";\n\nlibrary expr_negated_infix;\n\nvar a: bool = a !is bool;\nvar b: bool = b !has Concept;\nvar c: bool = c !in c;\n"
+input_file: tests/parser/test-data/expr-negated-infix.libsl
+---
+Ok(File(
+  loc: Span(
+    start: 0,
+    len: 123,
+    file: "tests/parser/test-data/expr-negated-infix.libsl",
+    line: Some(1),
+    col: None,
+  ),
+  header: Some(Header(
+    loc: Span(
+      start: 0,
+      len: 42,
+      file: "tests/parser/test-data/expr-negated-infix.libsl",
+      line: Some(1),
+      col: None,
+    ),
+    libsl_version: "1.0.0",
+    library_name: "expr_negated_infix",
+    version: None,
+    language: None,
+    url: None,
+  )),
+  decls: [
+    Decl(
+      loc: Span(
+        start: 45,
+        len: 24,
+        file: "tests/parser/test-data/expr-negated-infix.libsl",
+        line: Some(5),
+        col: None,
+      ),
+      kind: Variable(DeclVariable(
+        annotations: [],
+        kind: Var,
+        name: Name(
+          loc: Span(
+            start: 49,
+            len: 0,
+            file: "tests/parser/test-data/expr-negated-infix.libsl",
+            line: Some(5),
+            col: Some(4),
+          ),
+          name: "a",
+        ),
+        ty_expr: TyExpr(
+          loc: Span(
+            start: 52,
+            len: 3,
+            file: "tests/parser/test-data/expr-negated-infix.libsl",
+            line: Some(5),
+            col: Some(7),
+          ),
+          kind: Name(TyExprName(
+            ty_name: FullName(
+              loc: Span(
+                start: 52,
+                len: 3,
+                file: "tests/parser/test-data/expr-negated-infix.libsl",
+                line: Some(5),
+                col: Some(7),
+              ),
+              components: [
+                Name(
+                  loc: Span(
+                    start: 52,
+                    len: 3,
+                    file: "tests/parser/test-data/expr-negated-infix.libsl",
+                    line: Some(5),
+                    col: Some(7),
+                  ),
+                  name: "bool",
+                ),
+              ],
+            ),
+            generics: None,
+          )),
+        ),
+        init: Some(Expr(
+          loc: Span(
+            start: 59,
+            len: 9,
+            file: "tests/parser/test-data/expr-negated-infix.libsl",
+            line: Some(5),
+            col: Some(14),
+          ),
+          kind: TyCompare(ExprTyCompare(
+            expr: Expr(
+              loc: Span(
+                start: 59,
+                len: 0,
+                file: "tests/parser/test-data/expr-negated-infix.libsl",
+                line: Some(5),
+                col: Some(14),
+              ),
+              kind: Access(ExprAccess(
+                access: QualifiedAccess(
+                  loc: Span(
+                    start: 59,
+                    len: 0,
+                    file: "tests/parser/test-data/expr-negated-infix.libsl",
+                    line: Some(5),
+                    col: Some(14),
+                  ),
+                  kind: Name(AccessName(
+                    name: Name(
+                      loc: Span(
+                        start: 59,
+                        len: 0,
+                        file: "tests/parser/test-data/expr-negated-infix.libsl",
+                        line: Some(5),
+                        col: Some(14),
+                      ),
+                      name: "a",
+                    ),
+                  )),
+                ),
+              )),
+            ),
+            negate: true,
+            ty_expr: TyExpr(
+              loc: Span(
+                start: 65,
+                len: 3,
+                file: "tests/parser/test-data/expr-negated-infix.libsl",
+                line: Some(5),
+                col: Some(20),
+              ),
+              kind: Name(TyExprName(
+                ty_name: FullName(
+                  loc: Span(
+                    start: 65,
+                    len: 3,
+                    file: "tests/parser/test-data/expr-negated-infix.libsl",
+                    line: Some(5),
+                    col: Some(20),
+                  ),
+                  components: [
+                    Name(
+                      loc: Span(
+                        start: 65,
+                        len: 3,
+                        file: "tests/parser/test-data/expr-negated-infix.libsl",
+                        line: Some(5),
+                        col: Some(20),
+                      ),
+                      name: "bool",
+                    ),
+                  ],
+                ),
+                generics: None,
+              )),
+            ),
+          )),
+        )),
+      )),
+    ),
+    Decl(
+      loc: Span(
+        start: 71,
+        len: 28,
+        file: "tests/parser/test-data/expr-negated-infix.libsl",
+        line: Some(6),
+        col: None,
+      ),
+      kind: Variable(DeclVariable(
+        annotations: [],
+        kind: Var,
+        name: Name(
+          loc: Span(
+            start: 75,
+            len: 0,
+            file: "tests/parser/test-data/expr-negated-infix.libsl",
+            line: Some(6),
+            col: Some(4),
+          ),
+          name: "b",
+        ),
+        ty_expr: TyExpr(
+          loc: Span(
+            start: 78,
+            len: 3,
+            file: "tests/parser/test-data/expr-negated-infix.libsl",
+            line: Some(6),
+            col: Some(7),
+          ),
+          kind: Name(TyExprName(
+            ty_name: FullName(
+              loc: Span(
+                start: 78,
+                len: 3,
+                file: "tests/parser/test-data/expr-negated-infix.libsl",
+                line: Some(6),
+                col: Some(7),
+              ),
+              components: [
+                Name(
+                  loc: Span(
+                    start: 78,
+                    len: 3,
+                    file: "tests/parser/test-data/expr-negated-infix.libsl",
+                    line: Some(6),
+                    col: Some(7),
+                  ),
+                  name: "bool",
+                ),
+              ],
+            ),
+            generics: None,
+          )),
+        ),
+        init: Some(Expr(
+          loc: Span(
+            start: 85,
+            len: 13,
+            file: "tests/parser/test-data/expr-negated-infix.libsl",
+            line: Some(6),
+            col: Some(14),
+          ),
+          kind: HasConcept(ExprHasConcept(
+            scrutinee: QualifiedAccess(
+              loc: Span(
+                start: 85,
+                len: 0,
+                file: "tests/parser/test-data/expr-negated-infix.libsl",
+                line: Some(6),
+                col: Some(14),
+              ),
+              kind: Name(AccessName(
+                name: Name(
+                  loc: Span(
+                    start: 85,
+                    len: 0,
+                    file: "tests/parser/test-data/expr-negated-infix.libsl",
+                    line: Some(6),
+                    col: Some(14),
+                  ),
+                  name: "b",
+                ),
+              )),
+            ),
+            negate: true,
+            concept: Name(
+              loc: Span(
+                start: 92,
+                len: 6,
+                file: "tests/parser/test-data/expr-negated-infix.libsl",
+                line: Some(6),
+                col: Some(21),
+              ),
+              name: "Concept",
+            ),
+          )),
+        )),
+      )),
+    ),
+    Decl(
+      loc: Span(
+        start: 101,
+        len: 21,
+        file: "tests/parser/test-data/expr-negated-infix.libsl",
+        line: Some(7),
+        col: None,
+      ),
+      kind: Variable(DeclVariable(
+        annotations: [],
+        kind: Var,
+        name: Name(
+          loc: Span(
+            start: 105,
+            len: 0,
+            file: "tests/parser/test-data/expr-negated-infix.libsl",
+            line: Some(7),
+            col: Some(4),
+          ),
+          name: "c",
+        ),
+        ty_expr: TyExpr(
+          loc: Span(
+            start: 108,
+            len: 3,
+            file: "tests/parser/test-data/expr-negated-infix.libsl",
+            line: Some(7),
+            col: Some(7),
+          ),
+          kind: Name(TyExprName(
+            ty_name: FullName(
+              loc: Span(
+                start: 108,
+                len: 3,
+                file: "tests/parser/test-data/expr-negated-infix.libsl",
+                line: Some(7),
+                col: Some(7),
+              ),
+              components: [
+                Name(
+                  loc: Span(
+                    start: 108,
+                    len: 3,
+                    file: "tests/parser/test-data/expr-negated-infix.libsl",
+                    line: Some(7),
+                    col: Some(7),
+                  ),
+                  name: "bool",
+                ),
+              ],
+            ),
+            generics: None,
+          )),
+        ),
+        init: Some(Expr(
+          loc: Span(
+            start: 115,
+            len: 6,
+            file: "tests/parser/test-data/expr-negated-infix.libsl",
+            line: Some(7),
+            col: Some(14),
+          ),
+          kind: Binary(ExprBinary(
+            lhs: Expr(
+              loc: Span(
+                start: 115,
+                len: 0,
+                file: "tests/parser/test-data/expr-negated-infix.libsl",
+                line: Some(7),
+                col: Some(14),
+              ),
+              kind: Access(ExprAccess(
+                access: QualifiedAccess(
+                  loc: Span(
+                    start: 115,
+                    len: 0,
+                    file: "tests/parser/test-data/expr-negated-infix.libsl",
+                    line: Some(7),
+                    col: Some(14),
+                  ),
+                  kind: Name(AccessName(
+                    name: Name(
+                      loc: Span(
+                        start: 115,
+                        len: 0,
+                        file: "tests/parser/test-data/expr-negated-infix.libsl",
+                        line: Some(7),
+                        col: Some(14),
+                      ),
+                      name: "c",
+                    ),
+                  )),
+                ),
+              )),
+            ),
+            op: NotIn,
+            rhs: Expr(
+              loc: Span(
+                start: 121,
+                len: 0,
+                file: "tests/parser/test-data/expr-negated-infix.libsl",
+                line: Some(7),
+                col: Some(20),
+              ),
+              kind: Access(ExprAccess(
+                access: QualifiedAccess(
+                  loc: Span(
+                    start: 121,
+                    len: 0,
+                    file: "tests/parser/test-data/expr-negated-infix.libsl",
+                    line: Some(7),
+                    col: Some(20),
+                  ),
+                  kind: Name(AccessName(
+                    name: Name(
+                      loc: Span(
+                        start: 121,
+                        len: 0,
+                        file: "tests/parser/test-data/expr-negated-infix.libsl",
+                        line: Some(7),
+                        col: Some(20),
+                      ),
+                      name: "c",
+                    ),
+                  )),
+                ),
+              )),
+            ),
+          )),
+        )),
+      )),
+    ),
+  ],
+))

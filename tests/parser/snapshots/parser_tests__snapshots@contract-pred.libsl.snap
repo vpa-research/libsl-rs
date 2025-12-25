@@ -1081,6 +1081,13 @@ Ok(File(
                             ),
                             kind: Name(TyExprName(
                               ty_name: FullName(
+                                loc: Span(
+                                  start: 724,
+                                  len: 2,
+                                  file: "tests/parser/test-data/contract-pred.libsl",
+                                  line: Some(43),
+                                  col: Some(15),
+                                ),
                                 components: [
                                   Name(
                                     loc: Span(

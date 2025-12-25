@@ -1,12 +1,12 @@
 ---
 source: tests/parser/main.rs
-description: "// Input file:\nlibsl \"2.0.0\";\n\nlibrary expr_in;\n\nfun test() {\n    x in y;\n}\n"
+description: "// Input file:\nlibsl \"2.0.0\";\n\nlibrary expr_in;\n\nfun test() {\n    x in y;\n    x !in y;\n}\n"
 input_file: tests/parser/test-data/expr-in.libsl
 ---
 Ok(File(
   loc: Span(
     start: 0,
-    len: 60,
+    len: 73,
     file: "tests/parser/test-data/expr-in.libsl",
     line: Some(1),
     col: None,
@@ -29,7 +29,7 @@ Ok(File(
     Decl(
       loc: Span(
         start: 34,
-        len: 25,
+        len: 38,
         file: "tests/parser/test-data/expr-in.libsl",
         line: Some(5),
         col: None,
@@ -131,6 +131,91 @@ Ok(File(
                               file: "tests/parser/test-data/expr-in.libsl",
                               line: Some(6),
                               col: Some(9),
+                            ),
+                            name: "y",
+                          ),
+                        )),
+                      ),
+                    )),
+                  ),
+                )),
+              )),
+            ),
+            Stmt(
+              loc: Span(
+                start: 63,
+                len: 7,
+                file: "tests/parser/test-data/expr-in.libsl",
+                line: Some(7),
+                col: Some(4),
+              ),
+              kind: Expr(Expr(
+                loc: Span(
+                  start: 63,
+                  len: 6,
+                  file: "tests/parser/test-data/expr-in.libsl",
+                  line: Some(7),
+                  col: Some(4),
+                ),
+                kind: Binary(ExprBinary(
+                  lhs: Expr(
+                    loc: Span(
+                      start: 63,
+                      len: 0,
+                      file: "tests/parser/test-data/expr-in.libsl",
+                      line: Some(7),
+                      col: Some(4),
+                    ),
+                    kind: Access(ExprAccess(
+                      access: QualifiedAccess(
+                        loc: Span(
+                          start: 63,
+                          len: 0,
+                          file: "tests/parser/test-data/expr-in.libsl",
+                          line: Some(7),
+                          col: Some(4),
+                        ),
+                        kind: Name(AccessName(
+                          name: Name(
+                            loc: Span(
+                              start: 63,
+                              len: 0,
+                              file: "tests/parser/test-data/expr-in.libsl",
+                              line: Some(7),
+                              col: Some(4),
+                            ),
+                            name: "x",
+                          ),
+                        )),
+                      ),
+                    )),
+                  ),
+                  op: NotIn,
+                  rhs: Expr(
+                    loc: Span(
+                      start: 69,
+                      len: 0,
+                      file: "tests/parser/test-data/expr-in.libsl",
+                      line: Some(7),
+                      col: Some(10),
+                    ),
+                    kind: Access(ExprAccess(
+                      access: QualifiedAccess(
+                        loc: Span(
+                          start: 69,
+                          len: 0,
+                          file: "tests/parser/test-data/expr-in.libsl",
+                          line: Some(7),
+                          col: Some(10),
+                        ),
+                        kind: Name(AccessName(
+                          name: Name(
+                            loc: Span(
+                              start: 69,
+                              len: 0,
+                              file: "tests/parser/test-data/expr-in.libsl",
+                              line: Some(7),
+                              col: Some(10),
                             ),
                             name: "y",
                           ),

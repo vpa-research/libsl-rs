@@ -38,6 +38,13 @@ Ok(File(
         annotations: [],
         ty_name: QualifiedTyName(
           ty_name: FullName(
+            loc: Span(
+              start: 62,
+              len: 2,
+              file: "tests/parser/test-data/ty-arg-variance-specifier.libsl",
+              line: Some(5),
+              col: Some(10),
+            ),
             components: [
               Name(
                 loc: Span(
@@ -63,6 +70,13 @@ Ok(File(
           ),
           kind: Name(TyExprName(
             ty_name: FullName(
+              loc: Span(
+                start: 68,
+                len: 19,
+                file: "tests/parser/test-data/ty-arg-variance-specifier.libsl",
+                line: Some(5),
+                col: Some(16),
+              ),
               components: [
                 Name(
                   loc: Span(
@@ -87,6 +101,13 @@ Ok(File(
                 ),
                 kind: Name(TyExprName(
                   ty_name: FullName(
+                    loc: Span(
+                      start: 92,
+                      len: 6,
+                      file: "tests/parser/test-data/ty-arg-variance-specifier.libsl",
+                      line: Some(5),
+                      col: Some(40),
+                    ),
                     components: [
                       Name(
                         loc: Span(

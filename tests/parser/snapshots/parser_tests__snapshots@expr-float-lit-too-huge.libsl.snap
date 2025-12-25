@@ -57,6 +57,13 @@ Ok(File(
           ),
           kind: Name(TyExprName(
             ty_name: FullName(
+              loc: Span(
+                start: 59,
+                len: 5,
+                file: "tests/parser/test-data/expr-float-lit-too-huge.libsl",
+                line: Some(5),
+                col: Some(9),
+              ),
               components: [
                 Name(
                   loc: Span(

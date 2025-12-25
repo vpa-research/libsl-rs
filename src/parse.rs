@@ -2481,7 +2481,12 @@ impl<'a> AstConstructor<'a> {
         Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
             id,
             loc,
-            kind: ast::ExprHasConcept { scrutinee, concept }.into(),
+            kind: ast::ExprHasConcept {
+                scrutinee,
+                negate: ctx.not.is_some(),
+                concept,
+            }
+            .into(),
         }))
     }
 
@@ -2496,7 +2501,12 @@ impl<'a> AstConstructor<'a> {
         Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
             id,
             loc,
-            kind: ast::ExprTyCompare { expr, ty_expr }.into(),
+            kind: ast::ExprTyCompare {
+                expr,
+                negate: ctx.not.is_some(),
+                ty_expr,
+            }
+            .into(),
         }))
     }
 
@@ -2629,7 +2639,6 @@ impl<'a> AstConstructor<'a> {
     fn process_expr_relational(&mut self, ctx: &ExprRelationalContext<'_>) -> Result<ExprId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
         let lhs = self.process_expr(ctx.lhs.as_ref().unwrap())?;
-
         let op = match &**ctx.op.as_ref().unwrap() {
             RelOpContextAll::BinOpLessEqualsContext(_) => ast::BinOp::Le,
             RelOpContextAll::BinOpGreaterEqualsContext(_) => ast::BinOp::Ge,
@@ -2637,6 +2646,7 @@ impl<'a> AstConstructor<'a> {
             RelOpContextAll::BinOpGreaterContext(_) => ast::BinOp::Gt,
             RelOpContextAll::BinOpEqualsContext(_) => ast::BinOp::Eq,
             RelOpContextAll::BinOpNotEqualsContext(_) => ast::BinOp::Ne,
+            RelOpContextAll::BinOpInContext(ctx) if ctx.not.is_some() => ast::BinOp::NotIn,
             RelOpContextAll::BinOpInContext(_) => ast::BinOp::In,
             RelOpContextAll::Error(_) => unreachable!(),
         };

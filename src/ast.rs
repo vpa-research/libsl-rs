@@ -361,7 +361,7 @@ pub struct DeclEnum {
     /// The declared type's name.
     pub ty_name: QualifiedTyName,
 
-    /// Possibles values of the type.
+    /// Possible values of the type.
     #[no_walk]
     pub variants: Vec<EnumVariant>,
 }

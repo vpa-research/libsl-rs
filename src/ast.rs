@@ -546,7 +546,7 @@ impl WithLibSl for DeclFunction {}
 #[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct DeclVariable {
-    /// A list of annotations for this declarations.
+    /// A list of annotations for this declaration.
     pub annotations: Vec<Annotation>,
 
     /// The kind of variable: `var` or `val`.

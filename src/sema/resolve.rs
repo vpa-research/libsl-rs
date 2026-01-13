@@ -7,11 +7,11 @@ use slotmap::{SecondaryMap, SlotMap, SparseSecondaryMap, new_key_type};
 use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
 use crate::sema::def::{
-    Action, Annotation, Automaton, Def, DefId, DefKind, Enum, Function, FunctionKind, Import,
-    SemanticTy, Struct, TyAlias, Variable, VariableKind,
+    Def, DefAction, DefAnnotation, DefAutomaton, DefEnum, DefFunction, DefId, DefImport, DefKind,
+    DefSemanticTy, DefStruct, DefTyAlias, DefVariable, FunctionKind, SemanticTyValue, VariableKind,
 };
 use crate::sema::{Result, Sema};
-use crate::{DeclId, FileId, ast};
+use crate::{DeclId, ExprId, FileId, TyExprId, ast};
 
 new_key_type! {
     pub struct ScopeId;
@@ -201,23 +201,27 @@ enum DeclCtx {
 struct Pass<'ast, 's, D> {
     sema: &'s mut Sema<'ast>,
     diag: &'s mut D,
+    result: Result,
 }
 
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn new(sema: &'s mut Sema<'ast>, diag: &'s mut D) -> Self {
-        Self { sema, diag }
+        Self {
+            sema,
+            diag,
+            result: Ok(()),
+        }
     }
 
     fn run(mut self) -> Result {
         self.init_root_scopes();
         self.add_prelude_defs();
 
-        let mut result = Ok(());
-        result = result.and(self.collect_symbols());
-        result = result.and(self.add_imports());
-        result = result.and(self.resolve_defs());
+        self.collect_symbols();
+        self.add_imports();
+        self.resolve_defs();
 
-        result
+        self.result
     }
 
     fn init_root_scopes(&mut self) {
@@ -291,6 +295,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
                 if let Some((key, &prev_def_id)) = scope.defs.get_key_value(&key) {
                     let prev_def = &self.sema.name_res.defs[prev_def_id];
+                    self.result = Err(());
 
                     self.diag.emit(
                         Diag::err()
@@ -319,20 +324,20 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             }
         }
     }
+
+    fn def_mut(&mut self, def_id: DefId) -> &mut Def {
+        &mut self.sema.name_res.defs[def_id]
+    }
 }
 
 // Phase 1: collect globally available symbols.
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
-    fn collect_symbols(&mut self) -> Result {
-        let mut result = Ok(());
-
+    fn collect_symbols(&mut self) {
         for (file_id, file) in &self.sema.libsl.files {
             for &decl_id in &file.decls {
-                result = result.and(self.process_decl_symbol(DeclCtx::Global(file_id), decl_id));
+                self.process_decl_symbol(DeclCtx::Global(file_id), decl_id);
             }
         }
-
-        result
     }
 
     fn add_member_scope(
@@ -369,7 +374,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         Ok(def_id)
     }
 
-    fn process_decl_symbol(&mut self, ctx: DeclCtx, decl_id: DeclId) -> Result {
+    fn process_decl_symbol(&mut self, ctx: DeclCtx, decl_id: DeclId) {
         let decl = &self.sema.libsl.decls[decl_id];
 
         let (outer_def_id, outer_scope_id) = match ctx {
@@ -380,8 +385,6 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             }
         };
 
-        let mut result = Ok(());
-
         match &decl.kind {
             ast::DeclKind::Dummy => unreachable!(),
 
@@ -389,17 +392,20 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             ast::DeclKind::Include(_) => {}
 
             ast::DeclKind::SemanticTy(decl) => {
-                let def_id = self.add_decl_def(
+                let Ok(def_id) = self.add_decl_def(
                     decl_id,
                     outer_scope_id,
                     Ns::Ty,
                     decl.ty_name.ty_name.to_string(),
                     decl.ty_name.ty_name.loc.clone(),
-                    SemanticTy::new(decl_id).into(),
-                )?;
+                    DefSemanticTy::new(decl_id).into(),
+                ) else {
+                    return;
+                };
 
                 match &decl.kind {
                     ast::SemanticTyKind::Simple => {}
+
                     ast::SemanticTyKind::Enumerated(values) => {
                         let member_scope_id = self.add_member_scope(
                             def_id,
@@ -408,146 +414,155 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         );
 
                         for (idx, value) in values.iter().enumerate() {
-                            result = result.and(
-                                self.add_def(
-                                    member_scope_id,
-                                    Ns::Var,
-                                    value.name.to_string(),
-                                    value.name.loc.clone(),
-                                    DefKind::SemanticTyEnumValue {
-                                        semantic_ty_def_id: def_id,
-                                        variant_idx: idx,
-                                    },
-                                )
-                                .map(drop),
-                            );
+                            let Ok(value_def_id) = self.add_def(
+                                member_scope_id,
+                                Ns::Var,
+                                value.name.to_string(),
+                                value.name.loc.clone(),
+                                DefKind::SemanticTyEnumValue {
+                                    semantic_ty_def_id: def_id,
+                                    variant_idx: idx,
+                                },
+                            ) else {
+                                continue;
+                            };
+
+                            let DefKind::SemanticTy(def) = &mut self.def_mut(def_id).kind else {
+                                unreachable!()
+                            };
+                            def.values.push(SemanticTyValue {
+                                def_id: value_def_id,
+                                name: value.name.to_string(),
+                            });
                         }
                     }
                 }
             }
 
             ast::DeclKind::TyAlias(decl) => {
-                self.add_decl_def(
+                let _ = self.add_decl_def(
                     decl_id,
                     outer_scope_id,
                     Ns::Ty,
                     decl.ty_name.ty_name.to_string(),
                     decl.ty_name.ty_name.loc.clone(),
-                    TyAlias::new(decl_id).into(),
-                )?;
+                    DefTyAlias::new(decl_id).into(),
+                );
             }
 
             ast::DeclKind::Struct(decl) => {
-                let def_id = self.add_decl_def(
+                let Ok(def_id) = self.add_decl_def(
                     decl_id,
                     outer_scope_id,
                     Ns::Ty,
                     decl.ty_name.ty_name.to_string(),
                     decl.ty_name.ty_name.loc.clone(),
-                    Struct::new(decl_id).into(),
-                )?;
+                    DefStruct::new(decl_id).into(),
+                ) else {
+                    return;
+                };
 
                 self.add_member_scope(def_id, outer_scope_id, ScopeKind::Struct(def_id));
 
                 for &member_decl_id in &decl.decls {
-                    result = result
-                        .and(self.process_decl_symbol(DeclCtx::Struct(def_id), member_decl_id));
+                    self.process_decl_symbol(DeclCtx::Struct(def_id), member_decl_id);
                 }
             }
 
             ast::DeclKind::Enum(decl) => {
-                let def_id = self.add_decl_def(
+                let Ok(def_id) = self.add_decl_def(
                     decl_id,
                     outer_scope_id,
                     Ns::Ty,
                     decl.ty_name.ty_name.to_string(),
                     decl.ty_name.ty_name.loc.clone(),
-                    Enum::new(decl_id).into(),
-                )?;
+                    DefEnum::new(decl_id).into(),
+                ) else {
+                    return;
+                };
 
                 let member_scope_id =
                     self.add_member_scope(def_id, outer_scope_id, ScopeKind::Enum(def_id));
 
                 for (idx, variant) in decl.variants.iter().enumerate() {
-                    result = result.and(
-                        self.add_def(
-                            member_scope_id,
-                            Ns::Var,
-                            variant.name.to_string(),
-                            variant.name.loc.clone(),
-                            DefKind::EnumVariant {
-                                enum_def_id: def_id,
-                                variant_idx: idx,
-                            },
-                        )
-                        .map(drop),
+                    let _ = self.add_def(
+                        member_scope_id,
+                        Ns::Var,
+                        variant.name.to_string(),
+                        variant.name.loc.clone(),
+                        DefKind::EnumVariant {
+                            enum_def_id: def_id,
+                            variant_idx: idx,
+                        },
                     );
                 }
             }
 
             ast::DeclKind::Annotation(decl) => {
-                self.add_decl_def(
+                let _ = self.add_decl_def(
                     decl_id,
                     outer_scope_id,
                     Ns::Annotation,
                     decl.name.to_string(),
                     decl.name.loc.clone(),
-                    Annotation::new(decl_id).into(),
-                )?;
+                    DefAnnotation::new(decl_id).into(),
+                );
             }
 
             ast::DeclKind::Action(decl) => {
-                self.add_decl_def(
+                let _ = self.add_decl_def(
                     decl_id,
                     outer_scope_id,
                     Ns::Action,
                     decl.name.to_string(),
                     decl.name.loc.clone(),
-                    Action::new(decl_id).into(),
-                )?;
+                    DefAction::new(decl_id).into(),
+                );
             }
 
             ast::DeclKind::Automaton(decl) => {
-                let def_id = self.add_decl_def(
+                let Ok(def_id) = self.add_decl_def(
                     decl_id,
                     outer_scope_id,
                     Ns::Automaton,
                     decl.name.ty_name.to_string(),
                     decl.name.ty_name.loc.clone(),
-                    Automaton::new(decl_id).into(),
-                )?;
+                    DefAutomaton::new(decl_id).into(),
+                ) else {
+                    return;
+                };
 
                 self.add_member_scope(def_id, outer_scope_id, ScopeKind::Automaton(def_id));
 
                 for &var_decl_id in &decl.constructor_variables {
-                    result = result.and(self.process_decl_symbol(
+                    self.process_decl_symbol(
                         DeclCtx::Automaton {
                             def_id,
                             is_constructor_var: true,
                         },
                         var_decl_id,
-                    ))
+                    );
                 }
 
                 for &member_decl_id in &decl.decls {
-                    result = result.and(self.process_decl_symbol(
+                    self.process_decl_symbol(
                         DeclCtx::Automaton {
                             def_id,
                             is_constructor_var: false,
                         },
                         member_decl_id,
-                    ));
+                    );
                 }
             }
 
             ast::DeclKind::Function(decl) => {
-                self.add_decl_def(
+                let _ = self.add_decl_def(
                     decl_id,
                     outer_scope_id,
                     Ns::Function,
                     decl.name.to_string(),
                     decl.name.loc.clone(),
-                    Function::new(
+                    DefFunction::new(
                         decl_id,
                         FunctionKind::Fun {
                             of: match ctx {
@@ -560,7 +575,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         decl.is_method,
                     )
                     .into(),
-                )?;
+                );
             }
 
             ast::DeclKind::Variable(decl) => {
@@ -579,25 +594,25 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     } => VariableKind::Field { of: def_id },
                 };
 
-                self.add_decl_def(
+                let _ = self.add_decl_def(
                     decl_id,
                     outer_scope_id,
                     Ns::Var,
                     decl.name.to_string(),
                     decl.name.loc.clone(),
-                    Variable::new(decl_id, kind).into(),
-                )?;
+                    DefVariable::new(decl_id, kind).into(),
+                );
             }
 
             ast::DeclKind::State(decl) => {
-                self.add_decl_def(
+                let _ = self.add_decl_def(
                     decl_id,
                     outer_scope_id,
                     Ns::State,
                     decl.name.to_string(),
                     decl.name.loc.clone(),
                     DefKind::State(decl_id),
-                )?;
+                );
             }
 
             ast::DeclKind::Shift(_) => {
@@ -605,7 +620,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             }
 
             ast::DeclKind::Constructor(decl) => {
-                self.add_decl_def(
+                let _ = self.add_decl_def(
                     decl_id,
                     outer_scope_id,
                     Ns::Function,
@@ -617,7 +632,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         .as_ref()
                         .map(|name| name.loc.clone())
                         .unwrap_or_else(|| decl.kw_loc.clone()),
-                    Function::new(
+                    DefFunction::new(
                         decl_id,
                         FunctionKind::Constructor {
                             of: outer_def_id.unwrap(),
@@ -625,11 +640,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         decl.is_method,
                     )
                     .into(),
-                )?;
+                );
             }
 
             ast::DeclKind::Destructor(decl) => {
-                self.add_decl_def(
+                let _ = self.add_decl_def(
                     decl_id,
                     outer_scope_id,
                     Ns::Function,
@@ -641,7 +656,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         .as_ref()
                         .map(|name| name.loc.clone())
                         .unwrap_or_else(|| decl.kw_loc.clone()),
-                    Function::new(
+                    DefFunction::new(
                         decl_id,
                         FunctionKind::Destructor {
                             of: outer_def_id.unwrap(),
@@ -649,17 +664,17 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         decl.is_method,
                     )
                     .into(),
-                )?;
+                );
             }
 
             ast::DeclKind::Proc(decl) => {
-                self.add_decl_def(
+                let _ = self.add_decl_def(
                     decl_id,
                     outer_scope_id,
                     Ns::Function,
                     decl.name.to_string(),
                     decl.name.loc.clone(),
-                    Function::new(
+                    DefFunction::new(
                         decl_id,
                         FunctionKind::Proc {
                             of: match ctx {
@@ -672,19 +687,15 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         decl.is_method,
                     )
                     .into(),
-                )?;
+                );
             }
         }
-
-        result
     }
 }
 
 // Phase 2: populate import scopes with imported entities while checking for conflicts.
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
-    fn add_imports(&mut self) -> Result {
-        let mut result = Ok(());
-
+    fn add_imports(&mut self) {
         for (file_id, file) in &self.sema.libsl.files {
             let file_scope_id = self.sema.name_res.file_scopes[file_id];
 
@@ -733,7 +744,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                             let prev_loc = self.sema.name_res.defs[resolved_def_id].loc.clone();
                             let loc = self.sema.name_res.defs[resolved_prev_def_id].loc.clone();
 
-                            result = Err(());
+                            self.result = Err(());
                             self.diag.emit(
                                 Diag::err()
                                     .at(import_loc.clone())
@@ -760,7 +771,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         let new_def_id = self.sema.name_res.defs.insert_with_key(|id| Def {
                             id,
                             loc: import_loc.clone(),
-                            kind: DefKind::Import(Import::new_resolved(
+                            kind: DefKind::Import(DefImport::new_resolved(
                                 import_decl_id,
                                 def_id,
                                 resolved_def_id,
@@ -772,85 +783,117 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 }
             }
         }
-
-        result
     }
 }
 
 // Phase 3: walk function bodies and add local scopes.
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
-    fn resolve_defs(&mut self) -> Result {
-        let mut result = Ok(());
-
+    fn resolve_defs(&mut self) {
         for (file_id, file) in &self.sema.libsl.files {
             let file_scope_id = self.sema.name_res.file_scopes[file_id];
 
             for &decl_id in &file.decls {
                 let decl = &self.sema.libsl.decls[decl_id];
 
-                result = result.and(match decl.kind {
+                match &decl.kind {
                     ast::DeclKind::Dummy => unreachable!(),
-                    ast::DeclKind::Import(_) => Ok(()),
-                    ast::DeclKind::Include(_) => Ok(()),
+                    ast::DeclKind::Import(_) => {}
+                    ast::DeclKind::Include(_) => {}
 
-                    ast::DeclKind::SemanticTy(_) => self.process_decl_semantic_ty(decl),
-                    ast::DeclKind::TyAlias(_) => self.process_decl_ty_alias(decl),
-                    ast::DeclKind::Struct(_) => self.process_decl_struct(decl),
-                    ast::DeclKind::Enum(_) => self.process_decl_enum(decl),
-                    ast::DeclKind::Annotation(_) => self.process_decl_annotation(decl),
-                    ast::DeclKind::Action(_) => self.process_decl_action(decl),
-                    ast::DeclKind::Automaton(_) => self.process_decl_automaton(decl),
-                    ast::DeclKind::Function(_) => self.process_decl_function(decl),
-                    ast::DeclKind::Variable(_) => self.process_decl_variable(decl),
+                    ast::DeclKind::SemanticTy(decl) => self.process_decl_semantic_ty(decl_id, decl),
+                    ast::DeclKind::TyAlias(decl) => self.process_decl_ty_alias(decl_id, decl),
+                    ast::DeclKind::Struct(decl) => self.process_decl_struct(decl_id, decl),
+                    ast::DeclKind::Enum(decl) => self.process_decl_enum(decl_id, decl),
+                    ast::DeclKind::Annotation(decl) => self.process_decl_annotation(decl_id, decl),
+                    ast::DeclKind::Action(decl) => self.process_decl_action(decl_id, decl),
+                    ast::DeclKind::Automaton(decl) => self.process_decl_automaton(decl_id, decl),
+                    ast::DeclKind::Function(decl) => self.process_decl_function(decl_id, decl),
+                    ast::DeclKind::Variable(decl) => self.process_decl_variable(decl_id, decl),
                     ast::DeclKind::State(_) => unreachable!(),
                     ast::DeclKind::Shift(_) => unreachable!(),
                     ast::DeclKind::Constructor(_) => unreachable!(),
                     ast::DeclKind::Destructor(_) => unreachable!(),
-                    ast::DeclKind::Proc(_) => self.process_decl_proc(decl),
-                });
+                    ast::DeclKind::Proc(decl) => self.process_decl_proc(decl_id, decl),
+                }
             }
         }
-
-        result
     }
 
-    fn process_decl_semantic_ty(&mut self, decl: &'ast ast::Decl) -> Result {
+    fn process_generics(&mut self, generics: &[ast::Generic]) -> Result<Vec<DefId>> {
+        todo!()
+    }
+}
+
+// Phase 3, declarations.
+impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
+    fn process_decl_semantic_ty(&mut self, decl_id: DeclId, decl: &'ast ast::DeclSemanticTy) {
+        let def_id = self.sema.name_res.decl_defs[decl_id];
+
+        // TODO: annotations.
+
+        if let Ok(generics) = self.process_generics(&decl.ty_name.generics) {
+            self.def_mut(def_id)
+                .kind
+                .as_semantic_ty_mut()
+                .unwrap()
+                .generics = generics;
+        }
+
+        self.process_ty_expr(decl.real_ty);
+
+        match &decl.kind {
+            ast::SemanticTyKind::Simple => {}
+            ast::SemanticTyKind::Enumerated(values) => todo!(),
+        }
+    }
+
+    fn process_decl_ty_alias(&mut self, decl_id: DeclId, decl: &'ast ast::DeclTyAlias) {
         todo!()
     }
 
-    fn process_decl_ty_alias(&mut self, decl: &'ast ast::Decl) -> Result {
+    fn process_decl_struct(&mut self, decl_id: DeclId, decl: &'ast ast::DeclStruct) {
         todo!()
     }
 
-    fn process_decl_struct(&mut self, decl: &'ast ast::Decl) -> Result {
+    fn process_decl_enum(&mut self, decl_id: DeclId, decl: &'ast ast::DeclEnum) {
         todo!()
     }
 
-    fn process_decl_enum(&mut self, decl: &'ast ast::Decl) -> Result {
+    fn process_decl_annotation(&mut self, decl_id: DeclId, decl: &'ast ast::DeclAnnotation) {
         todo!()
     }
 
-    fn process_decl_annotation(&mut self, decl: &'ast ast::Decl) -> Result {
+    fn process_decl_action(&mut self, decl_id: DeclId, decl: &'ast ast::DeclAction) {
         todo!()
     }
 
-    fn process_decl_action(&mut self, decl: &'ast ast::Decl) -> Result {
+    fn process_decl_automaton(&mut self, decl_id: DeclId, decl: &'ast ast::DeclAutomaton) {
         todo!()
     }
 
-    fn process_decl_automaton(&mut self, decl: &'ast ast::Decl) -> Result {
+    fn process_decl_function(&mut self, decl_id: DeclId, decl: &'ast ast::DeclFunction) {
         todo!()
     }
 
-    fn process_decl_function(&mut self, decl: &'ast ast::Decl) -> Result {
+    fn process_decl_variable(&mut self, decl_id: DeclId, decl: &'ast ast::DeclVariable) {
         todo!()
     }
 
-    fn process_decl_variable(&mut self, decl: &'ast ast::Decl) -> Result {
+    fn process_decl_proc(&mut self, decl_id: DeclId, decl: &'ast ast::DeclProc) {
         todo!()
     }
+}
 
-    fn process_decl_proc(&mut self, decl: &'ast ast::Decl) -> Result {
+// Phase 3, type expressions.
+impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
+    fn process_ty_expr(&mut self, ty_expr_id: TyExprId) {
+        todo!()
+    }
+}
+
+// Phase 3, expressions.
+impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
+    fn process_expr(&mut self, expr_id: ExprId) {
         todo!()
     }
 }

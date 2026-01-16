@@ -6,6 +6,7 @@ use slotmap::new_key_type;
 
 use crate::DeclId;
 use crate::loc::Loc;
+use crate::sema::resolve::ScopeId;
 use crate::sema::ty::TyId;
 
 new_key_type! {
@@ -59,6 +60,8 @@ pub enum DefKind {
     State(DeclId),
 
     TyVariable(DefTyVariable),
+
+    Param(DefId),
 }
 
 impl DefKind {
@@ -283,6 +286,12 @@ impl From<DefVariable> for DefKind {
     }
 }
 
+pub trait DefKindProject {
+    fn project(kind: &DefKind) -> Option<&Self>;
+
+    fn project_mut(kind: &mut DefKind) -> Option<&mut Self>;
+}
+
 #[derive(Debug, Clone)]
 pub struct DefImport {
     pub import_decl_id: DeclId,
@@ -308,20 +317,42 @@ impl DefImport {
     }
 }
 
+impl DefKindProject for DefImport {
+    fn project(kind: &DefKind) -> Option<&Self> {
+        kind.as_import()
+    }
+
+    fn project_mut(kind: &mut DefKind) -> Option<&mut Self> {
+        kind.as_import_mut()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct DefSemanticTy {
     pub decl_id: DeclId,
-    pub values: Vec<SemanticTyValue>,
+    pub param_scope_id: ScopeId,
     pub generics: Vec<DefId>,
+    pub values: Vec<SemanticTyValue>,
 }
 
 impl DefSemanticTy {
     pub fn new(decl_id: DeclId) -> Self {
         Self {
             decl_id,
-            values: Default::default(),
+            param_scope_id: Default::default(),
             generics: Default::default(),
+            values: Default::default(),
         }
+    }
+}
+
+impl DefKindProject for DefSemanticTy {
+    fn project(kind: &DefKind) -> Option<&Self> {
+        kind.as_semantic_ty()
+    }
+
+    fn project_mut(kind: &mut DefKind) -> Option<&mut Self> {
+        kind.as_semantic_ty_mut()
     }
 }
 
@@ -334,66 +365,174 @@ pub struct SemanticTyValue {
 #[derive(Debug, Clone)]
 pub struct DefTyAlias {
     pub decl_id: DeclId,
+    pub param_scope_id: ScopeId,
+    pub generics: Vec<DefId>,
 }
 
 impl DefTyAlias {
     pub fn new(decl_id: DeclId) -> Self {
-        Self { decl_id }
+        Self {
+            decl_id,
+            param_scope_id: Default::default(),
+            generics: Default::default(),
+        }
+    }
+}
+
+impl DefKindProject for DefTyAlias {
+    fn project(kind: &DefKind) -> Option<&Self> {
+        kind.as_ty_alias()
+    }
+
+    fn project_mut(kind: &mut DefKind) -> Option<&mut Self> {
+        kind.as_ty_alias_mut()
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct DefStruct {
     pub decl_id: DeclId,
+    pub param_scope_id: ScopeId,
+    pub generics: Vec<DefId>,
+    pub fields: Vec<DefId>,
+    pub methods: Vec<DefId>,
 }
 
 impl DefStruct {
     pub fn new(decl_id: DeclId) -> Self {
-        Self { decl_id }
+        Self {
+            decl_id,
+            param_scope_id: Default::default(),
+            generics: Default::default(),
+            fields: Default::default(),
+            methods: Default::default(),
+        }
+    }
+}
+
+impl DefKindProject for DefStruct {
+    fn project(kind: &DefKind) -> Option<&Self> {
+        kind.as_struct()
+    }
+
+    fn project_mut(kind: &mut DefKind) -> Option<&mut Self> {
+        kind.as_struct_mut()
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct DefEnum {
     pub decl_id: DeclId,
+    pub param_scope_id: ScopeId,
+    pub generics: Vec<DefId>,
 }
 
 impl DefEnum {
     pub fn new(decl_id: DeclId) -> Self {
-        Self { decl_id }
+        Self {
+            decl_id,
+            param_scope_id: Default::default(),
+            generics: Default::default(),
+        }
+    }
+}
+
+impl DefKindProject for DefEnum {
+    fn project(kind: &DefKind) -> Option<&Self> {
+        kind.as_enum()
+    }
+
+    fn project_mut(kind: &mut DefKind) -> Option<&mut Self> {
+        kind.as_enum_mut()
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct DefAnnotation {
     pub decl_id: DeclId,
+    pub param_scope_id: ScopeId,
+    pub params: Vec<DefId>,
 }
 
 impl DefAnnotation {
     pub fn new(decl_id: DeclId) -> Self {
-        Self { decl_id }
+        Self {
+            decl_id,
+            param_scope_id: Default::default(),
+            params: Default::default(),
+        }
+    }
+}
+
+impl DefKindProject for DefAnnotation {
+    fn project(kind: &DefKind) -> Option<&Self> {
+        kind.as_annotation()
+    }
+
+    fn project_mut(kind: &mut DefKind) -> Option<&mut Self> {
+        kind.as_annotation_mut()
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct DefAction {
     pub decl_id: DeclId,
+    pub param_scope_id: ScopeId,
+    pub generics: Vec<DefId>,
+    pub params: Vec<DefId>,
 }
 
 impl DefAction {
     pub fn new(decl_id: DeclId) -> Self {
-        Self { decl_id }
+        Self {
+            decl_id,
+            param_scope_id: Default::default(),
+            generics: Default::default(),
+            params: Default::default(),
+        }
+    }
+}
+
+impl DefKindProject for DefAction {
+    fn project(kind: &DefKind) -> Option<&Self> {
+        kind.as_action()
+    }
+
+    fn project_mut(kind: &mut DefKind) -> Option<&mut Self> {
+        kind.as_action_mut()
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct DefAutomaton {
     pub decl_id: DeclId,
+    pub param_scope_id: ScopeId,
+    pub generics: Vec<DefId>,
+    pub constructor_params: Vec<DefId>,
+    pub fields: Vec<DefId>,
+    pub methods: Vec<DefId>,
 }
 
 impl DefAutomaton {
     pub fn new(decl_id: DeclId) -> Self {
-        Self { decl_id }
+        Self {
+            decl_id,
+            param_scope_id: Default::default(),
+            generics: Default::default(),
+            constructor_params: Default::default(),
+            fields: Default::default(),
+            methods: Default::default(),
+        }
+    }
+}
+
+impl DefKindProject for DefAutomaton {
+    fn project(kind: &DefKind) -> Option<&Self> {
+        kind.as_automaton()
+    }
+
+    fn project_mut(kind: &mut DefKind) -> Option<&mut Self> {
+        kind.as_automaton_mut()
     }
 }
 
@@ -406,6 +545,16 @@ pub struct DefVariable {
 impl DefVariable {
     pub fn new(decl_id: DeclId, kind: VariableKind) -> Self {
         Self { decl_id, kind }
+    }
+}
+
+impl DefKindProject for DefVariable {
+    fn project(kind: &DefKind) -> Option<&Self> {
+        kind.as_variable()
+    }
+
+    fn project_mut(kind: &mut DefKind) -> Option<&mut Self> {
+        kind.as_variable_mut()
     }
 }
 
@@ -422,6 +571,10 @@ pub struct DefFunction {
     pub decl_id: DeclId,
     pub kind: FunctionKind,
     pub is_method: bool,
+    pub param_scope_id: ScopeId,
+    pub generics: Vec<DefId>,
+    pub params: Vec<DefId>,
+    pub body_scope_id: ScopeId,
 }
 
 impl DefFunction {
@@ -430,7 +583,21 @@ impl DefFunction {
             decl_id,
             kind,
             is_method,
+            param_scope_id: Default::default(),
+            generics: Default::default(),
+            params: Default::default(),
+            body_scope_id: Default::default(),
         }
+    }
+}
+
+impl DefKindProject for DefFunction {
+    fn project(kind: &DefKind) -> Option<&Self> {
+        kind.as_function()
+    }
+
+    fn project_mut(kind: &mut DefKind) -> Option<&mut Self> {
+        kind.as_function_mut()
     }
 }
 
@@ -445,6 +612,16 @@ pub enum FunctionKind {
 #[derive(Debug, Clone)]
 pub struct DefTyVariable {
     pub kind: TyVariableKind,
+}
+
+impl DefKindProject for DefTyVariable {
+    fn project(kind: &DefKind) -> Option<&Self> {
+        kind.as_ty_variable()
+    }
+
+    fn project_mut(kind: &mut DefKind) -> Option<&mut Self> {
+        kind.as_ty_variable_mut()
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -61,7 +61,10 @@ pub enum DefKind {
 
     TyVariable(DefTyVariable),
 
-    Param(DefId),
+    Param {
+        of: DefId,
+        idx: usize,
+    },
 }
 
 impl DefKind {
@@ -395,7 +398,8 @@ pub struct DefStruct {
     pub param_scope_id: ScopeId,
     pub generics: Vec<DefId>,
     pub fields: Vec<DefId>,
-    pub methods: Vec<DefId>,
+    pub instance_methods: Vec<DefId>,
+    pub static_methods: Vec<DefId>,
 }
 
 impl DefStruct {
@@ -405,7 +409,8 @@ impl DefStruct {
             param_scope_id: Default::default(),
             generics: Default::default(),
             fields: Default::default(),
-            methods: Default::default(),
+            instance_methods: Default::default(),
+            static_methods: Default::default(),
         }
     }
 }
@@ -506,22 +511,28 @@ impl DefKindProject for DefAction {
 #[derive(Debug, Clone)]
 pub struct DefAutomaton {
     pub decl_id: DeclId,
+    pub is_concept: bool,
     pub param_scope_id: ScopeId,
     pub generics: Vec<DefId>,
     pub constructor_params: Vec<DefId>,
     pub fields: Vec<DefId>,
-    pub methods: Vec<DefId>,
+    pub instance_methods: Vec<DefId>,
+    pub static_methods: Vec<DefId>,
+    pub states: Vec<DefId>,
 }
 
 impl DefAutomaton {
-    pub fn new(decl_id: DeclId) -> Self {
+    pub fn new(decl_id: DeclId, is_concept: bool) -> Self {
         Self {
             decl_id,
+            is_concept,
             param_scope_id: Default::default(),
             generics: Default::default(),
             constructor_params: Default::default(),
             fields: Default::default(),
-            methods: Default::default(),
+            instance_methods: Default::default(),
+            static_methods: Default::default(),
+            states: Default::default(),
         }
     }
 }
@@ -604,7 +615,7 @@ impl DefKindProject for DefFunction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FunctionKind {
     Fun { of: Option<DefId> },
-    Proc { of: Option<DefId> },
+    Proc { of: Option<DefId>, pure: bool },
     Constructor { of: DefId },
     Destructor { of: DefId },
 }

@@ -475,7 +475,7 @@ pub struct DeclAutomaton {
     /// Automaton constructor variable declarations.
     pub constructor_variables: Vec<DeclId>,
 
-    /// The type modelled by this automaton.
+    /// The type modeled by this automaton.
     pub ty_expr: TyExprId,
 
     /// A list of concepts implemented by this automaton.

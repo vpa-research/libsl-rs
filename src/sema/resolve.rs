@@ -12,7 +12,7 @@ use crate::sema::def::{
     SemanticTyValue, VariableKind,
 };
 use crate::sema::{Result, Sema};
-use crate::{DeclId, ExprId, FileId, TyExprId, ast};
+use crate::{DeclId, ExprId, FileId, StmtId, TyExprId, ast};
 
 new_key_type! {
     pub struct ScopeId;
@@ -74,6 +74,9 @@ pub enum ScopeKind {
     Struct(DefId),
     Enum(DefId),
     Automaton(DefId),
+    Block {
+        func: DefId,
+    },
 }
 
 impl ScopeKind {
@@ -1373,6 +1376,34 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn process_function_body(&mut self, fn_def_id: DefId, body: &'ast ast::FunctionBody) {
+        let param_scope_id = self.def::<DefFunction>(fn_def_id).param_scope_id;
+        let scope_id = self.sema.name_res.scopes.insert(Scope::new(
+            Some(param_scope_id),
+            ScopeKind::Block { func: fn_def_id },
+        ));
+
+        self.def_mut::<DefFunction>(fn_def_id).body_scope_id = scope_id;
+
+        for contract in &body.contracts {
+            self.process_contract(fn_def_id, contract);
+        }
+
+        for &stmt_id in &body.stmts {
+            self.process_stmt(fn_def_id, scope_id, stmt_id);
+        }
+    }
+}
+
+// Phase 3, contracts.
+impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
+    fn process_contract(&mut self, fn_def_id: DefId, contract: &'ast ast::Contract) {
+        todo!()
+    }
+}
+
+// Phase 3, statements.
+impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
+    fn process_stmt(&mut self, fn_def_id: DefId, scope_id: ScopeId, stmt_id: StmtId) {
         todo!()
     }
 }

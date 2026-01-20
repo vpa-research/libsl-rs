@@ -519,6 +519,8 @@ pub struct DefAutomaton {
     pub instance_methods: Vec<DefId>,
     pub static_methods: Vec<DefId>,
     pub states: Vec<DefId>,
+    pub init_states: Vec<DefId>,
+    pub final_states: Vec<DefId>,
 }
 
 impl DefAutomaton {
@@ -533,6 +535,8 @@ impl DefAutomaton {
             instance_methods: Default::default(),
             static_methods: Default::default(),
             states: Default::default(),
+            init_states: Default::default(),
+            final_states: Default::default(),
         }
     }
 }
@@ -551,11 +555,16 @@ impl DefKindProject for DefAutomaton {
 pub struct DefVariable {
     pub decl_id: DeclId,
     pub kind: VariableKind,
+    pub mutable: bool,
 }
 
 impl DefVariable {
-    pub fn new(decl_id: DeclId, kind: VariableKind) -> Self {
-        Self { decl_id, kind }
+    pub fn new(decl_id: DeclId, kind: VariableKind, mutable: bool) -> Self {
+        Self {
+            decl_id,
+            kind,
+            mutable,
+        }
     }
 }
 

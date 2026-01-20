@@ -46,6 +46,13 @@ impl Scope {
             functions: Default::default(),
         }
     }
+
+    pub fn is_defined(&self, ns: Ns, name: &str) -> bool {
+        match ns {
+            Ns::Function => self.functions.contains_key(name),
+            _ => self.defs.contains_key(&(ns, name.to_string())),
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -202,6 +209,34 @@ enum DeclCtx {
         def_id: DefId,
         is_constructor_var: bool,
     },
+
+    FuncBody {
+        def_id: DefId,
+        scope_id: ScopeId,
+    },
+}
+
+impl DeclCtx {
+    fn outer_def_id(&self) -> Option<DefId> {
+        match *self {
+            DeclCtx::Global(_) => None,
+            DeclCtx::Struct(def_id) => Some(def_id),
+            DeclCtx::Automaton { def_id, .. } => Some(def_id),
+            DeclCtx::FuncBody { def_id, .. } => Some(def_id),
+        }
+    }
+
+    fn outer(&self, sema: &Sema<'_>) -> (Option<DefId>, ScopeId) {
+        match *self {
+            DeclCtx::Global(file_id) => (None, sema.name_res.file_scopes[file_id]),
+
+            DeclCtx::Struct(def_id) | DeclCtx::Automaton { def_id, .. } => {
+                (Some(def_id), sema.name_res.def_member_scopes[def_id])
+            }
+
+            DeclCtx::FuncBody { def_id, scope_id } => (Some(def_id), scope_id),
+        }
+    }
 }
 
 struct Pass<'ast, 's, D> {
@@ -427,19 +462,14 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     automaton_def.instance_methods.push(def_id);
                 }
             }
+
+            DeclCtx::FuncBody { .. } => panic!("cannot register functions in a function body"),
         }
     }
 
     fn process_decl_symbol(&mut self, ctx: DeclCtx, decl_id: DeclId) {
         let decl = &self.sema.libsl.decls[decl_id];
-
-        let (outer_def_id, outer_scope_id) = match ctx {
-            DeclCtx::Global(file_id) => (None, self.sema.name_res.file_scopes[file_id]),
-
-            DeclCtx::Struct(def_id) | DeclCtx::Automaton { def_id, .. } => {
-                (Some(def_id), self.sema.name_res.def_member_scopes[def_id])
-            }
-        };
+        let (outer_def_id, outer_scope_id) = ctx.outer(&self.sema);
 
         match &decl.kind {
             ast::DeclKind::Dummy => unreachable!(),
@@ -647,12 +677,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     DefFunction::new(
                         decl_id,
                         FunctionKind::Fun {
-                            of: match ctx {
-                                DeclCtx::Global(_) => None,
-                                DeclCtx::Struct(def_id) | DeclCtx::Automaton { def_id, .. } => {
-                                    Some(def_id)
-                                }
-                            },
+                            of: ctx.outer_def_id(),
                         },
                         decl.is_method,
                     )
@@ -681,6 +706,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         def_id,
                         is_constructor_var: false,
                     } => VariableKind::Field { of: def_id },
+
+                    DeclCtx::FuncBody { .. } => unreachable!(),
                 };
 
                 let Ok(def_id) = self.add_decl_def(
@@ -689,7 +716,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     Ns::Var,
                     decl.name.to_string(),
                     decl.name.loc.clone(),
-                    DefVariable::new(decl_id, kind).into(),
+                    DefVariable::new(decl_id, kind, decl.kind.is_var()).into(),
                 ) else {
                     return;
                 };
@@ -713,6 +740,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                             automaton_def.fields.push(def_id);
                         }
                     }
+
+                    DeclCtx::FuncBody { .. } => unreachable!(),
                 }
             }
 
@@ -736,9 +765,14 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     unreachable!();
                 };
 
-                self.def_mut::<DefAutomaton>(automaton_def_id)
-                    .states
-                    .push(def_id);
+                let automaton = self.def_mut::<DefAutomaton>(automaton_def_id);
+                automaton.states.push(def_id);
+
+                match decl.kind {
+                    ast::StateKind::Initial => automaton.init_states.push(def_id),
+                    ast::StateKind::Final => automaton.final_states.push(def_id),
+                    ast::StateKind::Regular => {}
+                }
             }
 
             ast::DeclKind::Shift(_) => {
@@ -819,6 +853,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         FunctionKind::Proc {
                             of: match ctx {
                                 DeclCtx::Global(_) => None,
+                                DeclCtx::FuncBody { .. } => unreachable!(),
                                 DeclCtx::Struct(def_id) | DeclCtx::Automaton { def_id, .. } => {
                                     Some(def_id)
                                 }
@@ -1173,7 +1208,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn process_decl_function(
         &mut self,
-        ctx: DeclCtx,
+        _ctx: DeclCtx,
         decl_id: DeclId,
         decl: &'ast ast::DeclFunction,
     ) {
@@ -1223,15 +1258,41 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         decl_id: DeclId,
         decl: &'ast ast::DeclVariable,
     ) {
-        todo!()
+        let (_, scope_id) = ctx.outer(&self.sema);
+
+        match ctx {
+            DeclCtx::Global(_) | DeclCtx::Struct(_) | DeclCtx::Automaton { .. } => {
+                // already registered in phase 1.
+            }
+
+            DeclCtx::FuncBody { .. } => {
+                let _ = self.add_decl_def(
+                    decl_id,
+                    scope_id,
+                    Ns::Var,
+                    decl.name.to_string(),
+                    decl.name.loc.clone(),
+                    DefVariable::new(decl_id, VariableKind::Local, decl.kind.is_var()).into(),
+                );
+            }
+        }
+        let _def_id = self.sema.name_res.decl_defs.get(decl_id).copied();
+
+        // TODO: process annotations.
+
+        self.process_ty_expr(scope_id, decl.ty_expr);
+
+        if let Some(expr_id) = decl.init {
+            self.process_expr(scope_id, expr_id);
+        }
     }
 
-    fn process_decl_state(&mut self, ctx: DeclCtx, decl_id: DeclId, decl: &'ast ast::DeclState) {
-        todo!()
+    fn process_decl_state(&mut self, _ctx: DeclCtx, _decl_id: DeclId, _decl: &'ast ast::DeclState) {
+        // do nothing.
     }
 
-    fn process_decl_shift(&mut self, ctx: DeclCtx, decl_id: DeclId, decl: &'ast ast::DeclShift) {
-        todo!()
+    fn process_decl_shift(&mut self, _ctx: DeclCtx, _decl_id: DeclId, _decl: &'ast ast::DeclShift) {
+        // do nothing.
     }
 
     fn process_decl_constructor(

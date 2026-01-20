@@ -4,10 +4,10 @@ use std::cell::Cell;
 
 use slotmap::new_key_type;
 
-use crate::{DeclId, PredId};
 use crate::loc::Loc;
 use crate::sema::resolve::ScopeId;
 use crate::sema::ty::TyId;
+use crate::{DeclId, PredId};
 
 new_key_type! {
     pub struct DefId;
@@ -682,6 +682,16 @@ pub struct DefPred {
     pub pred_id: PredId,
     pub func_def_id: DefId,
     pub kind: PredKind,
+}
+
+impl DefPred {
+    pub fn new(pred_id: PredId, func_def_id: DefId, kind: PredKind) -> Self {
+        Self {
+            pred_id,
+            func_def_id,
+            kind,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

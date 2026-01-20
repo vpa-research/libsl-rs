@@ -826,10 +826,6 @@ impl WithLibSl for Contract {}
 #[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct ContractRequires {
-    /// The contract's name.
-    #[no_walk]
-    pub name: Option<Name>,
-
     /// The contract predicate.
     pub pred: PredId,
 }
@@ -840,10 +836,6 @@ impl WithLibSl for ContractRequires {}
 #[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct ContractEnsures {
-    /// The contract's name.
-    #[no_walk]
-    pub name: Option<Name>,
-
     /// The contract predicate.
     pub pred: PredId,
 }

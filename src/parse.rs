@@ -1390,9 +1390,19 @@ impl<'a> AstConstructor<'a> {
         ctx: &RequiresContractContextAll<'_>,
     ) -> Result<ast::ContractRequires> {
         let name = ctx.name.as_ref().map(|ctx| self.process_name(ctx));
-        let pred = self.process_contract_predicate(ctx.spec.as_ref().unwrap())?;
+        let mut pred = self.process_contract_predicate(ctx.spec.as_ref().unwrap())?;
 
-        Ok(ast::ContractRequires { name, pred })
+        if let Some(name) = name {
+            let loc = self.get_loc(&ctx.start(), &ctx.stop());
+
+            pred = self.libsl.preds.insert_with_key(|id| ast::Pred {
+                id,
+                loc,
+                kind: ast::PredNamed { name, pred }.into(),
+            });
+        }
+
+        Ok(ast::ContractRequires { pred })
     }
 
     fn process_ensures_contract(
@@ -1400,9 +1410,19 @@ impl<'a> AstConstructor<'a> {
         ctx: &EnsuresContractContextAll<'_>,
     ) -> Result<ast::ContractEnsures> {
         let name = ctx.name.as_ref().map(|ctx| self.process_name(ctx));
-        let pred = self.process_contract_predicate(ctx.spec.as_ref().unwrap())?;
+        let mut pred = self.process_contract_predicate(ctx.spec.as_ref().unwrap())?;
 
-        Ok(ast::ContractEnsures { name, pred })
+        if let Some(name) = name {
+            let loc = self.get_loc(&ctx.start(), &ctx.stop());
+
+            pred = self.libsl.preds.insert_with_key(|id| ast::Pred {
+                id,
+                loc,
+                kind: ast::PredNamed { name, pred }.into(),
+            });
+        }
+
+        Ok(ast::ContractEnsures { pred })
     }
 
     fn process_assigns_contract(

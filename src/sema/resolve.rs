@@ -7,7 +7,9 @@ use slotmap::{SecondaryMap, SlotMap, SparseSecondaryMap, new_key_type};
 use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
 use crate::sema::def::{
-    Def, DefAction, DefAnnotation, DefAutomaton, DefEnum, DefFunction, DefId, DefImport, DefKind, DefKindProject, DefPred, DefSemanticTy, DefStruct, DefTyAlias, DefVariable, FunctionKind, PredKind, SemanticTyValue, VariableKind
+    Def, DefAction, DefAnnotation, DefAutomaton, DefEnum, DefFunction, DefId, DefImport, DefKind,
+    DefKindProject, DefPred, DefSemanticTy, DefStruct, DefTyAlias, DefVariable, FunctionKind,
+    PredKind, SemanticTyValue, VariableKind,
 };
 use crate::sema::{Result, Sema};
 use crate::{DeclId, ExprId, FileId, PredId, StmtId, TyExprId, ast};
@@ -1399,43 +1401,168 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 // Phase 3, contracts and predicates.
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn process_contract(&mut self, fn_def_id: DefId, contract: &'ast ast::Contract) {
+        let scope_id = self.def::<DefFunction>(fn_def_id).body_scope_id;
+
         match contract {
             ast::Contract::Requires(contract) => {
-                self.process_contract_requires(fn_def_id, contract)
+                self.process_contract_requires(fn_def_id, scope_id, contract)
             }
-            ast::Contract::Ensures(contract) => self.process_contract_ensures(fn_def_id, contract),
-            ast::Contract::Assigns(contract) => self.process_contract_assigns(fn_def_id, contract),
+
+            ast::Contract::Ensures(contract) => {
+                self.process_contract_ensures(fn_def_id, scope_id, contract)
+            }
+
+            ast::Contract::Assigns(contract) => {
+                self.process_contract_assigns(fn_def_id, scope_id, contract)
+            }
         }
     }
 
     fn process_contract_requires(
         &mut self,
         fn_def_id: DefId,
+        scope_id: ScopeId,
         contract: &'ast ast::ContractRequires,
     ) {
-        self.process_pred(fn_def_id, PredKind::ContractRequires, contract.pred);
+        self.process_pred(
+            fn_def_id,
+            scope_id,
+            PredKind::ContractRequires,
+            contract.pred,
+        );
     }
 
-    fn process_contract_ensures(&mut self, fn_def_id: DefId, contract: &'ast ast::ContractEnsures) {
-        self.process_pred(fn_def_id, PredKind::ContractEnsures, contract.pred);
+    fn process_contract_ensures(
+        &mut self,
+        fn_def_id: DefId,
+        scope_id: ScopeId,
+        contract: &'ast ast::ContractEnsures,
+    ) {
+        self.process_pred(
+            fn_def_id,
+            scope_id,
+            PredKind::ContractEnsures,
+            contract.pred,
+        );
     }
 
-    fn process_contract_assigns(&mut self, fn_def_id: DefId, contract: &'ast ast::ContractAssigns) {
-        let body_scope_id = self.def::<DefFunction>(fn_def_id).body_scope_id;
-        self.process_expr(body_scope_id, contract.expr);
+    fn process_contract_assigns(
+        &mut self,
+        _fn_def_id: DefId,
+        scope_id: ScopeId,
+        contract: &'ast ast::ContractAssigns,
+    ) {
+        // NOTE: names are skipped because it's unclear what they mean.
+
+        self.process_expr(scope_id, contract.expr);
     }
 
-    fn process_pred(&mut self, fn_def_id: DefId, kind: PredKind, pred_id: PredId) {
+    fn process_pred(
+        &mut self,
+        fn_def_id: DefId,
+        scope_id: ScopeId,
+        kind: PredKind,
+        pred_id: PredId,
+    ) {
         let pred = &self.sema.libsl.preds[pred_id];
 
         match &pred.kind {
             ast::PredKind::Dummy => unreachable!(),
-            ast::PredKind::Block(pred) => todo!(),
-            ast::PredKind::Named(pred) => todo!(),
-            ast::PredKind::Decl(decl_id) => todo!(),
-            ast::PredKind::If(pred) => todo!(),
-            ast::PredKind::Expr(expr_id) => todo!(),
+
+            ast::PredKind::Block(pred) => {
+                self.process_pred_block(fn_def_id, scope_id, kind, pred_id, pred)
+            }
+
+            ast::PredKind::Named(pred) => {
+                self.process_pred_named(fn_def_id, scope_id, kind, pred_id, pred)
+            }
+
+            &ast::PredKind::Decl(decl_id) => {
+                self.process_pred_var(fn_def_id, scope_id, kind, pred_id, decl_id)
+            }
+
+            ast::PredKind::If(pred) => {
+                self.process_pred_if(fn_def_id, scope_id, kind, pred_id, pred)
+            }
+
+            &ast::PredKind::Expr(expr_id) => {
+                self.process_pred_expr(fn_def_id, scope_id, kind, pred_id, expr_id)
+            }
         }
+    }
+
+    fn process_pred_block(
+        &mut self,
+        fn_def_id: DefId,
+        scope_id: ScopeId,
+        _kind: PredKind,
+        _pred_id: PredId,
+        pred: &'ast ast::PredBlock,
+    ) {
+        let scope_id = self.sema.name_res.scopes.insert(Scope::new(
+            Some(scope_id),
+            ScopeKind::Block { func: fn_def_id },
+        ));
+
+        for &pred_id in &pred.preds {
+            self.process_pred(fn_def_id, scope_id, PredKind::Nested, pred_id);
+        }
+    }
+
+    fn process_pred_named(
+        &mut self,
+        fn_def_id: DefId,
+        scope_id: ScopeId,
+        kind: PredKind,
+        pred_id: PredId,
+        pred: &'ast ast::PredNamed,
+    ) {
+        let def_id = self.add_def(
+            scope_id,
+            Ns::Contract,
+            pred.name.to_string(),
+            pred.name.loc.clone(),
+            DefPred::new(pred_id, fn_def_id, kind).into(),
+        );
+
+        if let Ok(def_id) = def_id {
+            self.sema.name_res.pred_defs.insert(pred_id, def_id);
+        }
+
+        self.process_pred(fn_def_id, scope_id, PredKind::Nested, pred.pred);
+    }
+
+    fn process_pred_var(
+        &mut self,
+        fn_def_id: DefId,
+        scope_id: ScopeId,
+        kind: PredKind,
+        pred_id: PredId,
+        decl_id: DeclId,
+    ) {
+        todo!()
+    }
+
+    fn process_pred_if(
+        &mut self,
+        fn_def_id: DefId,
+        scope_id: ScopeId,
+        kind: PredKind,
+        pred_id: PredId,
+        pred: &'ast ast::PredIf,
+    ) {
+        todo!()
+    }
+
+    fn process_pred_expr(
+        &mut self,
+        fn_def_id: DefId,
+        scope_id: ScopeId,
+        kind: PredKind,
+        pred_id: PredId,
+        expr_id: ExprId,
+    ) {
+        todo!()
     }
 }
 

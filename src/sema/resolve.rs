@@ -12,7 +12,7 @@ use crate::sema::def::{
     SemanticTyValue, VariableKind,
 };
 use crate::sema::{Result, Sema};
-use crate::{DeclId, ExprId, FileId, StmtId, TyExprId, ast};
+use crate::{DeclId, ExprId, FileId, PredId, StmtId, TyExprId, ast};
 
 new_key_type! {
     pub struct ScopeId;
@@ -1394,9 +1394,42 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 }
 
-// Phase 3, contracts.
+// Phase 3, contracts and predicates.
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn process_contract(&mut self, fn_def_id: DefId, contract: &'ast ast::Contract) {
+        match contract {
+            ast::Contract::Requires(contract) => {
+                self.process_contract_requires(fn_def_id, contract)
+            }
+            ast::Contract::Ensures(contract) => self.process_contract_ensures(fn_def_id, contract),
+            ast::Contract::Assigns(contract) => self.process_contract_assigns(fn_def_id, contract),
+        }
+    }
+
+    fn process_contract_requires(
+        &mut self,
+        fn_def_id: DefId,
+        contract: &'ast ast::ContractRequires,
+    ) {
+        // TODO: process the name.
+
+        self.process_pred(fn_def_id, contract.pred);
+    }
+
+    fn process_contract_ensures(&mut self, fn_def_id: DefId, contract: &'ast ast::ContractEnsures) {
+        // TODO: process the name.
+
+        self.process_pred(fn_def_id, contract.pred);
+    }
+
+    fn process_contract_assigns(&mut self, fn_def_id: DefId, contract: &'ast ast::ContractAssigns) {
+        // TODO: process the name.
+
+        let body_scope_id = self.def::<DefFunction>(fn_def_id).body_scope_id;
+        self.process_expr(body_scope_id, contract.expr);
+    }
+
+    fn process_pred(&mut self, fn_def_id: DefId, pred_id: PredId) {
         todo!()
     }
 }

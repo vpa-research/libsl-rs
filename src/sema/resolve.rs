@@ -1223,25 +1223,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             self.def_mut::<DefFunction>(def_id).generics = generics;
         }
 
-        for (idx, param) in decl.params.iter().enumerate() {
-            // TODO: process annotations.
-
-            let Ok(param_def_id) = self.add_def(
-                param_scope_id,
-                Ns::Var,
-                param.name.to_string(),
-                param.name.loc.clone(),
-                DefKind::Param { of: def_id, idx },
-            ) else {
-                return;
-            };
-
-            self.def_mut::<DefFunction>(def_id)
-                .params
-                .push(param_def_id);
-
-            self.process_ty_expr(param_scope_id, param.ty_expr);
-        }
+        self.process_function_params(def_id, param_scope_id, &decl.params);
 
         if let Some(ty_expr_id) = decl.ret_ty_expr {
             self.process_ty_expr(param_scope_id, ty_expr_id);
@@ -1297,24 +1279,97 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn process_decl_constructor(
         &mut self,
-        ctx: DeclCtx,
+        _ctx: DeclCtx,
         decl_id: DeclId,
         decl: &'ast ast::DeclConstructor,
     ) {
-        todo!()
+        let def_id = self.sema.name_res.decl_defs[decl_id];
+
+        // TODO: process annotations.
+
+        let param_scope_id = self.def::<DefFunction>(def_id).param_scope_id;
+        self.process_function_params(def_id, param_scope_id, &decl.params);
+
+        if let Some(ty_expr_id) = decl.ret_ty_expr {
+            self.process_ty_expr(param_scope_id, ty_expr_id);
+        }
+
+        if let Some(body) = &decl.body {
+            self.process_function_body(def_id, body);
+        }
     }
 
     fn process_decl_destructor(
         &mut self,
-        ctx: DeclCtx,
+        _ctx: DeclCtx,
         decl_id: DeclId,
         decl: &'ast ast::DeclDestructor,
     ) {
-        todo!()
+        let def_id = self.sema.name_res.decl_defs[decl_id];
+
+        // TODO: process annotations.
+
+        let param_scope_id = self.def::<DefFunction>(def_id).param_scope_id;
+        self.process_function_params(def_id, param_scope_id, &decl.params);
+
+        if let Some(ty_expr_id) = decl.ret_ty_expr {
+            self.process_ty_expr(param_scope_id, ty_expr_id);
+        }
+
+        if let Some(body) = &decl.body {
+            self.process_function_body(def_id, body);
+        }
     }
 
-    fn process_decl_proc(&mut self, ctx: DeclCtx, decl_id: DeclId, decl: &'ast ast::DeclProc) {
-        todo!()
+    fn process_decl_proc(&mut self, _ctx: DeclCtx, decl_id: DeclId, decl: &'ast ast::DeclProc) {
+        let def_id = self.sema.name_res.decl_defs[decl_id];
+
+        // TODO: process annotations.
+
+        let param_scope_id = self.def::<DefFunction>(def_id).param_scope_id;
+
+        if let Ok(generics) = self.process_generics(param_scope_id, &decl.generics) {
+            self.def_mut::<DefFunction>(def_id).generics = generics;
+        }
+
+        self.process_function_params(def_id, param_scope_id, &decl.params);
+
+        if let Some(ty_expr_id) = decl.ret_ty_expr {
+            self.process_ty_expr(param_scope_id, ty_expr_id);
+        }
+
+        if let Some(body) = &decl.body {
+            self.process_function_body(def_id, body);
+        }
+    }
+
+    fn process_function_params(
+        &mut self,
+        def_id: DefId,
+        param_scope_id: ScopeId,
+        params: &[ast::FunctionParam],
+    ) {
+        for (idx, param) in params.iter().enumerate() {
+            // TODO: process annotations.
+
+            let Ok(param_def_id) = self.add_def(
+                param_scope_id,
+                Ns::Var,
+                param.name.to_string(),
+                param.name.loc.clone(),
+                DefKind::Param { of: def_id, idx },
+            ) else {
+                return;
+            };
+
+            self.def_mut::<DefFunction>(def_id)
+                .params
+                .push(param_def_id);
+
+            self.process_ty_expr(param_scope_id, param.ty_expr);
+        }
+
+        // TODO: process type constraints.
     }
 
     fn process_function_body(&mut self, fn_def_id: DefId, body: &'ast ast::FunctionBody) {

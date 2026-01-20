@@ -4,7 +4,7 @@ use std::cell::Cell;
 
 use slotmap::new_key_type;
 
-use crate::DeclId;
+use crate::{DeclId, PredId};
 use crate::loc::Loc;
 use crate::sema::resolve::ScopeId;
 use crate::sema::ty::TyId;
@@ -65,6 +65,8 @@ pub enum DefKind {
         of: DefId,
         idx: usize,
     },
+
+    Pred(DefPred),
 }
 
 impl DefKind {
@@ -221,6 +223,20 @@ impl DefKind {
             _ => None,
         }
     }
+
+    pub fn as_pred(&self) -> Option<&DefPred> {
+        match self {
+            Self::Pred(def) => Some(def),
+            _ => None,
+        }
+    }
+
+    pub fn as_pred_mut(&mut self) -> Option<&mut DefPred> {
+        match self {
+            Self::Pred(def) => Some(def),
+            _ => None,
+        }
+    }
 }
 
 impl From<DefImport> for DefKind {
@@ -286,6 +302,18 @@ impl From<DefFunction> for DefKind {
 impl From<DefVariable> for DefKind {
     fn from(entity: DefVariable) -> Self {
         Self::Variable(entity)
+    }
+}
+
+impl From<DefTyVariable> for DefKind {
+    fn from(entity: DefTyVariable) -> Self {
+        Self::TyVariable(entity)
+    }
+}
+
+impl From<DefPred> for DefKind {
+    fn from(entity: DefPred) -> Self {
+        Self::Pred(entity)
     }
 }
 
@@ -647,4 +675,18 @@ impl DefKindProject for DefTyVariable {
 #[derive(Debug, Clone)]
 pub enum TyVariableKind {
     TyParam { of: DefId, idx: usize },
+}
+
+#[derive(Debug, Clone)]
+pub struct DefPred {
+    pub pred_id: PredId,
+    pub func_def_id: DefId,
+    pub kind: PredKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum PredKind {
+    ContractEnsures,
+    ContractRequires,
+    Nested,
 }

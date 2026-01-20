@@ -7,9 +7,7 @@ use slotmap::{SecondaryMap, SlotMap, SparseSecondaryMap, new_key_type};
 use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
 use crate::sema::def::{
-    Def, DefAction, DefAnnotation, DefAutomaton, DefEnum, DefFunction, DefId, DefImport, DefKind,
-    DefKindProject, DefSemanticTy, DefStruct, DefTyAlias, DefVariable, FunctionKind,
-    SemanticTyValue, VariableKind,
+    Def, DefAction, DefAnnotation, DefAutomaton, DefEnum, DefFunction, DefId, DefImport, DefKind, DefKindProject, DefPred, DefSemanticTy, DefStruct, DefTyAlias, DefVariable, FunctionKind, PredKind, SemanticTyValue, VariableKind
 };
 use crate::sema::{Result, Sema};
 use crate::{DeclId, ExprId, FileId, PredId, StmtId, TyExprId, ast};
@@ -27,6 +25,7 @@ pub enum Ns {
     Annotation,
     Action,
     State,
+    Contract,
 }
 
 #[derive(Debug)]
@@ -152,6 +151,9 @@ pub struct NameRes {
 
     /// Maps each declaration in the AST to its primary [`DefId`].
     pub decl_defs: SecondaryMap<DeclId, DefId>,
+
+    /// Maps each predicate in the AST to its primary [`DefId`].
+    pub pred_defs: SecondaryMap<PredId, DefId>,
 
     /// Maps each file to its top-level scope.
     pub file_scopes: SecondaryMap<FileId, ScopeId>,
@@ -1411,26 +1413,29 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         fn_def_id: DefId,
         contract: &'ast ast::ContractRequires,
     ) {
-        // TODO: process the name.
-
-        self.process_pred(fn_def_id, contract.pred);
+        self.process_pred(fn_def_id, PredKind::ContractRequires, contract.pred);
     }
 
     fn process_contract_ensures(&mut self, fn_def_id: DefId, contract: &'ast ast::ContractEnsures) {
-        // TODO: process the name.
-
-        self.process_pred(fn_def_id, contract.pred);
+        self.process_pred(fn_def_id, PredKind::ContractEnsures, contract.pred);
     }
 
     fn process_contract_assigns(&mut self, fn_def_id: DefId, contract: &'ast ast::ContractAssigns) {
-        // TODO: process the name.
-
         let body_scope_id = self.def::<DefFunction>(fn_def_id).body_scope_id;
         self.process_expr(body_scope_id, contract.expr);
     }
 
-    fn process_pred(&mut self, fn_def_id: DefId, pred_id: PredId) {
-        todo!()
+    fn process_pred(&mut self, fn_def_id: DefId, kind: PredKind, pred_id: PredId) {
+        let pred = &self.sema.libsl.preds[pred_id];
+
+        match &pred.kind {
+            ast::PredKind::Dummy => unreachable!(),
+            ast::PredKind::Block(pred) => todo!(),
+            ast::PredKind::Named(pred) => todo!(),
+            ast::PredKind::Decl(decl_id) => todo!(),
+            ast::PredKind::If(pred) => todo!(),
+            ast::PredKind::Expr(expr_id) => todo!(),
+        }
     }
 }
 

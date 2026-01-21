@@ -173,7 +173,25 @@ pub struct NameRes {
     pub ty_expr_names: SparseSecondaryMap<TyExprId, DefId>,
 
     /// Maps name expressions to resolved entities.
-    pub expr_names: SparseSecondaryMap<TyExprId, DefId>,
+    pub expr_names: SparseSecondaryMap<ExprId, DefId>,
+
+    /// Maps action call expressions to resolved actions.
+    pub expr_action_calls: SparseSecondaryMap<ExprId, DefId>,
+
+    /// Maps automaton instantiation expressions to resolved automata.
+    pub expr_instantiations: SparseSecondaryMap<ExprId, DefId>,
+
+    /// Maps `has`-concept expressions to resolved automaton concepts.
+    pub expr_has_concepts: SparseSecondaryMap<ExprId, DefId>,
+
+    /// Maps name accesses to resolved entities.
+    pub access_names: SparseSecondaryMap<AccessId, DefId>,
+
+    /// Maps automaton field accesses to resolved automata.
+    pub access_automaton_fields: SparseSecondaryMap<AccessId, DefId>,
+
+    /// Maps accesses to their entity kind.
+    pub access_entity_types: SecondaryMap<AccessId, AccessEntityKind>,
 }
 
 impl NameRes {
@@ -250,6 +268,12 @@ impl DeclCtx {
             DeclCtx::FuncBody { def_id, scope_id } => (Some(def_id), scope_id),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AccessEntityKind {
+    Var,
+    Callee,
 }
 
 struct Pass<'ast, 's, D> {
@@ -1681,7 +1705,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         _stmt_id: StmtId,
         stmt: &'ast ast::StmtAssign,
     ) {
-        self.process_access(scope_id, stmt.lhs);
+        self.process_access(AccessEntityKind::Var, scope_id, stmt.lhs);
         self.process_expr(scope_id, stmt.rhs);
     }
 
@@ -1807,10 +1831,326 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 // Phase 3, expressions and access expressions.
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn process_expr(&mut self, scope_id: ScopeId, expr_id: ExprId) {
-        todo!()
+        let expr = &self.sema.libsl.exprs[expr_id];
+
+        match &expr.kind {
+            ast::ExprKind::Dummy => unreachable!(),
+
+            ast::ExprKind::PrimitiveLit(expr) => {
+                self.process_expr_primitive_lit(scope_id, expr_id, expr)
+            }
+
+            ast::ExprKind::ArrayLit(expr) => self.process_expr_array_lit(scope_id, expr_id, expr),
+
+            ast::ExprKind::SetLit(expr) => self.process_expr_set_lit(scope_id, expr_id, expr),
+
+            ast::ExprKind::Access(expr) => self.process_expr_access(scope_id, expr_id, expr),
+
+            ast::ExprKind::Prev(expr) => self.process_expr_prev(scope_id, expr_id, expr),
+
+            ast::ExprKind::ProcCall(expr) => self.process_expr_proc_call(scope_id, expr_id, expr),
+
+            ast::ExprKind::ActionCall(expr) => {
+                self.process_expr_action_call(scope_id, expr_id, expr)
+            }
+
+            ast::ExprKind::Instantiate(expr) => {
+                self.process_expr_instantiate(scope_id, expr_id, expr)
+            }
+
+            ast::ExprKind::HasConcept(expr) => {
+                self.process_expr_has_concept(scope_id, expr_id, expr)
+            }
+
+            ast::ExprKind::Cast(expr) => self.process_expr_cast(scope_id, expr_id, expr),
+
+            ast::ExprKind::TyCompare(expr) => self.process_expr_ty_compare(scope_id, expr_id, expr),
+
+            ast::ExprKind::Unary(expr) => self.process_expr_unary(scope_id, expr_id, expr),
+
+            ast::ExprKind::Binary(expr) => self.process_expr_binary(scope_id, expr_id, expr),
+        }
     }
 
-    fn process_access(&mut self, scope_id: ScopeId, access_id: AccessId) {
-        todo!()
+    fn process_expr_primitive_lit(
+        &mut self,
+        _scope_id: ScopeId,
+        _expr_id: ExprId,
+        _expr: &'ast ast::ExprPrimitiveLit,
+    ) {
+        // do nothing.
+    }
+
+    fn process_expr_array_lit(
+        &mut self,
+        scope_id: ScopeId,
+        _expr_id: ExprId,
+        expr: &'ast ast::ExprArrayLit,
+    ) {
+        for &elem in &expr.elems {
+            self.process_expr(scope_id, elem);
+        }
+    }
+
+    fn process_expr_set_lit(
+        &mut self,
+        scope_id: ScopeId,
+        _expr_id: ExprId,
+        expr: &'ast ast::ExprSetLit,
+    ) {
+        for &elem in &expr.elems {
+            self.process_expr(scope_id, elem);
+        }
+    }
+
+    fn process_expr_access(
+        &mut self,
+        scope_id: ScopeId,
+        _expr_id: ExprId,
+        expr: &'ast ast::ExprAccess,
+    ) {
+        self.process_access(AccessEntityKind::Var, scope_id, expr.access);
+    }
+
+    fn process_expr_prev(
+        &mut self,
+        scope_id: ScopeId,
+        _expr_id: ExprId,
+        expr: &'ast ast::ExprPrev,
+    ) {
+        self.process_access(AccessEntityKind::Var, scope_id, expr.access);
+    }
+
+    fn process_expr_proc_call(
+        &mut self,
+        scope_id: ScopeId,
+        _expr_id: ExprId,
+        expr: &'ast ast::ExprProcCall,
+    ) {
+        self.process_access(AccessEntityKind::Callee, scope_id, expr.callee);
+
+        if let Some(ty_args) = &expr.generics {
+            for ty_arg in ty_args {
+                self.process_ty_arg(scope_id, ty_arg);
+            }
+        }
+
+        for &arg in &expr.args {
+            self.process_expr(scope_id, arg);
+        }
+    }
+
+    fn process_expr_action_call(
+        &mut self,
+        scope_id: ScopeId,
+        expr_id: ExprId,
+        expr: &'ast ast::ExprActionCall,
+    ) {
+        if let Ok(def_id) = self
+            .sema
+            .name_res
+            .resolve(scope_id, Ns::Action, &expr.name.to_string())
+        {
+            self.sema.name_res.expr_action_calls.insert(expr_id, def_id);
+        }
+
+        if let Some(ty_args) = &expr.generics {
+            for ty_arg in ty_args {
+                self.process_ty_arg(scope_id, ty_arg);
+            }
+        }
+
+        for &arg in &expr.args {
+            self.process_expr(scope_id, arg);
+        }
+    }
+
+    fn process_expr_instantiate(
+        &mut self,
+        scope_id: ScopeId,
+        expr_id: ExprId,
+        expr: &'ast ast::ExprInstantiate,
+    ) {
+        if let Ok(def_id) =
+            self.sema
+                .name_res
+                .resolve(scope_id, Ns::Automaton, &expr.name.to_string())
+        {
+            self.sema
+                .name_res
+                .expr_instantiations
+                .insert(expr_id, def_id);
+        }
+
+        if let Some(ty_args) = &expr.generics {
+            for ty_arg in ty_args {
+                self.process_ty_arg(scope_id, ty_arg);
+            }
+        }
+
+        for arg in &expr.args {
+            match arg {
+                ast::ConstructorArg::State(_) => {
+                    // will be handled in typeck.
+                }
+
+                &ast::ConstructorArg::Var(_, arg_expr_id) => {
+                    // the name will be checked in typeck.
+
+                    self.process_expr(scope_id, arg_expr_id);
+                }
+            }
+        }
+    }
+
+    fn process_expr_has_concept(
+        &mut self,
+        scope_id: ScopeId,
+        expr_id: ExprId,
+        expr: &'ast ast::ExprHasConcept,
+    ) {
+        self.process_access(AccessEntityKind::Var, scope_id, expr.scrutinee);
+
+        if let Ok(def_id) =
+            self.sema
+                .name_res
+                .resolve(scope_id, Ns::Automaton, &expr.concept.to_string())
+        {
+            self.sema.name_res.expr_has_concepts.insert(expr_id, def_id);
+        }
+    }
+
+    fn process_expr_cast(
+        &mut self,
+        scope_id: ScopeId,
+        _expr_id: ExprId,
+        expr: &'ast ast::ExprCast,
+    ) {
+        self.process_expr(scope_id, expr.expr);
+        self.process_ty_expr(scope_id, expr.ty_expr);
+    }
+
+    fn process_expr_ty_compare(
+        &mut self,
+        scope_id: ScopeId,
+        _expr_id: ExprId,
+        expr: &'ast ast::ExprTyCompare,
+    ) {
+        self.process_expr(scope_id, expr.expr);
+        self.process_ty_expr(scope_id, expr.ty_expr);
+    }
+
+    fn process_expr_unary(
+        &mut self,
+        scope_id: ScopeId,
+        _expr_id: ExprId,
+        expr: &'ast ast::ExprUnary,
+    ) {
+        self.process_expr(scope_id, expr.expr);
+    }
+
+    fn process_expr_binary(
+        &mut self,
+        scope_id: ScopeId,
+        _expr_id: ExprId,
+        expr: &'ast ast::ExprBinary,
+    ) {
+        self.process_expr(scope_id, expr.lhs);
+        self.process_expr(scope_id, expr.rhs);
+    }
+
+    fn process_access(&mut self, kind: AccessEntityKind, scope_id: ScopeId, access_id: AccessId) {
+        self.sema.name_res.access_entity_types.insert(access_id, kind);
+
+        let access = &self.sema.libsl.accesses[access_id];
+
+        match &access.kind {
+            ast::AccessKind::Dummy => unreachable!(),
+
+            ast::AccessKind::Name(access) => {
+                self.process_access_name(kind, scope_id, access_id, access)
+            }
+
+            ast::AccessKind::Field(access) => {
+                self.process_access_field(kind, scope_id, access_id, access)
+            }
+
+            ast::AccessKind::Index(access) => {
+                self.process_access_index(kind, scope_id, access_id, access)
+            }
+
+            ast::AccessKind::AutomatonField(access) => {
+                self.process_access_automaton_field(kind, scope_id, access_id, access)
+            }
+        }
+    }
+
+    fn process_access_name(
+        &mut self,
+        kind: AccessEntityKind,
+        scope_id: ScopeId,
+        access_id: AccessId,
+        access: &'ast ast::AccessName,
+    ) {
+        match kind {
+            AccessEntityKind::Callee => {
+                // callee access is subject to overload resolution; defer until typeck.
+            }
+
+            AccessEntityKind::Var => {
+                if let Ok(def_id) =
+                    self.sema
+                        .name_res
+                        .resolve(scope_id, Ns::Var, &access.name.to_string())
+                {
+                    self.sema.name_res.access_names.insert(access_id, def_id);
+                }
+            }
+        }
+    }
+
+    fn process_access_field(
+        &mut self,
+        _kind: AccessEntityKind,
+        scope_id: ScopeId,
+        _access_id: AccessId,
+        access: &'ast ast::AccessField,
+    ) {
+        self.process_access(AccessEntityKind::Var, scope_id, access.base);
+
+        // the field is resolved during typeck.
+    }
+
+    fn process_access_index(
+        &mut self,
+        _kind: AccessEntityKind,
+        scope_id: ScopeId,
+        _access_id: AccessId,
+        access: &'ast ast::AccessIndex,
+    ) {
+        self.process_access(AccessEntityKind::Var, scope_id, access.base);
+        self.process_expr(scope_id, access.index);
+    }
+
+    fn process_access_automaton_field(
+        &mut self,
+        _kind: AccessEntityKind,
+        scope_id: ScopeId,
+        access_id: AccessId,
+        access: &'ast ast::AccessAutomatonField,
+    ) {
+        if let Ok(def_id) = self.sema.name_res.resolve(scope_id, Ns::Automaton, &access.automaton_name.to_string()) {
+            self.sema.name_res.access_automaton_fields.insert(access_id, def_id);
+        }
+
+        if let Some(ty_args) = &access.generics {
+            for ty_arg in ty_args {
+                self.process_ty_arg(scope_id, ty_arg);
+            }
+        }
+
+        self.process_access(AccessEntityKind::Var, scope_id, access.base);
+
+        // the field is resolved during typeck.
     }
 }

@@ -12,7 +12,7 @@ use crate::sema::def::{
     PredKind, SemanticTyValue, VariableKind,
 };
 use crate::sema::{Result, Sema};
-use crate::{DeclId, ExprId, FileId, PredId, StmtId, TyExprId, ast};
+use crate::{AccessId, DeclId, ExprId, FileId, PredId, StmtId, TyExprId, ast};
 
 new_key_type! {
     pub struct ScopeId;
@@ -1564,7 +1564,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             ScopeKind::Block { func: func_def_id },
         ));
 
-        self.process_pred(func_def_id, then_scope_id, PredKind::Nested, pred.then_branch);
+        self.process_pred(
+            func_def_id,
+            then_scope_id,
+            PredKind::Nested,
+            pred.then_branch,
+        );
 
         if let Some(else_pred_id) = pred.else_branch {
             let else_scope_id = self.sema.name_res.scopes.insert(Scope::new(
@@ -1591,7 +1596,106 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 // Phase 3, statements.
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn process_stmt(&mut self, func_def_id: DefId, scope_id: ScopeId, stmt_id: StmtId) {
-        todo!()
+        let stmt = &self.sema.libsl.stmts[stmt_id];
+
+        match &stmt.kind {
+            ast::StmtKind::Dummy => unreachable!(),
+
+            &ast::StmtKind::Decl(decl_id) => {
+                self.process_stmt_decl(func_def_id, scope_id, stmt_id, decl_id)
+            }
+
+            ast::StmtKind::If(stmt) => self.process_stmt_if(func_def_id, scope_id, stmt_id, stmt),
+
+            ast::StmtKind::Assign(stmt) => {
+                self.process_stmt_assign(func_def_id, scope_id, stmt_id, stmt)
+            }
+
+            ast::StmtKind::Cancel(stmt) => {
+                self.process_stmt_cancel(func_def_id, scope_id, stmt_id, stmt)
+            }
+
+            &ast::StmtKind::Expr(expr_id) => {
+                self.process_stmt_expr(func_def_id, scope_id, stmt_id, expr_id)
+            }
+        }
+    }
+
+    fn process_stmt_decl(
+        &mut self,
+        func_def_id: DefId,
+        scope_id: ScopeId,
+        _stmt_id: StmtId,
+        decl_id: DeclId,
+    ) {
+        self.process_decl(
+            DeclCtx::FuncBody {
+                def_id: func_def_id,
+                scope_id,
+            },
+            decl_id,
+        );
+    }
+
+    fn process_stmt_if(
+        &mut self,
+        func_def_id: DefId,
+        scope_id: ScopeId,
+        _stmt_id: StmtId,
+        stmt: &'ast ast::StmtIf,
+    ) {
+        self.process_expr(scope_id, stmt.cond);
+
+        let then_scope_id = self.sema.name_res.scopes.insert(Scope::new(
+            Some(scope_id),
+            ScopeKind::Block { func: func_def_id },
+        ));
+
+        for &then_stmt_id in &stmt.then_branch {
+            self.process_stmt(func_def_id, then_scope_id, then_stmt_id);
+        }
+
+        if !stmt.else_branch.is_empty() {
+            let else_scope_id = self.sema.name_res.scopes.insert(Scope::new(
+                Some(scope_id),
+                ScopeKind::Block { func: func_def_id },
+            ));
+
+            for &else_stmt_id in &stmt.else_branch {
+                self.process_stmt(func_def_id, else_scope_id, else_stmt_id);
+            }
+        }
+    }
+
+    fn process_stmt_assign(
+        &mut self,
+        _func_def_id: DefId,
+        scope_id: ScopeId,
+        _stmt_id: StmtId,
+        stmt: &'ast ast::StmtAssign,
+    ) {
+        self.process_access(scope_id, stmt.lhs);
+        self.process_expr(scope_id, stmt.rhs);
+    }
+
+    fn process_stmt_cancel(
+        &mut self,
+        _func_def_id: DefId,
+        _scope_id: ScopeId,
+        _stmt_id: StmtId,
+        _stmt: &'ast ast::StmtCancel,
+    ) {
+        // do nothing.
+    }
+
+    fn process_stmt_expr(
+        &mut self,
+        _func_def_id: DefId,
+        scope_id: ScopeId,
+        _stmt_id: StmtId,
+        expr_id: ExprId,
+    ) {
+        self.process_expr(scope_id, expr_id);
     }
 }
 
@@ -1602,9 +1706,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 }
 
-// Phase 3, expressions.
+// Phase 3, expressions and access expressions.
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn process_expr(&mut self, scope_id: ScopeId, expr_id: ExprId) {
+        todo!()
+    }
+
+    fn process_access(&mut self, scope_id: ScopeId, access_id: AccessId) {
         todo!()
     }
 }

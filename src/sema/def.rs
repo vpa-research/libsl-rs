@@ -6,7 +6,7 @@ use slotmap::new_key_type;
 
 use crate::loc::Loc;
 use crate::sema::resolve::ScopeId;
-use crate::sema::ty::TyId;
+use crate::sema::ty::BuiltinTyCtor;
 use crate::{DeclId, PredId};
 
 new_key_type! {
@@ -27,7 +27,7 @@ pub enum DefKind {
 
     Import(DefImport),
 
-    Ty(TyId),
+    BuiltinCtor(BuiltinTyCtor),
 
     SemanticTy(DefSemanticTy),
 
@@ -245,9 +245,9 @@ impl From<DefImport> for DefKind {
     }
 }
 
-impl From<TyId> for DefKind {
-    fn from(ty_id: TyId) -> Self {
-        Self::Ty(ty_id)
+impl From<BuiltinTyCtor> for DefKind {
+    fn from(entity: BuiltinTyCtor) -> Self {
+        Self::BuiltinCtor(entity)
     }
 }
 

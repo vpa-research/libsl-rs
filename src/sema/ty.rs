@@ -8,6 +8,9 @@
 
 use slotmap::new_key_type;
 
+use crate::ast::Variance;
+use crate::sema::def::DefId;
+
 new_key_type! {
     pub struct TyId;
 }
@@ -15,77 +18,17 @@ new_key_type! {
 /// A LibSL type.
 #[derive(Debug, Default, Clone)]
 pub enum Ty {
-    /// A dummy type erroneous expressions are typed as.
     #[default]
-    Error,
+    Dummy,
 
     /// A type constructed by applying type parameters to a type constructor.
     Ctor(ConstructedTy),
 
-    /// The `Any` type, the supertype of all other types.
-    Any,
-
-    /// The `Nothing` type, the subtype of all other types.
-    Nothing,
-
-    /// The boolean type.
-    Bool,
-
-    /// The character type.
-    Char,
-
-    /// A floating-point number type.
-    Float(TyFloat),
-
-    /// An integer type
-    Int(TyInt),
+    // TODO: literal types.
 }
 
-/// A type constructor.
-///
-/// When applied to type parameters, produces a [constructed type][Ty::Ctor].
 #[derive(Debug, Clone)]
-pub enum TyCtor {}
-
-impl TyCtor {
-    pub fn param_count(&self) -> usize {
-        match *self {}
-    }
-
-    pub fn apply(&self, params: Vec<TyId>) -> ConstructedTy {
-        todo!()
-    }
-}
-
-/// The type obtained by applying type parameters to a type constructor.
-#[derive(Debug, Clone)]
-pub struct ConstructedTy {
-    /// The type constructor.
-    pub ctor: TyCtor,
-
-    /// The type parameters.
-    pub params: Vec<TyId>,
-}
-
-/// A floating-point number type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum TyFloat {
-    F32,
-    F64,
-}
-
-impl TyFloat {
-    pub fn width(self) -> usize {
-        match self {
-            Self::F32 => 32,
-            Self::F64 => 64,
-        }
-    }
-}
-
-/// An integer type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TyInt {
+pub struct IntCtor {
     /// The number of bits comprising an integer.
     pub width: IntWidth,
 
@@ -118,4 +61,47 @@ impl IntWidth {
             IntWidth::I64 => 64,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub enum FloatCtor {
+    F32,
+    F64,
+}
+
+impl FloatCtor {
+    pub fn width(self) -> usize {
+        match self {
+            Self::F32 => 32,
+            Self::F64 => 64,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum BuiltinTyCtor {
+    Error,
+    Any,
+    Nothing,
+    Bool,
+    Char,
+    Int(IntCtor),
+    Float(FloatCtor),
+    Array,
+}
+
+/// The type obtained by applying type arguments to a type constructor.
+#[derive(Debug, Clone)]
+pub struct ConstructedTy {
+    /// The type constructor.
+    pub ctor: DefId,
+
+    /// The type arguments.
+    pub args: Vec<ConstructedTyArg>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ConstructedTyArg {
+    Ty(Option<Variance>, TyId),
+    Wildcard,
 }

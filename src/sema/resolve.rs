@@ -168,6 +168,12 @@ pub struct NameRes {
 
     /// Definitions in the prelude.
     pub prelude_defs: PreludeDefs,
+
+    /// Maps name type expressions to resolved type constructors.
+    pub ty_expr_names: SparseSecondaryMap<TyExprId, DefId>,
+
+    /// Maps name expressions to resolved entities.
+    pub expr_names: SparseSecondaryMap<TyExprId, DefId>,
 }
 
 impl NameRes {
@@ -194,7 +200,7 @@ impl NameRes {
         Self::resolve_import_in(&self.defs, def_id)
     }
 
-    pub fn resolve(&self, scope_id: ScopeId, ns: Ns, name: &str) -> DefId {
+    pub fn resolve(&self, scope_id: ScopeId, ns: Ns, name: &str) -> Result<DefId> {
         todo!()
     }
 }
@@ -1517,8 +1523,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         pred_id: PredId,
         pred: &'ast ast::PredNamed,
     ) {
+        let body_scope_id = self.def::<DefFunction>(func_def_id).body_scope_id;
         let def_id = self.add_def(
-            scope_id,
+            body_scope_id,
             Ns::Contract,
             pred.name.to_string(),
             pred.name.loc.clone(),
@@ -1702,7 +1709,98 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 // Phase 3, type expressions.
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn process_ty_expr(&mut self, scope_id: ScopeId, ty_expr_id: TyExprId) {
-        todo!()
+        let ty_expr = &self.sema.libsl.ty_exprs[ty_expr_id];
+
+        match &ty_expr.kind {
+            ast::TyExprKind::Dummy => unreachable!(),
+
+            ast::TyExprKind::PrimitiveLit(ty_expr) => {
+                self.process_ty_expr_primitive_lit(scope_id, ty_expr_id, ty_expr)
+            }
+
+            ast::TyExprKind::Name(ty_expr) => {
+                self.process_ty_expr_name(scope_id, ty_expr_id, ty_expr)
+            }
+
+            ast::TyExprKind::Pointer(ty_expr) => {
+                self.process_ty_expr_pointer(scope_id, ty_expr_id, ty_expr)
+            }
+
+            ast::TyExprKind::Intersection(ty_expr) => {
+                self.process_ty_expr_intersection(scope_id, ty_expr_id, ty_expr)
+            }
+
+            ast::TyExprKind::Union(ty_expr) => {
+                self.process_ty_expr_union(scope_id, ty_expr_id, ty_expr)
+            }
+        }
+    }
+
+    fn process_ty_expr_primitive_lit(
+        &mut self,
+        _scope_id: ScopeId,
+        _ty_expr_id: TyExprId,
+        _ty_expr: &'ast ast::TyExprPrimitiveLit,
+    ) {
+        // do nothing.
+    }
+
+    fn process_ty_expr_name(
+        &mut self,
+        scope_id: ScopeId,
+        ty_expr_id: TyExprId,
+        ty_expr: &'ast ast::TyExprName,
+    ) {
+        let ty_name = ty_expr.ty_name.to_string();
+
+        if let Ok(ctor_def_id) = self.sema.name_res.resolve(scope_id, Ns::Ty, &ty_name) {
+            self.sema
+                .name_res
+                .ty_expr_names
+                .insert(ty_expr_id, ctor_def_id);
+        }
+
+        if let Some(args) = &ty_expr.generics {
+            for arg in args {
+                self.process_ty_arg(scope_id, arg);
+            }
+        }
+    }
+
+    fn process_ty_expr_pointer(
+        &mut self,
+        scope_id: ScopeId,
+        _ty_expr_id: TyExprId,
+        ty_expr: &'ast ast::TyExprPointer,
+    ) {
+        self.process_ty_expr(scope_id, ty_expr.base);
+    }
+
+    fn process_ty_expr_intersection(
+        &mut self,
+        scope_id: ScopeId,
+        _ty_expr_id: TyExprId,
+        ty_expr: &'ast ast::TyExprIntersection,
+    ) {
+        self.process_ty_expr(scope_id, ty_expr.lhs);
+        self.process_ty_expr(scope_id, ty_expr.rhs);
+    }
+
+    fn process_ty_expr_union(
+        &mut self,
+        scope_id: ScopeId,
+        _ty_expr_id: TyExprId,
+        ty_expr: &'ast ast::TyExprUnion,
+    ) {
+        self.process_ty_expr(scope_id, ty_expr.lhs);
+        self.process_ty_expr(scope_id, ty_expr.rhs);
+    }
+
+    fn process_ty_arg(&mut self, scope_id: ScopeId, ty_arg: &'ast ast::TyArg) {
+        match *ty_arg {
+            ast::TyArg::TyExpr(_, ty_expr_id) => self.process_ty_expr(scope_id, ty_expr_id),
+            ast::TyArg::Wildcard(_) => {}
+        }
     }
 }
 

@@ -1379,53 +1379,53 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         // TODO: process type constraints.
     }
 
-    fn process_function_body(&mut self, fn_def_id: DefId, body: &'ast ast::FunctionBody) {
-        let param_scope_id = self.def::<DefFunction>(fn_def_id).param_scope_id;
+    fn process_function_body(&mut self, func_def_id: DefId, body: &'ast ast::FunctionBody) {
+        let param_scope_id = self.def::<DefFunction>(func_def_id).param_scope_id;
         let scope_id = self.sema.name_res.scopes.insert(Scope::new(
             Some(param_scope_id),
-            ScopeKind::Block { func: fn_def_id },
+            ScopeKind::Block { func: func_def_id },
         ));
 
-        self.def_mut::<DefFunction>(fn_def_id).body_scope_id = scope_id;
+        self.def_mut::<DefFunction>(func_def_id).body_scope_id = scope_id;
 
         for contract in &body.contracts {
-            self.process_contract(fn_def_id, contract);
+            self.process_contract(func_def_id, contract);
         }
 
         for &stmt_id in &body.stmts {
-            self.process_stmt(fn_def_id, scope_id, stmt_id);
+            self.process_stmt(func_def_id, scope_id, stmt_id);
         }
     }
 }
 
 // Phase 3, contracts and predicates.
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
-    fn process_contract(&mut self, fn_def_id: DefId, contract: &'ast ast::Contract) {
-        let scope_id = self.def::<DefFunction>(fn_def_id).body_scope_id;
+    fn process_contract(&mut self, func_def_id: DefId, contract: &'ast ast::Contract) {
+        let scope_id = self.def::<DefFunction>(func_def_id).body_scope_id;
 
         match contract {
             ast::Contract::Requires(contract) => {
-                self.process_contract_requires(fn_def_id, scope_id, contract)
+                self.process_contract_requires(func_def_id, scope_id, contract)
             }
 
             ast::Contract::Ensures(contract) => {
-                self.process_contract_ensures(fn_def_id, scope_id, contract)
+                self.process_contract_ensures(func_def_id, scope_id, contract)
             }
 
             ast::Contract::Assigns(contract) => {
-                self.process_contract_assigns(fn_def_id, scope_id, contract)
+                self.process_contract_assigns(func_def_id, scope_id, contract)
             }
         }
     }
 
     fn process_contract_requires(
         &mut self,
-        fn_def_id: DefId,
+        func_def_id: DefId,
         scope_id: ScopeId,
         contract: &'ast ast::ContractRequires,
     ) {
         self.process_pred(
-            fn_def_id,
+            func_def_id,
             scope_id,
             PredKind::ContractRequires,
             contract.pred,
@@ -1434,12 +1434,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn process_contract_ensures(
         &mut self,
-        fn_def_id: DefId,
+        func_def_id: DefId,
         scope_id: ScopeId,
         contract: &'ast ast::ContractEnsures,
     ) {
         self.process_pred(
-            fn_def_id,
+            func_def_id,
             scope_id,
             PredKind::ContractEnsures,
             contract.pred,
@@ -1448,7 +1448,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn process_contract_assigns(
         &mut self,
-        _fn_def_id: DefId,
+        _func_def_id: DefId,
         scope_id: ScopeId,
         contract: &'ast ast::ContractAssigns,
     ) {
@@ -1459,7 +1459,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn process_pred(
         &mut self,
-        fn_def_id: DefId,
+        func_def_id: DefId,
         scope_id: ScopeId,
         kind: PredKind,
         pred_id: PredId,
@@ -1470,30 +1470,30 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             ast::PredKind::Dummy => unreachable!(),
 
             ast::PredKind::Block(pred) => {
-                self.process_pred_block(fn_def_id, scope_id, kind, pred_id, pred)
+                self.process_pred_block(func_def_id, scope_id, kind, pred_id, pred)
             }
 
             ast::PredKind::Named(pred) => {
-                self.process_pred_named(fn_def_id, scope_id, kind, pred_id, pred)
+                self.process_pred_named(func_def_id, scope_id, kind, pred_id, pred)
             }
 
             &ast::PredKind::Decl(decl_id) => {
-                self.process_pred_var(fn_def_id, scope_id, kind, pred_id, decl_id)
+                self.process_pred_var(func_def_id, scope_id, kind, pred_id, decl_id)
             }
 
             ast::PredKind::If(pred) => {
-                self.process_pred_if(fn_def_id, scope_id, kind, pred_id, pred)
+                self.process_pred_if(func_def_id, scope_id, kind, pred_id, pred)
             }
 
             &ast::PredKind::Expr(expr_id) => {
-                self.process_pred_expr(fn_def_id, scope_id, kind, pred_id, expr_id)
+                self.process_pred_expr(func_def_id, scope_id, kind, pred_id, expr_id)
             }
         }
     }
 
     fn process_pred_block(
         &mut self,
-        fn_def_id: DefId,
+        func_def_id: DefId,
         scope_id: ScopeId,
         _kind: PredKind,
         _pred_id: PredId,
@@ -1501,17 +1501,17 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     ) {
         let scope_id = self.sema.name_res.scopes.insert(Scope::new(
             Some(scope_id),
-            ScopeKind::Block { func: fn_def_id },
+            ScopeKind::Block { func: func_def_id },
         ));
 
         for &pred_id in &pred.preds {
-            self.process_pred(fn_def_id, scope_id, PredKind::Nested, pred_id);
+            self.process_pred(func_def_id, scope_id, PredKind::Nested, pred_id);
         }
     }
 
     fn process_pred_named(
         &mut self,
-        fn_def_id: DefId,
+        func_def_id: DefId,
         scope_id: ScopeId,
         kind: PredKind,
         pred_id: PredId,
@@ -1522,53 +1522,75 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             Ns::Contract,
             pred.name.to_string(),
             pred.name.loc.clone(),
-            DefPred::new(pred_id, fn_def_id, kind).into(),
+            DefPred::new(pred_id, func_def_id, kind).into(),
         );
 
         if let Ok(def_id) = def_id {
             self.sema.name_res.pred_defs.insert(pred_id, def_id);
         }
 
-        self.process_pred(fn_def_id, scope_id, PredKind::Nested, pred.pred);
+        self.process_pred(func_def_id, scope_id, PredKind::Nested, pred.pred);
     }
 
     fn process_pred_var(
         &mut self,
-        fn_def_id: DefId,
+        func_def_id: DefId,
         scope_id: ScopeId,
-        kind: PredKind,
-        pred_id: PredId,
+        _kind: PredKind,
+        _pred_id: PredId,
         decl_id: DeclId,
     ) {
-        todo!()
+        self.process_decl(
+            DeclCtx::FuncBody {
+                def_id: func_def_id,
+                scope_id,
+            },
+            decl_id,
+        );
     }
 
     fn process_pred_if(
         &mut self,
-        fn_def_id: DefId,
+        func_def_id: DefId,
         scope_id: ScopeId,
-        kind: PredKind,
-        pred_id: PredId,
+        _kind: PredKind,
+        _pred_id: PredId,
         pred: &'ast ast::PredIf,
     ) {
-        todo!()
+        self.process_expr(scope_id, pred.cond);
+
+        let then_scope_id = self.sema.name_res.scopes.insert(Scope::new(
+            Some(scope_id),
+            ScopeKind::Block { func: func_def_id },
+        ));
+
+        self.process_pred(func_def_id, then_scope_id, PredKind::Nested, pred.then_branch);
+
+        if let Some(else_pred_id) = pred.else_branch {
+            let else_scope_id = self.sema.name_res.scopes.insert(Scope::new(
+                Some(scope_id),
+                ScopeKind::Block { func: func_def_id },
+            ));
+
+            self.process_pred(func_def_id, else_scope_id, PredKind::Nested, else_pred_id);
+        }
     }
 
     fn process_pred_expr(
         &mut self,
-        fn_def_id: DefId,
+        _func_def_id: DefId,
         scope_id: ScopeId,
-        kind: PredKind,
-        pred_id: PredId,
+        _kind: PredKind,
+        _pred_id: PredId,
         expr_id: ExprId,
     ) {
-        todo!()
+        self.process_expr(scope_id, expr_id);
     }
 }
 
 // Phase 3, statements.
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
-    fn process_stmt(&mut self, fn_def_id: DefId, scope_id: ScopeId, stmt_id: StmtId) {
+    fn process_stmt(&mut self, func_def_id: DefId, scope_id: ScopeId, stmt_id: StmtId) {
         todo!()
     }
 }

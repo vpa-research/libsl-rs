@@ -4,6 +4,7 @@ use std::cell::Cell;
 
 use slotmap::new_key_type;
 
+use crate::ast::Variance;
 use crate::loc::Loc;
 use crate::sema::resolve::ScopeId;
 use crate::sema::ty::BuiltinTyCtor;
@@ -660,6 +661,13 @@ pub enum FunctionKind {
 #[derive(Debug, Clone)]
 pub struct DefTyVariable {
     pub kind: TyVariableKind,
+    pub variance: Variance,
+}
+
+impl DefTyVariable {
+    pub fn new(kind: TyVariableKind, variance: Variance) -> Self {
+        Self { kind, variance }
+    }
 }
 
 impl DefKindProject for DefTyVariable {

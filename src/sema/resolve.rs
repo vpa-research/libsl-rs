@@ -4,12 +4,13 @@ use std::collections::HashMap;
 
 use slotmap::{SecondaryMap, SlotMap, SparseSecondaryMap, new_key_type};
 
+use crate::ast::Variance;
 use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
 use crate::sema::def::{
     Def, DefAction, DefAnnotation, DefAutomaton, DefEnum, DefFunction, DefId, DefImport, DefKind,
-    DefKindProject, DefPred, DefSemanticTy, DefStruct, DefTyAlias, DefVariable, FunctionKind,
-    PredKind, SemanticTyValue, VariableKind,
+    DefKindProject, DefPred, DefSemanticTy, DefStruct, DefTyAlias, DefTyVariable, DefVariable,
+    FunctionKind, PredKind, SemanticTyValue, TyVariableKind, VariableKind,
 };
 use crate::sema::{Result, Sema};
 use crate::{AccessId, DeclId, ExprId, FileId, PredId, StmtId, TyExprId, ast};
@@ -1084,10 +1085,31 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn process_generics(
         &mut self,
+        def_id: DefId,
         param_scope_id: ScopeId,
         generics: &[ast::Generic],
-    ) -> Result<Vec<DefId>> {
-        todo!()
+    ) -> Vec<DefId> {
+        let mut result = vec![];
+
+        for (idx, generic) in generics.iter().enumerate() {
+            let Ok(param_def_id) = self.add_def(
+                param_scope_id,
+                Ns::Ty,
+                generic.name.to_string(),
+                generic.name.loc.clone(),
+                DefTyVariable::new(
+                    TyVariableKind::TyParam { of: def_id, idx },
+                    generic.variance.clone().unwrap_or(Variance::Invariant),
+                )
+                .into(),
+            ) else {
+                continue;
+            };
+
+            result.push(param_def_id);
+        }
+
+        result
     }
 }
 
@@ -1129,9 +1151,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         // TODO: annotations.
 
-        if let Ok(generics) = self.process_generics(param_scope_id, &decl.ty_name.generics) {
-            self.def_mut::<DefSemanticTy>(def_id).generics = generics;
-        }
+        self.def_mut::<DefSemanticTy>(def_id).generics =
+            self.process_generics(def_id, param_scope_id, &decl.ty_name.generics);
 
         self.process_ty_expr(param_scope_id, decl.real_ty);
 
@@ -1158,9 +1179,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         // TODO: annotations.
 
-        if let Ok(generics) = self.process_generics(param_scope_id, &decl.ty_name.generics) {
-            self.def_mut::<DefTyAlias>(def_id).generics = generics;
-        }
+        self.def_mut::<DefTyAlias>(def_id).generics =
+            self.process_generics(def_id, param_scope_id, &decl.ty_name.generics);
 
         self.process_ty_expr(param_scope_id, decl.ty_expr);
     }
@@ -1172,9 +1192,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         // TODO: annotations.
 
-        if let Ok(generics) = self.process_generics(param_scope_id, &decl.ty_name.generics) {
-            self.def_mut::<DefStruct>(def_id).generics = generics;
-        }
+        self.def_mut::<DefStruct>(def_id).generics =
+            self.process_generics(def_id, param_scope_id, &decl.ty_name.generics);
 
         if let Some(is_ty) = decl.is_ty {
             self.process_ty_expr(param_scope_id, is_ty);
@@ -1198,9 +1217,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         // TODO: annotations.
 
-        if let Ok(generics) = self.process_generics(param_scope_id, &decl.ty_name.generics) {
-            self.def_mut::<DefEnum>(def_id).generics = generics;
-        }
+        self.def_mut::<DefEnum>(def_id).generics =
+            self.process_generics(def_id, param_scope_id, &decl.ty_name.generics);
     }
 
     fn process_decl_annotation(
@@ -1243,9 +1261,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         let param_scope_id = self.def::<DefAction>(def_id).param_scope_id;
 
-        if let Ok(generics) = self.process_generics(param_scope_id, &decl.generics) {
-            self.def_mut::<DefAction>(def_id).generics = generics;
-        }
+        self.def_mut::<DefAction>(def_id).generics =
+            self.process_generics(def_id, param_scope_id, &decl.generics);
 
         for (idx, param) in decl.params.iter().enumerate() {
             // TODO: process annotations.
@@ -1280,9 +1297,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         let param_scope_id = self.def::<DefAutomaton>(def_id).param_scope_id;
 
-        if let Ok(generics) = self.process_generics(param_scope_id, &decl.name.generics) {
-            self.def_mut::<DefAutomaton>(def_id).generics = generics;
-        }
+        self.def_mut::<DefAutomaton>(def_id).generics =
+            self.process_generics(def_id, param_scope_id, &decl.name.generics);
 
         for &var_decl_id in &decl.constructor_variables {
             self.process_decl(
@@ -1322,9 +1338,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         let param_scope_id = self.def::<DefFunction>(def_id).param_scope_id;
 
-        if let Ok(generics) = self.process_generics(param_scope_id, &decl.generics) {
-            self.def_mut::<DefFunction>(def_id).generics = generics;
-        }
+        self.def_mut::<DefFunction>(def_id).generics =
+            self.process_generics(def_id, param_scope_id, &decl.generics);
 
         self.process_function_params(def_id, param_scope_id, &decl.params);
 
@@ -1431,9 +1446,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         let param_scope_id = self.def::<DefFunction>(def_id).param_scope_id;
 
-        if let Ok(generics) = self.process_generics(param_scope_id, &decl.generics) {
-            self.def_mut::<DefFunction>(def_id).generics = generics;
-        }
+        self.def_mut::<DefFunction>(def_id).generics =
+            self.process_generics(def_id, param_scope_id, &decl.generics);
 
         self.process_function_params(def_id, param_scope_id, &decl.params);
 

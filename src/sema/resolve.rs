@@ -218,8 +218,74 @@ impl NameRes {
         Self::resolve_import_in(&self.defs, def_id)
     }
 
-    pub fn resolve(&self, scope_id: ScopeId, ns: Ns, name: &str) -> Result<DefId> {
-        todo!()
+    pub fn try_resolve_local(&self, scope_id: ScopeId, ns: Ns, name: &str) -> Option<DefId> {
+        let scope = &self.scopes[scope_id];
+        let key = (ns, name.to_string());
+
+        scope.defs.get(&key).copied()
+    }
+
+    fn make_unresolved_name_error(name: &str, loc: Loc) -> Diag {
+        Diag::err()
+            .at(loc.clone())
+            .with_msg(format!("the name `{name}` is not defined"))
+            .with_label(Label::primary(loc).with_msg("used here"))
+            .build()
+    }
+
+    pub fn resolve_local(
+        &self,
+        diag: &mut impl DiagCtx,
+        scope_id: ScopeId,
+        ns: Ns,
+        name: &str,
+        loc: &Loc,
+    ) -> Result<DefId> {
+        if let Some(def_id) = self.try_resolve_local(scope_id, ns, name) {
+            return Ok(def_id);
+        }
+
+        diag.emit(Self::make_unresolved_name_error(name, loc.clone()));
+
+        Err(())
+    }
+
+    pub fn try_resolve(&self, mut scope_id: ScopeId, ns: Ns, name: &str) -> Option<DefId> {
+        assert_ne!(
+            ns,
+            Ns::Function,
+            "entries in the function namespace cannot be resolved recursively"
+        );
+
+        loop {
+            if let Some(def_id) = self.try_resolve_local(scope_id, ns, name) {
+                return Some(def_id);
+            }
+
+            let scope = &self.scopes[scope_id];
+
+            match scope.parent {
+                Some(parent_scope_id) => scope_id = parent_scope_id,
+                None => return None,
+            }
+        }
+    }
+
+    pub fn resolve(
+        &self,
+        diag: &mut impl DiagCtx,
+        scope_id: ScopeId,
+        ns: Ns,
+        name: &str,
+        loc: &Loc,
+    ) -> Result<DefId> {
+        if let Some(def_id) = self.try_resolve(scope_id, ns, name) {
+            return Ok(def_id);
+        }
+
+        diag.emit(Self::make_unresolved_name_error(name, loc.clone()));
+
+        Err(())
     }
 }
 
@@ -1777,7 +1843,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     ) {
         let ty_name = ty_expr.ty_name.to_string();
 
-        if let Ok(ctor_def_id) = self.sema.name_res.resolve(scope_id, Ns::Ty, &ty_name) {
+        if let Ok(ctor_def_id) =
+            self.sema
+                .name_res
+                .resolve(self.diag, scope_id, Ns::Ty, &ty_name, &ty_expr.ty_name.loc)
+        {
             self.sema
                 .name_res
                 .ty_expr_names
@@ -1946,11 +2016,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         expr_id: ExprId,
         expr: &'ast ast::ExprActionCall,
     ) {
-        if let Ok(def_id) = self
-            .sema
-            .name_res
-            .resolve(scope_id, Ns::Action, &expr.name.to_string())
-        {
+        if let Ok(def_id) = self.sema.name_res.resolve(
+            self.diag,
+            scope_id,
+            Ns::Action,
+            &expr.name.to_string(),
+            &expr.name.loc,
+        ) {
             self.sema.name_res.expr_action_calls.insert(expr_id, def_id);
         }
 
@@ -1971,11 +2043,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         expr_id: ExprId,
         expr: &'ast ast::ExprInstantiate,
     ) {
-        if let Ok(def_id) =
-            self.sema
-                .name_res
-                .resolve(scope_id, Ns::Automaton, &expr.name.to_string())
-        {
+        if let Ok(def_id) = self.sema.name_res.resolve(
+            self.diag,
+            scope_id,
+            Ns::Automaton,
+            &expr.name.to_string(),
+            &expr.name.loc,
+        ) {
             self.sema
                 .name_res
                 .expr_instantiations
@@ -2011,11 +2085,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     ) {
         self.process_access(AccessEntityKind::Var, scope_id, expr.scrutinee);
 
-        if let Ok(def_id) =
-            self.sema
-                .name_res
-                .resolve(scope_id, Ns::Automaton, &expr.concept.to_string())
-        {
+        if let Ok(def_id) = self.sema.name_res.resolve(
+            self.diag,
+            scope_id,
+            Ns::Automaton,
+            &expr.concept.to_string(),
+            &expr.concept.loc,
+        ) {
             self.sema.name_res.expr_has_concepts.insert(expr_id, def_id);
         }
     }
@@ -2060,7 +2136,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn process_access(&mut self, kind: AccessEntityKind, scope_id: ScopeId, access_id: AccessId) {
-        self.sema.name_res.access_entity_types.insert(access_id, kind);
+        self.sema
+            .name_res
+            .access_entity_types
+            .insert(access_id, kind);
 
         let access = &self.sema.libsl.accesses[access_id];
 
@@ -2098,11 +2177,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             }
 
             AccessEntityKind::Var => {
-                if let Ok(def_id) =
-                    self.sema
-                        .name_res
-                        .resolve(scope_id, Ns::Var, &access.name.to_string())
-                {
+                if let Ok(def_id) = self.sema.name_res.resolve(
+                    self.diag,
+                    scope_id,
+                    Ns::Var,
+                    &access.name.to_string(),
+                    &access.name.loc,
+                ) {
                     self.sema.name_res.access_names.insert(access_id, def_id);
                 }
             }
@@ -2139,8 +2220,17 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         access_id: AccessId,
         access: &'ast ast::AccessAutomatonField,
     ) {
-        if let Ok(def_id) = self.sema.name_res.resolve(scope_id, Ns::Automaton, &access.automaton_name.to_string()) {
-            self.sema.name_res.access_automaton_fields.insert(access_id, def_id);
+        if let Ok(def_id) = self.sema.name_res.resolve(
+            self.diag,
+            scope_id,
+            Ns::Automaton,
+            &access.automaton_name.to_string(),
+            &access.automaton_name.loc,
+        ) {
+            self.sema
+                .name_res
+                .access_automaton_fields
+                .insert(access_id, def_id);
         }
 
         if let Some(ty_args) = &access.generics {

@@ -16,7 +16,7 @@ new_key_type! {
 }
 
 /// A LibSL type.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub enum Ty {
     #[default]
     Dummy,
@@ -88,10 +88,11 @@ pub enum BuiltinTyCtor {
     Int(IntCtor),
     Float(FloatCtor),
     Array,
+    Void,
 }
 
 /// The type obtained by applying type arguments to a type constructor.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ConstructedTy {
     /// The type constructor.
     pub ctor: DefId,
@@ -100,7 +101,7 @@ pub struct ConstructedTy {
     pub args: Vec<ConstructedTyArg>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ConstructedTyArg {
     Ty(Option<Variance>, TyId),
     Wildcard,

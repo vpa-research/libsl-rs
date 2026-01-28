@@ -5,11 +5,13 @@ mod load;
 mod purity;
 mod resolve;
 mod ty;
+mod tyck;
 
 use slotmap::{SecondaryMap, SparseSecondaryMap};
 
 use crate::file::FileLoader;
 use crate::sema::resolve::NameRes;
+use crate::sema::tyck::TyCk;
 use crate::{DeclId, FileId, LibSl};
 
 pub use crate::sema::load::{ImportCtx, LoadError, LoadReason};
@@ -39,6 +41,9 @@ pub struct Sema<'ast> {
 
     /// The results of name resolution.
     pub name_res: NameRes,
+
+    /// The results of type checking.
+    pub tyck: TyCk,
 }
 
 impl<'ast> Sema<'ast> {
@@ -48,6 +53,7 @@ impl<'ast> Sema<'ast> {
             imports: ctx.imports,
             load_reasons: ctx.load_reasons,
             name_res: Default::default(),
+            tyck: Default::default(),
         }
     }
 }

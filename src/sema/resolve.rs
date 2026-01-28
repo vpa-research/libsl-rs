@@ -1,4 +1,4 @@
-//! Scope resolution.
+//! Name resolution.
 
 use std::collections::HashMap;
 
@@ -291,10 +291,8 @@ impl NameRes {
 }
 
 impl Sema<'_> {
-    /// Initializes scopes and collects definitions.
-    ///
-    /// Does not resolve name expressions or types.
-    pub fn resolve_scopes(&mut self, diag: &mut impl DiagCtx) -> Result {
+    /// Performs name resolution.
+    pub fn resolve_names(&mut self, diag: &mut impl DiagCtx) -> Result {
         Pass::new(self, diag).run()
     }
 }

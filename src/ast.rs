@@ -959,7 +959,7 @@ pub struct Generic {
 impl WithLibSl for Generic {}
 
 /// An enumeration of possible variance specifications.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum Variance {
     /// Covariant: `U <: V` implies `T[U] <: T[V]`.

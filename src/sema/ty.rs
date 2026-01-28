@@ -19,10 +19,13 @@ new_key_type! {
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub enum Ty {
     #[default]
-    Dummy,
+    Error,
 
     /// A type constructed by applying type parameters to a type constructor.
     Ctor(ConstructedTy),
+
+    /// An inference variable.
+    Var(usize),
 
     // TODO: literal types.
 }
@@ -80,7 +83,6 @@ impl FloatCtor {
 
 #[derive(Debug, Clone)]
 pub enum BuiltinTyCtor {
-    Error,
     Any,
     Nothing,
     Bool,

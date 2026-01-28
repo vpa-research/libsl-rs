@@ -7,9 +7,12 @@ use slotmap::{SecondaryMap, SlotMap};
 
 use crate::diag::DiagCtx;
 use crate::sema::ty::{Ty, TyId};
+use crate::sema::tyck::constraints::{BoundSet, ConstrSet};
 use crate::sema::{Result, Sema};
 use crate::visit::Visitor;
-use crate::{AccessId, DeclId, ExprId, LibSl, ast};
+use crate::{AccessId, DeclId, ExprId, LibSl, TyExprId, ast};
+
+mod constraints;
 
 #[derive(Debug, Default)]
 pub struct BuiltinTys {
@@ -39,6 +42,10 @@ pub struct TyCk {
     pub builtin: BuiltinTys,
     pub exprs: SecondaryMap<ExprId, TyId>,
     pub accesses: SecondaryMap<AccessId, TyId>,
+    pub ty_exprs: SecondaryMap<TyExprId, TyId>,
+
+    constrs: ConstrSet,
+    bounds: BoundSet,
 }
 
 impl Sema<'_> {
@@ -106,7 +113,19 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn early_tyck_decl_semantic_ty(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclSemanticTy) {
-        todo!()
+        // TODO: tyck annotations.
+
+        self.tyck_ty_expr(d.real_ty);
+
+        match &d.kind {
+            ast::SemanticTyKind::Simple => {}
+
+            ast::SemanticTyKind::Enumerated(values) => {
+                for value in values {
+                    todo!()
+                }
+            }
+        }
     }
 
     fn early_tyck_decl_ty_alias(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclTyAlias) {
@@ -174,6 +193,27 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 self.visit_decl(&self.sema.libsl.decls[decl_id]);
             }
         }
+    }
+
+    fn tyck_ty_expr(&mut self, ty_expr_id: TyExprId) -> TyId {
+        let ty_expr = &self.sema.libsl.ty_exprs[ty_expr_id];
+        self.visit_ty_expr(ty_expr);
+
+        self.sema.tyck.ty_exprs[ty_expr_id]
+    }
+
+    fn tyck_expr(&mut self, expr_id: ExprId) -> TyId {
+        let expr = &self.sema.libsl.exprs[expr_id];
+        self.visit_expr(expr);
+
+        self.sema.tyck.exprs[expr_id]
+    }
+
+    fn tyck_access(&mut self, access_id: AccessId) -> TyId {
+        let access = &self.sema.libsl.accesses[access_id];
+        self.visit_access(access);
+
+        self.sema.tyck.accesses[access_id]
     }
 }
 

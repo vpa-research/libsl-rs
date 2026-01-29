@@ -4,11 +4,11 @@ use std::collections::HashSet;
 
 use slotmap::{SlotMap, new_key_type};
 
-use crate::{AccessId, ExprId};
 use crate::diag::DiagCtx;
 use crate::sema::def::DefId;
 use crate::sema::ty::TyId;
 use crate::sema::tyck::Pass;
+use crate::{AccessId, ExprId, ast};
 
 new_key_type! {
     pub struct ConstrId;
@@ -18,6 +18,15 @@ new_key_type! {
 pub struct ConstrSet {
     constrs: SlotMap<ConstrId, Constr>,
     unprocessed: Vec<ConstrId>,
+}
+
+impl ConstrSet {
+    pub fn add(&mut self, constr: Constr) -> ConstrId {
+        let id = self.constrs.insert(constr);
+        self.unprocessed.push(id);
+
+        id
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -80,4 +89,39 @@ pub struct VarConstr {
     pub eq: Option<TyId>,
 }
 
-impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {}
+impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
+    pub fn constr_sub(&mut self, lhs: TyId, rhs: TyId, provenance: ConstrProvenance) {
+        self.sema.tyck.constrs.add(Constr {
+            provenance,
+            kind: ConstrKind::Sub(lhs, rhs),
+        });
+    }
+
+    pub fn constr_eq(&mut self, lhs: TyId, rhs: TyId, provenance: ConstrProvenance) {
+        self.sema.tyck.constrs.add(Constr {
+            provenance,
+            kind: ConstrKind::Eq(lhs, rhs),
+        });
+    }
+
+    pub fn constr_expr(&mut self, expr_id: ExprId, ty_id: TyId) {
+        let expr = &self.sema.libsl.exprs[expr_id];
+
+        match &expr.kind {
+            ast::ExprKind::Dummy => unreachable!(),
+            ast::ExprKind::PrimitiveLit(e) => todo!(),
+            ast::ExprKind::ArrayLit(e) => todo!(),
+            ast::ExprKind::SetLit(e) => todo!(),
+            ast::ExprKind::Access(e) => todo!(),
+            ast::ExprKind::Prev(e) => todo!(),
+            ast::ExprKind::ProcCall(e) => todo!(),
+            ast::ExprKind::ActionCall(e) => todo!(),
+            ast::ExprKind::Instantiate(e) => todo!(),
+            ast::ExprKind::HasConcept(e) => todo!(),
+            ast::ExprKind::Cast(e) => todo!(),
+            ast::ExprKind::TyCompare(e) => todo!(),
+            ast::ExprKind::Unary(e) => todo!(),
+            ast::ExprKind::Binary(e) => todo!(),
+        }
+    }
+}

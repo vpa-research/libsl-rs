@@ -27,6 +27,9 @@ pub enum Ty {
     /// An inference variable.
     Var(usize),
 
+    /// The null type.
+    Null,
+
     // TODO: literal types.
 }
 
@@ -87,6 +90,7 @@ pub enum BuiltinTyCtor {
     Nothing,
     Bool,
     Char,
+    String,
     Int(IntCtor),
     Float(FloatCtor),
     Array,

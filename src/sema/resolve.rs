@@ -288,6 +288,14 @@ impl NameRes {
 
         Err(())
     }
+
+    pub fn def<T: DefKindProject>(&self, def_id: DefId) -> &T {
+        T::project(&self.defs[def_id].kind).unwrap()
+    }
+
+    pub fn def_mut<T: DefKindProject>(&mut self, def_id: DefId) -> &mut T {
+        T::project_mut(&mut self.defs[def_id].kind).unwrap()
+    }
 }
 
 impl Sema<'_> {
@@ -471,11 +479,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn def<T: DefKindProject>(&self, def_id: DefId) -> &T {
-        T::project(&self.sema.name_res.defs[def_id].kind).unwrap()
+        self.sema.name_res.def(def_id)
     }
 
     fn def_mut<T: DefKindProject>(&mut self, def_id: DefId) -> &mut T {
-        T::project_mut(&mut self.sema.name_res.defs[def_id].kind).unwrap()
+        self.sema.name_res.def_mut(def_id)
     }
 }
 

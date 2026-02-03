@@ -112,3 +112,9 @@ pub enum ConstructedTyArg {
     Ty(Option<Variance>, TyId),
     Wildcard,
 }
+
+impl From<TyId> for ConstructedTyArg {
+    fn from(ty_id: TyId) -> Self {
+        Self::Ty(None, ty_id)
+    }
+}

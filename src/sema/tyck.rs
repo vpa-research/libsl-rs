@@ -6,9 +6,12 @@ use std::ops::ControlFlow;
 use slotmap::{SecondaryMap, SlotMap};
 
 use crate::diag::DiagCtx;
+use crate::loc::Loc;
 use crate::sema::def::{DefId, DefKind};
-use crate::sema::ty::{BuiltinTyCtor, ConstructedTy, FloatCtor, IntCtor, IntWidth, Ty, TyId};
-use crate::sema::tyck::constraints::{BoundSet, ConstrSet};
+use crate::sema::ty::{
+    BuiltinTyCtor, ConstructedTy, ConstructedTyArg, FloatCtor, IntCtor, IntWidth, Ty, TyId,
+};
+use crate::sema::tyck::constraints::{BoundSet, ConstrSet, VarProvenance};
 use crate::sema::{Result, Sema};
 use crate::visit::Visitor;
 use crate::{AccessId, DeclId, ExprId, LibSl, TyExprId, ast};
@@ -56,6 +59,10 @@ impl TyCk {
             .ty_dedup
             .entry(ty)
             .or_insert_with_key(|ty| self.tys.insert(ty.clone()))
+    }
+
+    pub fn add_ctor_ty(&mut self, ctor: DefId, args: Vec<ConstructedTyArg>) -> TyId {
+        self.add_ty(Ty::Ctor(ConstructedTy { ctor, args }))
     }
 }
 
@@ -187,13 +194,16 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         self.sema.tyck.builtin.error = self.sema.tyck.add_ty(Ty::Error);
         self.sema.tyck.builtin.null = self.sema.tyck.add_ty(Ty::Null);
+
+        self.sema.name_res.defs[self.sema.name_res.prelude_defs.array].kind =
+            BuiltinTyCtor::Array.into();
     }
 
-    fn lit_ty(&self, lit: &ast::PrimitiveLit) -> TyId {
-        // FIXME: this method should return a literal type instead of widening it.
+    fn lit_ty(&mut self, loc: &Loc, lit: &ast::PrimitiveLit, expected: Option<TyId>) -> TyId {
+        // FIXME: check if we expect a literal type and return that if so.
         let builtin = &self.sema.tyck.builtin;
 
-        match lit {
+        let ty_id = match lit {
             ast::PrimitiveLit::Int(lit) => match lit {
                 ast::IntLit::I8(_) => builtin.int8,
                 ast::IntLit::U8(_) => builtin.unsigned8,
@@ -214,7 +224,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             ast::PrimitiveLit::Char(_) => builtin.char,
             ast::PrimitiveLit::Bool(_) => builtin.bool,
             ast::PrimitiveLit::Null => builtin.null,
-        }
+        };
+
+        self.check_ty(loc, expected, ty_id)
     }
 }
 
@@ -253,19 +265,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn early_tyck_decl_semantic_ty(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclSemanticTy) {
-        // TODO: tyck annotations.
-
-        self.tyck_ty_expr(d.real_ty);
-
-        match &d.kind {
-            ast::SemanticTyKind::Simple => {}
-
-            ast::SemanticTyKind::Enumerated(values) => {
-                for value in values {
-                    todo!()
-                }
-            }
-        }
+        // do nothing.
     }
 
     fn early_tyck_decl_ty_alias(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclTyAlias) {
@@ -330,39 +330,264 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn tyck_decls(&mut self) {
         for file in self.sema.libsl.files.values() {
             for &decl_id in &file.decls {
-                self.visit_decl(&self.sema.libsl.decls[decl_id]);
+                self.tyck_decl(decl_id);
             }
+        }
+    }
+
+    fn tyck_decl(&mut self, decl_id: DeclId) {
+        let decl = &self.sema.libsl.decls[decl_id];
+
+        match &decl.kind {
+            ast::DeclKind::Dummy => unreachable!(),
+            ast::DeclKind::Import(_) => {}
+            ast::DeclKind::Include(_) => {}
+            ast::DeclKind::SemanticTy(d) => self.tyck_decl_semantic_ty(decl, d),
+            ast::DeclKind::TyAlias(d) => self.tyck_decl_ty_alias(decl, d),
+            ast::DeclKind::Struct(d) => self.tyck_decl_struct(decl, d),
+            ast::DeclKind::Enum(d) => self.tyck_decl_enum(decl, d),
+            ast::DeclKind::Annotation(d) => self.tyck_decl_annotation(decl, d),
+            ast::DeclKind::Action(d) => self.tyck_decl_action(decl, d),
+            ast::DeclKind::Automaton(d) => self.tyck_decl_automaton(decl, d),
+            ast::DeclKind::Function(d) => self.tyck_decl_function(decl, d),
+            ast::DeclKind::Variable(d) => self.tyck_decl_variable(decl, d),
+            ast::DeclKind::State(d) => self.tyck_decl_state(decl, d),
+            ast::DeclKind::Shift(d) => self.tyck_decl_shift(decl, d),
+            ast::DeclKind::Constructor(d) => self.tyck_decl_constructor(decl, d),
+            ast::DeclKind::Destructor(d) => self.tyck_decl_destructor(decl, d),
+            ast::DeclKind::Proc(d) => self.tyck_decl_proc(decl, d),
         }
     }
 
     fn tyck_ty_expr(&mut self, ty_expr_id: TyExprId) -> TyId {
         let ty_expr = &self.sema.libsl.ty_exprs[ty_expr_id];
-        self.visit_ty_expr(ty_expr);
+        todo!();
 
         self.sema.tyck.ty_exprs[ty_expr_id]
     }
 
-    fn tyck_expr(&mut self, expr_id: ExprId) -> TyId {
+    fn tyck_expr(&mut self, expr_id: ExprId, expected: Option<TyId>) -> TyId {
         let expr = &self.sema.libsl.exprs[expr_id];
-        self.visit_expr(expr);
+
+        match &expr.kind {
+            ast::ExprKind::Dummy => unreachable!(),
+            ast::ExprKind::PrimitiveLit(e) => self.tyck_expr_primitive_lit(expr, e, expected),
+            ast::ExprKind::ArrayLit(e) => self.tyck_expr_array_lit(expr, e, expected),
+            ast::ExprKind::SetLit(e) => self.tyck_expr_set_lit(expr, e, expected),
+            ast::ExprKind::Access(e) => self.tyck_expr_access(expr, e, expected),
+            ast::ExprKind::Prev(e) => self.tyck_expr_prev(expr, e, expected),
+            ast::ExprKind::ProcCall(e) => self.tyck_expr_proc_call(expr, e, expected),
+            ast::ExprKind::ActionCall(e) => self.tyck_expr_action_call(expr, e, expected),
+            ast::ExprKind::Instantiate(e) => self.tyck_expr_instantiate(expr, e, expected),
+            ast::ExprKind::HasConcept(e) => self.tyck_expr_has_concept(expr, e, expected),
+            ast::ExprKind::Cast(e) => self.tyck_expr_cast(expr, e, expected),
+            ast::ExprKind::TyCompare(e) => self.tyck_expr_ty_compare(expr, e, expected),
+            ast::ExprKind::Unary(e) => self.tyck_expr_unary(expr, e, expected),
+            ast::ExprKind::Binary(e) => self.tyck_expr_binary(expr, e, expected),
+        }
 
         self.sema.tyck.exprs[expr_id]
     }
 
     fn tyck_access(&mut self, access_id: AccessId) -> TyId {
         let access = &self.sema.libsl.accesses[access_id];
-        self.visit_access(access);
+        todo!();
 
         self.sema.tyck.accesses[access_id]
     }
+
+    fn check_ty(&mut self, loc: &Loc, expected: Option<TyId>, actual: TyId) -> TyId {
+        todo!()
+    }
 }
 
-impl<'ast, D: DiagCtx> Visitor<'ast> for Pass<'ast, '_, D> {
-    fn libsl(&self) -> &'ast LibSl {
-        self.sema.libsl
+impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
+    fn tyck_decl_semantic_ty(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclSemanticTy) {
+        todo!()
     }
 
-    fn visit_decl(&mut self, decl: &'ast ast::Decl) -> ControlFlow<()> {
+    fn tyck_decl_ty_alias(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclTyAlias) {
+        todo!()
+    }
+
+    fn tyck_decl_struct(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclStruct) {
+        todo!()
+    }
+
+    fn tyck_decl_enum(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclEnum) {
+        todo!()
+    }
+
+    fn tyck_decl_annotation(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAnnotation) {
+        todo!()
+    }
+
+    fn tyck_decl_action(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAction) {
+        todo!()
+    }
+
+    fn tyck_decl_automaton(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAutomaton) {
+        todo!()
+    }
+
+    fn tyck_decl_function(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclFunction) {
+        todo!()
+    }
+
+    fn tyck_decl_variable(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclVariable) {
+        todo!()
+    }
+
+    fn tyck_decl_state(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclState) {
+        todo!()
+    }
+
+    fn tyck_decl_shift(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclShift) {
+        todo!()
+    }
+
+    fn tyck_decl_constructor(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclConstructor) {
+        todo!()
+    }
+
+    fn tyck_decl_destructor(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclDestructor) {
+        todo!()
+    }
+
+    fn tyck_decl_proc(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclProc) {
+        todo!()
+    }
+}
+
+impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
+    fn tyck_expr_primitive_lit(
+        &mut self,
+        expr: &'ast ast::Expr,
+        e: &'ast ast::ExprPrimitiveLit,
+        expected: Option<TyId>,
+    ) {
+        let ty_id = self.lit_ty(&expr.loc, &e.lit, expected);
+
+        self.sema.tyck.exprs.insert(expr.id, ty_id);
+    }
+
+    fn tyck_expr_array_lit(
+        &mut self,
+        expr: &'ast ast::Expr,
+        e: &'ast ast::ExprArrayLit,
+        expected: Option<TyId>,
+    ) {
+        let elem_ty_id = self.fresh_var(VarProvenance::Element { of: expr.id });
+
+        for &elem in &e.elems {
+            self.tyck_expr(elem, Some(elem_ty_id));
+        }
+
+        let ty_id = self.sema.tyck.add_ctor_ty(
+            self.sema.name_res.prelude_defs.array,
+            vec![elem_ty_id.into()],
+        );
+        let ty_id = self.check_ty(&expr.loc, expected, ty_id);
+
+        self.sema.tyck.exprs.insert(expr.id, ty_id);
+    }
+
+    fn tyck_expr_set_lit(
+        &mut self,
+        expr: &'ast ast::Expr,
+        e: &'ast ast::ExprSetLit,
+        expected: Option<TyId>,
+    ) {
+        todo!()
+    }
+
+    fn tyck_expr_access(
+        &mut self,
+        expr: &'ast ast::Expr,
+        e: &'ast ast::ExprAccess,
+        expected: Option<TyId>,
+    ) {
+        todo!()
+    }
+
+    fn tyck_expr_prev(
+        &mut self,
+        expr: &'ast ast::Expr,
+        e: &'ast ast::ExprPrev,
+        expected: Option<TyId>,
+    ) {
+        todo!()
+    }
+
+    fn tyck_expr_proc_call(
+        &mut self,
+        expr: &'ast ast::Expr,
+        e: &'ast ast::ExprProcCall,
+        expected: Option<TyId>,
+    ) {
+        todo!()
+    }
+
+    fn tyck_expr_action_call(
+        &mut self,
+        expr: &'ast ast::Expr,
+        e: &'ast ast::ExprActionCall,
+        expected: Option<TyId>,
+    ) {
+        todo!()
+    }
+
+    fn tyck_expr_instantiate(
+        &mut self,
+        expr: &'ast ast::Expr,
+        e: &'ast ast::ExprInstantiate,
+        expected: Option<TyId>,
+    ) {
+        todo!()
+    }
+
+    fn tyck_expr_has_concept(
+        &mut self,
+        expr: &'ast ast::Expr,
+        e: &'ast ast::ExprHasConcept,
+        expected: Option<TyId>,
+    ) {
+        todo!()
+    }
+
+    fn tyck_expr_cast(
+        &mut self,
+        expr: &'ast ast::Expr,
+        e: &'ast ast::ExprCast,
+        expected: Option<TyId>,
+    ) {
+        todo!()
+    }
+
+    fn tyck_expr_ty_compare(
+        &mut self,
+        expr: &'ast ast::Expr,
+        e: &'ast ast::ExprTyCompare,
+        expected: Option<TyId>,
+    ) {
+        todo!()
+    }
+
+    fn tyck_expr_unary(
+        &mut self,
+        expr: &'ast ast::Expr,
+        e: &'ast ast::ExprUnary,
+        expected: Option<TyId>,
+    ) {
+        todo!()
+    }
+
+    fn tyck_expr_binary(
+        &mut self,
+        expr: &'ast ast::Expr,
+        e: &'ast ast::ExprBinary,
+        expected: Option<TyId>,
+    ) {
         todo!()
     }
 }

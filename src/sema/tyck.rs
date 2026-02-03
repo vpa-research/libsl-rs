@@ -197,6 +197,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         self.sema.name_res.defs[self.sema.name_res.prelude_defs.array].kind =
             BuiltinTyCtor::Array.into();
+        self.sema.name_res.defs[self.sema.name_res.prelude_defs.set].kind =
+            BuiltinTyCtor::Set.into();
     }
 
     fn lit_ty(&mut self, loc: &Loc, lit: &ast::PrimitiveLit, expected: Option<TyId>) -> TyId {
@@ -389,7 +391,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.sema.tyck.exprs[expr_id]
     }
 
-    fn tyck_access(&mut self, access_id: AccessId) -> TyId {
+    fn tyck_access(&mut self, access_id: AccessId, expected: Option<TyId>) -> TyId {
         let access = &self.sema.libsl.accesses[access_id];
         todo!();
 
@@ -498,7 +500,19 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         e: &'ast ast::ExprSetLit,
         expected: Option<TyId>,
     ) {
-        todo!()
+        let elem_ty_id = self.fresh_var(VarProvenance::Element { of: expr.id });
+
+        for &elem in &e.elems {
+            self.tyck_expr(elem, Some(elem_ty_id));
+        }
+
+        let ty_id = self
+            .sema
+            .tyck
+            .add_ctor_ty(self.sema.name_res.prelude_defs.set, vec![elem_ty_id.into()]);
+        let ty_id = self.check_ty(&expr.loc, expected, ty_id);
+
+        self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
     fn tyck_expr_access(
@@ -507,7 +521,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         e: &'ast ast::ExprAccess,
         expected: Option<TyId>,
     ) {
-        todo!()
+        let ty_id = self.tyck_access(e.access, expected);
+
+        self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
     fn tyck_expr_prev(
@@ -516,7 +532,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         e: &'ast ast::ExprPrev,
         expected: Option<TyId>,
     ) {
-        todo!()
+        // TODO: ensure well-formedness.
+        let ty_id = self.tyck_access(e.access, expected);
+
+        self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
     fn tyck_expr_proc_call(

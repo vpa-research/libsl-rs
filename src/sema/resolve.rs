@@ -117,6 +117,7 @@ pub struct PreludeDefs {
     pub any: DefId,
     pub nothing: DefId,
     pub array: DefId,
+    pub set: DefId,
 }
 
 impl PreludeDefs {
@@ -139,6 +140,7 @@ impl PreludeDefs {
             ("any", Ns::Ty, &mut self.any),
             ("nothing", Ns::Ty, &mut self.nothing),
             ("array", Ns::Ty, &mut self.array),
+            ("set", Ns::Ty, &mut self.set),
         ])
     }
 }

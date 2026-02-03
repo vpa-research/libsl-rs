@@ -94,6 +94,7 @@ pub enum BuiltinTyCtor {
     Int(IntCtor),
     Float(FloatCtor),
     Array,
+    Set,
     Void,
 }
 

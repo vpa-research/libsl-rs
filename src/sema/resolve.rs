@@ -195,6 +195,12 @@ pub struct NameRes {
 
     /// Maps accesses to their entity kind.
     pub access_entity_types: SecondaryMap<AccessId, AccessEntityKind>,
+
+    /// Maps expressions to their local scopes.
+    pub expr_scopes: SecondaryMap<ExprId, ScopeId>,
+
+    /// Maps accesses to their local scopes.
+    pub access_scopes: SecondaryMap<AccessId, ScopeId>,
 }
 
 impl NameRes {
@@ -414,6 +420,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             let def_id = self.sema.name_res.defs.insert_with_key(|id| Def {
                 id,
                 loc: Loc::Synthetic,
+                name: name.into(),
                 kind: Default::default(),
             });
             prelude_scope.defs.insert((ns, name.into()), def_id);
@@ -437,6 +444,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 let def_id = self.sema.name_res.defs.insert_with_key(|id| Def {
                     id,
                     loc: loc.clone(),
+                    name: name.clone(),
                     kind,
                 });
 
@@ -470,6 +478,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 let def_id = self.sema.name_res.defs.insert_with_key(|id| Def {
                     id,
                     loc: loc.clone(),
+                    name: name.clone(),
                     kind,
                 });
 
@@ -1066,6 +1075,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         let new_def_id = self.sema.name_res.defs.insert_with_key(|id| Def {
                             id,
                             loc: import_loc.clone(),
+                            name: name.clone(),
                             kind: DefKind::Import(DefImport::new_resolved(
                                 import_decl_id,
                                 def_id,
@@ -1924,6 +1934,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn process_expr(&mut self, scope_id: ScopeId, expr_id: ExprId) {
         let expr = &self.sema.libsl.exprs[expr_id];
+        self.sema.name_res.expr_scopes.insert(expr_id, scope_id);
 
         match &expr.kind {
             ast::ExprKind::Dummy => unreachable!(),
@@ -2162,6 +2173,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .name_res
             .access_entity_types
             .insert(access_id, kind);
+        self.sema.name_res.access_scopes.insert(access_id, scope_id);
 
         let access = &self.sema.libsl.accesses[access_id];
 

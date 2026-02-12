@@ -77,7 +77,11 @@ pub mod sema;
 mod serialize;
 pub mod visit;
 
+use std::fmt::{self, Display};
+
 use slotmap::{SecondaryMap, SlotMap, new_key_type};
+
+use crate::loc::{Loc, Span};
 
 new_key_type! {
     /// A file identifier.
@@ -155,6 +159,31 @@ impl LibSl {
     /// Returns a mutable reference to the [parsed file][ast::File] with the given `id`.
     pub fn file_by_id_mut(&mut self, id: FileId) -> &mut ast::File {
         &mut self.files[id]
+    }
+
+    /// Formats a [`Span`].
+    pub fn format_span(&self, span: &Span) -> impl Display {
+        fmt::from_fn(|f| {
+            write!(f, "{}", self.filename_by_id(span.file_id))?;
+
+            if let Some(line) = span.line {
+                write!(f, ":{line}")?;
+
+                if let Some(col) = span.col {
+                    write!(f, ":{col}")?;
+                }
+            }
+
+            Ok(())
+        })
+    }
+
+    /// Formats a [`Loc`].
+    pub fn format_loc(&self, loc: &Loc) -> impl Display {
+        fmt::from_fn(move |f| match loc {
+            Loc::Synthetic => write!(f, "<built-in>"),
+            Loc::Span(span) => write!(f, "{}", self.format_span(span)),
+        })
     }
 }
 

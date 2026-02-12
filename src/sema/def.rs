@@ -18,6 +18,7 @@ new_key_type! {
 pub struct Def {
     pub id: DefId,
     pub loc: Loc,
+    pub name: String,
     pub kind: DefKind,
 }
 

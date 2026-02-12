@@ -4,9 +4,10 @@
 //! `Option<Span>`: [`Loc::Synthetic`] is used for nodes that are not represented in the source
 //! file, whereas [`Loc::Span`] contains the [`Span`] corresponding to the node.
 
+use std::fmt::{self, Display};
 use std::num::NonZeroUsize;
 
-use crate::{FileId, WithLibSl};
+use crate::{FileId, LibSlNode, WithLibSl};
 
 /// A contiguous range of bytes in a source file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,6 +29,12 @@ pub struct Span {
 }
 
 impl WithLibSl for Span {}
+
+impl Display for LibSlNode<'_, Span> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.libsl().format_span(self.inner()))
+    }
+}
 
 /// A location in a source file.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -74,3 +81,9 @@ impl From<Loc> for Option<Span> {
 }
 
 impl WithLibSl for Loc {}
+
+impl Display for LibSlNode<'_, Loc> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.libsl().format_loc(self.inner()))
+    }
+}

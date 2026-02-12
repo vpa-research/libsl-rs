@@ -1,22 +1,22 @@
 //! Type checking and inference for LibSL.
 
 use std::collections::HashMap;
-use std::ops::ControlFlow;
+use std::fmt::{self, Display};
 
-use slotmap::{SecondaryMap, SlotMap};
+use slotmap::{SecondaryMap, SlotMap, SparseSecondaryMap};
 
 use crate::diag::DiagCtx;
 use crate::loc::Loc;
-use crate::sema::def::{DefId, DefKind};
+use crate::sema::def::DefId;
 use crate::sema::ty::{
-    BuiltinTyCtor, ConstructedTy, ConstructedTyArg, FloatCtor, IntCtor, IntWidth, Ty, TyId,
+    BuiltinTyCtor, ConstructedTy, FloatCtor, IntCtor, IntWidth, Ty, TyArg, TyId,
 };
 use crate::sema::tyck::constraints::{BoundSet, ConstrSet, VarProvenance};
 use crate::sema::{Result, Sema};
-use crate::visit::Visitor;
-use crate::{AccessId, DeclId, ExprId, LibSl, TyExprId, ast};
+use crate::{AccessId, DeclId, ExprId, TyExprId, ast};
 
 mod constraints;
+mod overload;
 
 #[derive(Debug, Default)]
 pub struct BuiltinTys {
@@ -40,6 +40,14 @@ pub struct BuiltinTys {
     pub nothing: TyId,
 }
 
+#[derive(Debug)]
+pub struct FnTyInfo {
+    pub recv: Option<DefId>,
+    pub generics: Vec<DefId>,
+    pub params: Vec<TyId>,
+    pub ret: TyId,
+}
+
 #[derive(Debug, Default)]
 pub struct TyCk {
     pub tys: SlotMap<TyId, Ty>,
@@ -48,6 +56,8 @@ pub struct TyCk {
     pub exprs: SecondaryMap<ExprId, TyId>,
     pub accesses: SecondaryMap<AccessId, TyId>,
     pub ty_exprs: SecondaryMap<TyExprId, TyId>,
+    pub def_tys: SecondaryMap<DefId, TyId>,
+    pub fns: SparseSecondaryMap<DefId, FnTyInfo>,
 
     constrs: ConstrSet,
     bounds: BoundSet,
@@ -61,7 +71,7 @@ impl TyCk {
             .or_insert_with_key(|ty| self.tys.insert(ty.clone()))
     }
 
-    pub fn add_ctor_ty(&mut self, ctor: DefId, args: Vec<ConstructedTyArg>) -> TyId {
+    pub fn add_ctor_ty(&mut self, ctor: DefId, args: Vec<TyArg>) -> TyId {
         self.add_ty(Ty::Ctor(ConstructedTy { ctor, args }))
     }
 }
@@ -70,6 +80,104 @@ impl Sema<'_> {
     /// Performs type checking and inference.
     pub fn tyck(&mut self, diag: &mut impl DiagCtx) -> Result {
         Pass::new(self, diag).run()
+    }
+
+    /// Formats a type.
+    pub fn format_ty(&self, ty_id: TyId) -> impl Display {
+        let ty = &self.tyck.tys[ty_id];
+
+        fmt::from_fn(move |f| {
+            match ty {
+                Ty::Error => write!(f, "[error]"),
+
+                Ty::Ctor(t) => {
+                    write!(f, "{}", self.name_res.defs[t.ctor].name)?;
+
+                    if !t.args.is_empty() {
+                        write!(f, "<")?;
+
+                        for (idx, arg) in t.args.iter().enumerate() {
+                            if idx > 0 {
+                                write!(f, ", ")?;
+                            }
+
+                            write!(f, "{}", self.format_ty_arg(arg))?;
+                        }
+
+                        write!(f, ">")?;
+                    }
+
+                    Ok(())
+                }
+
+                // TODO: store a readable name for inference variables.
+                Ty::Var(n) => write!(f, "?T{n}"),
+
+                Ty::Null => write!(f, "null"),
+            }
+        })
+    }
+
+    /// Formats a type argument.
+    pub fn format_ty_arg(&self, ty_arg: &TyArg) -> impl Display {
+        fmt::from_fn(move |f| {
+            match ty_arg {
+                TyArg::Ty(ty_id) => write!(f, "{}", self.format_ty(*ty_id)),
+
+                TyArg::Wildcard { lower, upper } => {
+                    if let Some(lower) = *lower {
+                        write!(f, "{} <: ", self.format_ty(lower))?;
+                    }
+
+                    write!(f, "?")?;
+
+                    if let Some(upper) = *upper {
+                        write!(f, " <: {}", self.format_ty(upper))?;
+                    }
+
+                    Ok(())
+                }
+            }
+        })
+    }
+
+    /// Formats the function signature of a [`DefFunction`].
+    pub fn format_signature(&self, def_id: DefId) -> impl Display {
+        let info = &self.tyck.fns[def_id];
+
+        fmt::from_fn(move |f| {
+            // TODO: receiver.
+
+            write!(f, "{}", self.name_res.defs[def_id].name)?;
+
+            if !info.generics.is_empty() {
+                write!(f, "<")?;
+
+                for (idx, &generic) in info.generics.iter().enumerate() {
+                    if idx > 0 {
+                        write!(f, ", ")?;
+                    }
+
+                    write!(f, "{}", self.name_res.defs[generic].name)?;
+                }
+
+                write!(f, ">")?;
+            }
+
+            write!(f, "(")?;
+
+            for (idx, &param_ty_id) in info.params.iter().enumerate() {
+                if idx > 0 {
+                    write!(f, ", ")?;
+                }
+
+                write!(f, "{}", self.format_ty(param_ty_id))?;
+            }
+
+            write!(f, "): {}", self.format_ty(info.ret))?;
+
+            Ok(())
+        })
     }
 }
 
@@ -401,6 +509,33 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn check_ty(&mut self, loc: &Loc, expected: Option<TyId>, actual: TyId) -> TyId {
         todo!()
     }
+
+    fn tyck_ty_arg(&mut self, ty_arg: &'ast ast::TyArg) -> TyArg {
+        match ty_arg {
+            ast::TyArg::TyExpr(variance, ty_expr_id) => {
+                let ty_id = self.tyck_ty_expr(*ty_expr_id);
+
+                match variance {
+                    Some(ast::Variance::Invariant) | None => TyArg::Ty(ty_id),
+
+                    Some(ast::Variance::Covariant) => TyArg::Wildcard {
+                        lower: None,
+                        upper: Some(ty_id),
+                    },
+
+                    Some(ast::Variance::Contravariant) => TyArg::Wildcard {
+                        lower: Some(ty_id),
+                        upper: None,
+                    },
+                }
+            }
+
+            ast::TyArg::Wildcard(_) => TyArg::Wildcard {
+                lower: None,
+                upper: None,
+            },
+        }
+    }
 }
 
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
@@ -544,6 +679,25 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         e: &'ast ast::ExprProcCall,
         expected: Option<TyId>,
     ) {
+        let args = e
+            .args
+            .iter()
+            .copied()
+            .map(|arg| self.tyck_expr(arg, None))
+            .collect::<Vec<_>>();
+
+        let ty_args = e
+            .generics
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .map(|ty_arg| self.tyck_ty_arg(ty_arg))
+            .collect::<Vec<_>>();
+
+        if let Ok(def_id) = self.resolve_callee(e.callee, &args, &ty_args) {
+            todo!()
+        }
+
         todo!()
     }
 

@@ -130,8 +130,18 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     // enums never define functions.
                 }
 
-                ScopeKind::Automaton(def_id) => {
-                    todo!();
+                ScopeKind::Automaton(_automaton_def_id) => {
+                    // TODO: concepts?
+
+                    if let Some(overloads) = scope.functions.get(&name) {
+                        self.find_applicable_overloads(
+                            &mut candidates,
+                            overloads,
+                            &Receiver::None,
+                            args,
+                            ty_args,
+                        );
+                    }
                 }
             }
 
@@ -144,9 +154,6 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             &name,
             &a.name.loc,
             &candidates,
-            &Receiver::None,
-            args,
-            ty_args,
         )
     }
 
@@ -201,9 +208,6 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         name: &str,
         loc: &Loc,
         candidates: &[DefId],
-        recv: &Receiver,
-        args: &[TyId],
-        ty_args: &[TyArg],
     ) -> Result<DefId> {
         if candidates.is_empty() {
             self.diag.emit(

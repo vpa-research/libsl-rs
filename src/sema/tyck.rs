@@ -5,13 +5,12 @@ use std::fmt::{self, Display};
 
 use slotmap::{SecondaryMap, SlotMap, SparseSecondaryMap};
 
+use crate::ast::Variance;
 use crate::diag::DiagCtx;
 use crate::loc::Loc;
 use crate::sema::def::DefId;
-use crate::sema::ty::{
-    BuiltinTyCtor, ConstructedTy, FloatCtor, IntCtor, IntWidth, Ty, TyArg, TyId,
-};
-use crate::sema::tyck::constraints::{BoundSet, ConstrSet, VarProvenance};
+use crate::sema::ty::{BuiltinTyCtor, ConstructedTy, FloatCtor, IntCtor, IntWidth, Ty, TyId};
+use crate::sema::tyck::constraints::{ConstrSet, VarProvenance};
 use crate::sema::{Result, Sema};
 use crate::{AccessId, DeclId, ExprId, TyExprId, ast};
 
@@ -58,20 +57,40 @@ pub struct TyCk {
     pub ty_exprs: SecondaryMap<TyExprId, TyId>,
     pub def_tys: SecondaryMap<DefId, TyId>,
     pub fns: SparseSecondaryMap<DefId, FnTyInfo>,
+    pub ctor_variances: SparseSecondaryMap<DefId, Vec<Variance>>,
 
-    constrs: ConstrSet,
-    bounds: BoundSet,
+    var_occurrences: SecondaryMap<TyId, Vec<TyId>>,
+    var_provenances: Vec<VarProvenance>,
 }
 
 impl TyCk {
     pub fn add_ty(&mut self, ty: Ty) -> TyId {
-        *self
-            .ty_dedup
-            .entry(ty)
-            .or_insert_with_key(|ty| self.tys.insert(ty.clone()))
+        *self.ty_dedup.entry(ty).or_insert_with_key(|ty| {
+            let ty_id = self.tys.insert(ty.clone());
+            let mut occurrences = vec![];
+
+            // TODO: yank this out into a method.
+            match ty {
+                Ty::Error => {}
+
+                Ty::Ctor(t) => {
+                    for &arg in &t.args {
+                        occurrences.extend(&self.var_occurrences[arg])
+                    }
+                }
+
+                Ty::Var(_) => {}
+
+                Ty::Null => {}
+            }
+
+            self.var_occurrences.insert(ty_id, occurrences);
+
+            ty_id
+        })
     }
 
-    pub fn add_ctor_ty(&mut self, ctor: DefId, args: Vec<TyArg>) -> TyId {
+    pub fn add_ctor_ty(&mut self, ctor: DefId, args: Vec<TyId>) -> TyId {
         self.add_ty(Ty::Ctor(ConstructedTy { ctor, args }))
     }
 }
@@ -96,12 +115,12 @@ impl Sema<'_> {
                     if !t.args.is_empty() {
                         write!(f, "<")?;
 
-                        for (idx, arg) in t.args.iter().enumerate() {
+                        for (idx, &arg) in t.args.iter().enumerate() {
                             if idx > 0 {
                                 write!(f, ", ")?;
                             }
 
-                            write!(f, "{}", self.format_ty_arg(arg))?;
+                            write!(f, "{}", self.format_ty(arg))?;
                         }
 
                         write!(f, ">")?;
@@ -114,29 +133,6 @@ impl Sema<'_> {
                 Ty::Var(n) => write!(f, "?T{n}"),
 
                 Ty::Null => write!(f, "null"),
-            }
-        })
-    }
-
-    /// Formats a type argument.
-    pub fn format_ty_arg(&self, ty_arg: &TyArg) -> impl Display {
-        fmt::from_fn(move |f| {
-            match ty_arg {
-                TyArg::Ty(ty_id) => write!(f, "{}", self.format_ty(*ty_id)),
-
-                TyArg::Wildcard { lower, upper } => {
-                    if let Some(lower) = *lower {
-                        write!(f, "{} <: ", self.format_ty(lower))?;
-                    }
-
-                    write!(f, "?")?;
-
-                    if let Some(upper) = *upper {
-                        write!(f, " <: {}", self.format_ty(upper))?;
-                    }
-
-                    Ok(())
-                }
             }
         })
     }
@@ -185,6 +181,7 @@ struct Pass<'ast, 's, D> {
     sema: &'s mut Sema<'ast>,
     diag: &'s mut D,
     result: Result,
+    constrs: ConstrSet,
 }
 
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
@@ -193,6 +190,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             sema,
             diag,
             result: Ok(()),
+            constrs: Default::default(),
         }
     }
 
@@ -296,6 +294,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 ctor: def_id,
                 args: vec![],
             }));
+            self.sema.tyck.ctor_variances.insert(def_id, ctor.variance().into());
 
             *prelude(&mut self.sema.tyck.builtin) = ty_id;
         }
@@ -303,10 +302,15 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.sema.tyck.builtin.error = self.sema.tyck.add_ty(Ty::Error);
         self.sema.tyck.builtin.null = self.sema.tyck.add_ty(Ty::Null);
 
-        self.sema.name_res.defs[self.sema.name_res.prelude_defs.array].kind =
-            BuiltinTyCtor::Array.into();
-        self.sema.name_res.defs[self.sema.name_res.prelude_defs.set].kind =
-            BuiltinTyCtor::Set.into();
+        let ctors = &[
+            (self.sema.name_res.prelude_defs.array, BuiltinTyCtor::Array),
+            (self.sema.name_res.prelude_defs.set, BuiltinTyCtor::Set),
+        ];
+
+        for (def_id, ctor) in ctors {
+            self.sema.name_res.defs[def_id].kind = ctor.clone().into();
+            self.sema.tyck.ctor_variances.insert(def_id, ctor.variance().into());
+        }
     }
 
     fn lit_ty(&mut self, loc: &Loc, lit: &ast::PrimitiveLit, expected: Option<TyId>) -> TyId {
@@ -510,30 +514,20 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         todo!()
     }
 
-    fn tyck_ty_arg(&mut self, ty_arg: &'ast ast::TyArg) -> TyArg {
+    fn tyck_ty_arg(&mut self, ty_arg: &'ast ast::TyArg) -> TyId {
         match ty_arg {
             ast::TyArg::TyExpr(variance, ty_expr_id) => {
                 let ty_id = self.tyck_ty_expr(*ty_expr_id);
 
                 match variance {
-                    Some(ast::Variance::Invariant) | None => TyArg::Ty(ty_id),
+                    Some(ast::Variance::Invariant) | None => ty_id,
 
-                    Some(ast::Variance::Covariant) => TyArg::Wildcard {
-                        lower: None,
-                        upper: Some(ty_id),
-                    },
-
-                    Some(ast::Variance::Contravariant) => TyArg::Wildcard {
-                        lower: Some(ty_id),
-                        upper: None,
-                    },
+                    Some(ast::Variance::Covariant) => todo!(),
+                    Some(ast::Variance::Contravariant) => todo!(),
                 }
             }
 
-            ast::TyArg::Wildcard(_) => TyArg::Wildcard {
-                lower: None,
-                upper: None,
-            },
+            ast::TyArg::Wildcard(_) => todo!(),
         }
     }
 }

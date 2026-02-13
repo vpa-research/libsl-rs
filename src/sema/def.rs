@@ -86,6 +86,20 @@ impl DefKind {
         }
     }
 
+    pub fn as_builtin_ctor(&self) -> Option<&BuiltinTyCtor> {
+        match self {
+            Self::BuiltinCtor(def) => Some(def),
+            _ => None,
+        }
+    }
+
+    pub fn as_builtin_ctor_mut(&mut self) -> Option<&mut BuiltinTyCtor> {
+        match self {
+            Self::BuiltinCtor(def) => Some(def),
+            _ => None,
+        }
+    }
+
     pub fn as_semantic_ty(&self) -> Option<&DefSemanticTy> {
         match self {
             Self::SemanticTy(def) => Some(def),
@@ -357,6 +371,16 @@ impl DefKindProject for DefImport {
 
     fn project_mut(kind: &mut DefKind) -> Option<&mut Self> {
         kind.as_import_mut()
+    }
+}
+
+impl DefKindProject for BuiltinTyCtor {
+    fn project(kind: &DefKind) -> Option<&Self> {
+        kind.as_builtin_ctor()
+    }
+
+    fn project_mut(kind: &mut DefKind) -> Option<&mut Self> {
+        kind.as_builtin_ctor_mut()
     }
 }
 

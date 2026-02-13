@@ -8,6 +8,7 @@
 
 use slotmap::new_key_type;
 
+use crate::ast::Variance;
 use crate::sema::def::DefId;
 
 new_key_type! {
@@ -28,7 +29,6 @@ pub enum Ty {
 
     /// The null type.
     Null,
-
     // TODO: literal types.
 }
 
@@ -97,6 +97,23 @@ pub enum BuiltinTyCtor {
     Void,
 }
 
+impl BuiltinTyCtor {
+    pub fn variance(&self) -> &'static [Variance] {
+        match self {
+            Self::Any => &[],
+            Self::Nothing => &[],
+            Self::Bool => &[],
+            Self::Char => &[],
+            Self::String => &[],
+            Self::Int(_) => &[],
+            Self::Float(_) => &[],
+            Self::Array => &[Variance::Invariant],
+            Self::Set => &[Variance::Covariant],
+            Self::Void => &[],
+        }
+    }
+}
+
 /// The type obtained by applying type arguments to a type constructor.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ConstructedTy {
@@ -104,22 +121,5 @@ pub struct ConstructedTy {
     pub ctor: DefId,
 
     /// The type arguments.
-    pub args: Vec<TyArg>,
-}
-
-// TODO: represent wildcards as existentials, obviating the need for this enum entirely.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum TyArg {
-    Ty(TyId),
-
-    Wildcard {
-        lower: Option<TyId>,
-        upper: Option<TyId>,
-    },
-}
-
-impl From<TyId> for TyArg {
-    fn from(ty_id: TyId) -> Self {
-        Self::Ty(ty_id)
-    }
+    pub args: Vec<TyId>,
 }

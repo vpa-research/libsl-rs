@@ -42,7 +42,7 @@ pub struct IntCtor {
 }
 
 /// The width of an integer, determining its range.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum IntWidth {
     /// 8 bits.
     I8,
@@ -68,7 +68,7 @@ impl IntWidth {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum FloatCtor {
     F32,
     F64,

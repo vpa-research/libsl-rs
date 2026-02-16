@@ -8,7 +8,7 @@ use slotmap::{SlotMap, SparseSecondaryMap, new_key_type};
 use crate::ast::Variance;
 use crate::diag::DiagCtx;
 use crate::sema::def::DefId;
-use crate::sema::ty::{BuiltinTyCtor, ConstructedTy, Ty, TyId};
+use crate::sema::ty::{BuiltinTyCtor, ConstructedTy, IntWidth, Ty, TyId};
 use crate::sema::tyck::Pass;
 use crate::sema::{Result, Sema};
 use crate::{AccessId, ExprId, ast};
@@ -182,6 +182,14 @@ impl ConstrSet {
         let l = &sema.tyck.tys[lhs];
         let r = &sema.tyck.tys[rhs];
 
+        if rhs == sema.tyck.builtin.any {
+            return Ok(());
+        }
+
+        if lhs == sema.tyck.builtin.nothing {
+            return Ok(());
+        }
+
         match (l, r) {
             (&Ty::Var(l), _) => self.add_var_bound(
                 l,
@@ -206,11 +214,8 @@ impl ConstrSet {
 
                     // consider built-in types.
                     match (bl, br) {
-                        (_, Some(BuiltinTyCtor::Any)) => return Ok(()),
-                        (Some(BuiltinTyCtor::Nothing), _) => return Ok(()),
-
-                        // apart from the two cases above, built-in types are never related to other
-                        // types by subtyping unless their constructors are the same.
+                        // built-in types are never related to other types by subtyping unless their
+                        // constructors are the same.
                         (Some(_), _) | (_, Some(_)) => {
                             self.report_constr_violation(sema, diag, constr_id);
 
@@ -271,7 +276,41 @@ impl ConstrSet {
         lhs: TyId,
         rhs: TyId,
     ) -> Result {
-        todo!()
+        let l = &sema.tyck.tys[lhs];
+        let r = &sema.tyck.tys[rhs];
+
+        match (l, r) {
+            (Ty::Ctor(l), Ty::Ctor(r)) => {
+                if l.ctor != r.ctor {
+                    let bl = sema.name_res.defs[l.ctor].kind.as_builtin_ctor();
+                    let br = sema.name_res.defs[r.ctor].kind.as_builtin_ctor();
+
+                    match (bl, br) {
+                        // can extend the integer width as long as the signedness is preserved.
+                        (Some(BuiltinTyCtor::Int(l_int)), Some(BuiltinTyCtor::Int(r_int)))
+                            if l_int.signed == r_int.signed && l_int.width <= r_int.width =>
+                        {
+                            return Ok(());
+                        }
+
+                        // can extend the float width.
+                        (
+                            Some(BuiltinTyCtor::Float(l_float)),
+                            Some(BuiltinTyCtor::Float(r_float)),
+                        ) if l_float.width() <= r_float.width() => {
+                            return Ok(());
+                        }
+
+                        _ => {}
+                    }
+                }
+            }
+
+            _ => {}
+        }
+
+        // not a known coercion — require subtyping.
+        self.reduce_sub(sema, diag, constr_id, lhs, rhs)
     }
 
     fn add_var_bound(

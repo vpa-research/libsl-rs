@@ -1,15 +1,18 @@
 //! Type constraint solving.
 
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::iter;
 use std::sync::LazyLock;
 
+use bit_set::BitSet;
 use slotmap::{SlotMap, SparseSecondaryMap, new_key_type};
 
 use crate::ast::Variance;
 use crate::diag::DiagCtx;
 use crate::sema::def::DefId;
 use crate::sema::ty::{BuiltinTyCtor, ConstructedTy, IntWidth, Ty, TyId};
-use crate::sema::tyck::Pass;
+use crate::sema::tyck::{Pass, TyCk};
 use crate::sema::{Result, Sema};
 use crate::{AccessId, ExprId, ast};
 
@@ -18,7 +21,7 @@ new_key_type! {
 }
 
 #[derive(Debug, Clone, Default)]
-enum ConstrStatus {
+enum Status {
     #[default]
     Sat,
 
@@ -27,7 +30,7 @@ enum ConstrStatus {
     Unsat,
 }
 
-impl ConstrStatus {
+impl Status {
     fn is_sat(&self) -> bool {
         matches!(self, Self::Sat)
     }
@@ -51,9 +54,10 @@ enum VarBound {
 #[derive(Debug, Clone, Default)]
 pub struct ConstrSet {
     constrs: SlotMap<ConstrId, Constr>,
+    constr_dedup: HashMap<ConstrKind, ConstrId>,
     unprocessed: Vec<ConstrId>,
-    bounds: BoundSet,
-    status: ConstrStatus,
+    pub bounds: BoundSet,
+    status: Status,
 }
 
 impl ConstrSet {
@@ -62,7 +66,12 @@ impl ConstrSet {
             return Err(());
         }
 
+        let Entry::Vacant(entry) = self.constr_dedup.entry(constr.kind.clone()) else {
+            return Ok(());
+        };
+
         let id = self.constrs.insert(constr);
+        entry.insert(id);
         self.unprocessed.push(id);
 
         if !self.status.is_processing() {
@@ -79,17 +88,17 @@ impl ConstrSet {
             return Err(());
         }
 
-        self.status = ConstrStatus::Processing;
+        self.status = Status::Processing;
 
         while let Some(constr_id) = self.unprocessed.pop() {
             if self.reduce(sema, diag, constr_id).is_err() {
-                self.status = ConstrStatus::Unsat;
+                self.status = Status::Unsat;
 
                 return Err(());
             }
         }
 
-        self.status = ConstrStatus::Sat;
+        self.status = Status::Sat;
 
         Ok(())
     }
@@ -130,13 +139,21 @@ impl ConstrSet {
         let r = &sema.tyck.tys[rhs];
 
         match (l, r) {
-            (&Ty::Var(l), _) => {
-                self.add_var_bound(l, VarBound::Eq(rhs), VarBoundProvenance::Constr(constr_id))
-            }
+            (&Ty::Var(l), _) => self.add_var_bound(
+                sema,
+                diag,
+                l,
+                VarBound::Eq(rhs),
+                VarBoundProvenance::Constr(constr_id),
+            ),
 
-            (_, &Ty::Var(r)) => {
-                self.add_var_bound(r, VarBound::Eq(lhs), VarBoundProvenance::Constr(constr_id))
-            }
+            (_, &Ty::Var(r)) => self.add_var_bound(
+                sema,
+                diag,
+                r,
+                VarBound::Eq(lhs),
+                VarBoundProvenance::Constr(constr_id),
+            ),
 
             (Ty::Error, _) | (_, Ty::Error) => Ok(()),
 
@@ -192,12 +209,16 @@ impl ConstrSet {
 
         match (l, r) {
             (&Ty::Var(l), _) => self.add_var_bound(
+                sema,
+                diag,
                 l,
                 VarBound::Upper(rhs),
                 VarBoundProvenance::Constr(constr_id),
             ),
 
             (_, &Ty::Var(r)) => self.add_var_bound(
+                sema,
+                diag,
                 r,
                 VarBound::Upper(lhs),
                 VarBoundProvenance::Constr(constr_id),
@@ -315,8 +336,107 @@ impl ConstrSet {
 
     fn add_var_bound(
         &mut self,
+        sema: &mut Sema<'_>,
+        diag: &mut impl DiagCtx,
         idx: usize,
         bound: VarBound,
+        provenance: VarBoundProvenance,
+    ) -> Result {
+        let var = self.bounds.var_mut(idx);
+
+        if var.status.is_unsat() {
+            return Err(());
+        }
+
+        var.unprocessed.push((bound, provenance));
+
+        if var.status.is_processing() {
+            Ok(())
+        } else {
+            self.process_var_bounds(sema, diag, idx)
+        }
+    }
+
+    fn process_var_bounds(
+        &mut self,
+        sema: &mut Sema<'_>,
+        diag: &mut impl DiagCtx,
+        idx: usize,
+    ) -> Result {
+        let mut var = self.bounds.var_mut(idx);
+
+        assert!(!var.status.is_processing());
+
+        if var.status.is_unsat() {
+            return Err(());
+        }
+
+        var.status = Status::Processing;
+
+        while let Some((bound, provenance)) = var.unprocessed.pop() {
+            let result = self.incorporate(sema, diag, idx, bound, provenance);
+            var = self.bounds.var_mut(idx);
+
+            if result.is_err() {
+                var.status = Status::Unsat;
+
+                return Err(());
+            }
+        }
+
+        var.status = Status::Sat;
+
+        Ok(())
+    }
+
+    fn incorporate(
+        &mut self,
+        sema: &mut Sema<'_>,
+        diag: &mut impl DiagCtx,
+        idx: usize,
+        bound: VarBound,
+        provenance: VarBoundProvenance,
+    ) -> Result {
+        match bound {
+            VarBound::Lower(ty_id) => self.incorporate_lower(sema, diag, idx, ty_id, provenance),
+            VarBound::Upper(ty_id) => self.incorporate_upper(sema, diag, idx, ty_id, provenance),
+            VarBound::Eq(ty_id) => self.incorporate_eq(sema, diag, idx, ty_id, provenance),
+        }
+    }
+
+    fn incorporate_lower(
+        &mut self,
+        sema: &mut Sema<'_>,
+        diag: &mut impl DiagCtx,
+        idx: usize,
+        ty_id: TyId,
+        provenance: VarBoundProvenance,
+    ) -> Result {
+        if let Ty::Var(upper) = sema.tyck.tys[ty_id] {
+            // α <: β.
+            todo!()
+        } else {
+            todo!()
+        }
+    }
+
+    fn incorporate_upper(
+        &mut self,
+        sema: &mut Sema<'_>,
+        diag: &mut impl DiagCtx,
+        idx: usize,
+        ty_id: TyId,
+        provenance: VarBoundProvenance,
+    ) -> Result {
+        todo!()
+    }
+
+    fn incorporate_eq(
+        &mut self,
+        sema: &mut Sema<'_>,
+        diag: &mut impl DiagCtx,
+        idx: usize,
+        ty_id: TyId,
         provenance: VarBoundProvenance,
     ) -> Result {
         todo!()
@@ -341,7 +461,7 @@ pub struct Constr {
     pub kind: ConstrKind,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ConstrKind {
     /// The left type equals the right type.
     ///
@@ -383,6 +503,18 @@ impl BoundSet {
 
         &mut self.vars[idx]
     }
+
+    pub fn is_free(&self, tyck: &TyCk, ty_id: TyId) -> bool {
+        if let Ty::Var(idx) = tyck.tys[ty_id]
+            && let Some(inst) = self.var(idx).eq
+        {
+            self.is_free(tyck, inst)
+        } else {
+            tyck.var_occurrences[ty_id]
+                .iter()
+                .any(|&var| self.is_free(tyck, var))
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -400,6 +532,11 @@ pub enum VarBoundProvenance {
     Constr(ConstrId),
 }
 
+// Invariants:
+// 1. for all l ∈ .lower and u ∈ .upper, l <: u.
+// 2. if a variable in a bound has an instantiation, it holds after substitution.
+// 3. if α = β, their bounds are the same.
+// 4. if α <: β, α.lower ⊆ β.lower and β.upper ⊆ α.upper.
 #[derive(Debug, Default, Clone)]
 pub struct VarConstr {
     /// Lower bounds.
@@ -412,13 +549,14 @@ pub struct VarConstr {
     /// Constrain the variable to be a subtype of the intersection of these types.
     pub upper: SparseSecondaryMap<TyId, VarBoundProvenance>,
 
-    /// Equality bounds.
-    pub eq: SparseSecondaryMap<TyId, VarBoundProvenance>,
+    /// An equality bound, if any.
+    pub eq: Option<TyId>,
 
-    /// Instantiation with a proper type.
-    pub inst: Option<TyId>,
+    /// Indices of variables whose bounds mention this variable.
+    used_by: BitSet,
 
     unprocessed: Vec<(VarBound, VarBoundProvenance)>,
+    status: Status,
 }
 
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {

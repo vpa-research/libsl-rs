@@ -10,7 +10,7 @@ use crate::diag::DiagCtx;
 use crate::loc::Loc;
 use crate::sema::def::DefId;
 use crate::sema::ty::{BuiltinTyCtor, ConstructedTy, FloatCtor, IntCtor, IntWidth, Ty, TyId};
-use crate::sema::tyck::constraints::{ConstrSet, VarProvenance};
+use crate::sema::tyck::constraints::{BoundSet, ConstrSet, VarProvenance};
 use crate::sema::{Result, Sema};
 use crate::{AccessId, DeclId, ExprId, TyExprId, ast};
 
@@ -63,28 +63,31 @@ pub struct TyCk {
     var_provenances: Vec<VarProvenance>,
 }
 
+fn occurring_vars(var_occurrences: &SecondaryMap<TyId, Vec<TyId>>, ty: &Ty) -> Vec<TyId> {
+    let mut occurrences = vec![];
+
+    match ty {
+        Ty::Error => {}
+
+        Ty::Ctor(t) => {
+            for &arg in &t.args {
+                occurrences.extend(&var_occurrences[arg])
+            }
+        }
+
+        Ty::Var(_) => {}
+
+        Ty::Null => {}
+    }
+
+    occurrences
+}
+
 impl TyCk {
     pub fn add_ty(&mut self, ty: Ty) -> TyId {
         *self.ty_dedup.entry(ty).or_insert_with_key(|ty| {
             let ty_id = self.tys.insert(ty.clone());
-            let mut occurrences = vec![];
-
-            // TODO: yank this out into a method.
-            match ty {
-                Ty::Error => {}
-
-                Ty::Ctor(t) => {
-                    for &arg in &t.args {
-                        occurrences.extend(&self.var_occurrences[arg])
-                    }
-                }
-
-                Ty::Var(_) => {}
-
-                Ty::Null => {}
-            }
-
-            self.var_occurrences.insert(ty_id, occurrences);
+            self.var_occurrences.insert(ty_id, occurring_vars(&self.var_occurrences, ty));
 
             ty_id
         })
@@ -308,8 +311,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         ];
 
         for (def_id, ctor) in ctors {
-            self.sema.name_res.defs[def_id].kind = ctor.clone().into();
-            self.sema.tyck.ctor_variances.insert(def_id, ctor.variance().into());
+            self.sema.name_res.defs[*def_id].kind = ctor.clone().into();
+            self.sema.tyck.ctor_variances.insert(*def_id, ctor.variance().into());
         }
     }
 

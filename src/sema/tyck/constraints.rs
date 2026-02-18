@@ -488,11 +488,6 @@ impl ConstrSet {
     ) -> Result {
         use slotmap::sparse_secondary::Entry;
 
-        if let Ty::Var(lower) = sema.tyck.tys[ty_id] {
-            // Var(lower) <: Var(idx). flip the bound and handle the special case.
-            return self.incorporate_var_upper(sema, diag, lower, idx, provenance);
-        }
-
         // the lower type is not an inference variable.
         let ty_id = self.repr(ty_id);
         self.update_bounds(idx);
@@ -503,7 +498,7 @@ impl ConstrSet {
             return Ok(());
         };
 
-        entry.insert(provenance);
+        entry.insert(provenance.clone());
 
         // check for antisymmetry.
         if var.upper.contains_key(ty_id) {
@@ -518,14 +513,17 @@ impl ConstrSet {
                 sema,
                 diag,
                 Constr {
-                    provenance: ConstrProvenance::VarBoundConsistency {
-                        idx,
-                        lower: ty_id,
-                        upper: upper_ty_id,
-                    },
+                    provenance: ConstrProvenance::VarBoundConsistency { idx },
                     kind: ConstrKind::Sub(ty_id, upper_ty_id),
                 },
             )?;
+        }
+
+        if let Ty::Var(lower) = sema.tyck.tys[ty_id] {
+            // Var(lower) <: Var(idx).
+            let upper_ty_id = sema.tyck.add_ty(Ty::Var(idx));
+
+            return self.incorporate_upper(sema, diag, lower, upper_ty_id, provenance);
         }
 
         Ok(())
@@ -541,11 +539,6 @@ impl ConstrSet {
     ) -> Result {
         use slotmap::sparse_secondary::Entry;
 
-        if let Ty::Var(upper) = sema.tyck.tys[ty_id] {
-            // Var(idx) <: Var(upper). handle the special case.
-            return self.incorporate_var_upper(sema, diag, idx, upper, provenance);
-        }
-
         // the upper type is not an inference variable.
         let ty_id = self.repr(ty_id);
         self.update_bounds(idx);
@@ -556,7 +549,7 @@ impl ConstrSet {
             return Ok(());
         };
 
-        entry.insert(provenance);
+        entry.insert(provenance.clone());
 
         // check for antisymmetry.
         if var.lower.contains_key(ty_id) {
@@ -571,11 +564,7 @@ impl ConstrSet {
                 sema,
                 diag,
                 Constr {
-                    provenance: ConstrProvenance::VarBoundConsistency {
-                        idx,
-                        lower: lower_ty_id,
-                        upper: ty_id,
-                    },
+                    provenance: ConstrProvenance::VarBoundConsistency { idx },
                     kind: ConstrKind::Sub(lower_ty_id, ty_id),
                 },
             )?;
@@ -584,24 +573,14 @@ impl ConstrSet {
         // TODO: can a type have two different supertypes with the same type constructor?
         // (OOP languages tend to answer in the negative. assume yes for now.)
 
-        Ok(())
-    }
+        if let Ty::Var(upper) = sema.tyck.tys[ty_id] {
+            // Var(idx) <: Var(upper). handle the special case.
+            let lower_ty_id = sema.tyck.add_ty(Ty::Var(idx));
 
-    // Handles `Var(lower) <: Var(upper)`.
-    fn incorporate_var_upper(
-        &mut self,
-        sema: &mut Sema<'_>,
-        diag: &mut impl DiagCtx,
-        lower: usize,
-        upper: usize,
-        provenance: VarBoundProvenance,
-    ) -> Result {
-        if lower == upper {
-            // trivially true.
-            return Ok(());
+            return self.incorporate_lower(sema, diag, upper, lower_ty_id, provenance);
         }
 
-        todo!()
+        Ok(())
     }
 
     fn incorporate_eq(
@@ -628,11 +607,7 @@ pub enum ConstrProvenance {
     Access(AccessId),
 
     /// Ensures variable bound consistency.
-    VarBoundConsistency {
-        idx: usize,
-        lower: TyId,
-        upper: TyId,
-    },
+    VarBoundConsistency { idx: usize },
 }
 
 #[derive(Debug, Clone)]
@@ -720,6 +695,7 @@ pub enum VarBoundProvenance {
 // 2. if a variable in a bound has an instantiation, it holds after substitution.
 // 3. if α = β, their bounds are the same.
 // 4. if α <: β, α.lower ⊆ β.lower and β.upper ⊆ α.upper.
+// 5. if α <: β, β ∈ α.upper and α ∈ β.lower.
 #[derive(Debug, Default, Clone)]
 pub struct VarConstr {
     /// Lower bounds.

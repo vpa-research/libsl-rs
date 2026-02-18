@@ -52,10 +52,25 @@ enum VarBound {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum VarBoundKind {
+enum SubtypeBoundKind {
     Lower,
     Upper,
-    Eq,
+}
+
+impl SubtypeBoundKind {
+    fn opposite(self) -> Self {
+        match self {
+            Self::Lower => Self::Upper,
+            Self::Upper => Self::Lower,
+        }
+    }
+
+    fn order_subtype(self, ty_id: TyId, bound_ty_id: TyId) -> (TyId, TyId) {
+        match self {
+            Self::Lower => (bound_ty_id, ty_id),
+            Self::Upper => (ty_id, bound_ty_id),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -478,6 +493,70 @@ impl ConstrSet {
         }
     }
 
+    fn incorporate_subtype(
+        &mut self,
+        sema: &mut Sema<'_>,
+        diag: &mut impl DiagCtx,
+        idx: usize,
+        ty_id: TyId,
+        kind: SubtypeBoundKind,
+        provenance: VarBoundProvenance,
+    ) -> Result {
+        use slotmap::sparse_secondary::Entry;
+
+        let ty_id = self.repr(ty_id);
+        self.update_bounds(idx);
+        let var = self.bounds.var_mut(idx);
+
+        // check if we already have such a bound.
+        let Entry::Vacant(entry) = var.subtype_bounds_mut(kind).entry(ty_id).unwrap() else {
+            return Ok(());
+        };
+
+        entry.insert(provenance.clone());
+
+        // check for antisymmetry.
+        if var.subtype_bounds(kind.opposite()).contains_key(ty_id) {
+            return self.incorporate_eq(sema, diag, idx, ty_id, VarBoundProvenance::Antisymmetry);
+        }
+
+        // ensure the new bound is consistent with the opposite bounds.
+        let bounds = var
+            .subtype_bounds(kind.opposite())
+            .keys()
+            .collect::<Vec<_>>();
+
+        for &bound_ty_id in &bounds {
+            let (lower_ty_id, upper_ty_id) = kind.opposite().order_subtype(ty_id, bound_ty_id);
+
+            self.add(
+                sema,
+                diag,
+                Constr {
+                    provenance: ConstrProvenance::VarBoundConsistency { idx },
+                    kind: ConstrKind::Sub(lower_ty_id, upper_ty_id),
+                },
+            )?;
+        }
+
+        // if the bound is a variable, process it as well.
+        if let Ty::Var(v) = sema.tyck.tys[ty_id] {
+            let var_ty_id = sema.tyck.add_ty(Ty::Var(idx));
+
+            return match kind {
+                SubtypeBoundKind::Lower => {
+                    self.incorporate_upper(sema, diag, v, var_ty_id, provenance)
+                }
+
+                SubtypeBoundKind::Upper => {
+                    self.incorporate_lower(sema, diag, v, var_ty_id, provenance)
+                }
+            };
+        }
+
+        Ok(())
+    }
+
     fn incorporate_lower(
         &mut self,
         sema: &mut Sema<'_>,
@@ -486,47 +565,7 @@ impl ConstrSet {
         ty_id: TyId,
         provenance: VarBoundProvenance,
     ) -> Result {
-        use slotmap::sparse_secondary::Entry;
-
-        // the lower type is not an inference variable.
-        let ty_id = self.repr(ty_id);
-        self.update_bounds(idx);
-        let var = self.bounds.var_mut(idx);
-
-        // check if we already have such a bound.
-        let Entry::Vacant(entry) = var.lower.entry(ty_id).unwrap() else {
-            return Ok(());
-        };
-
-        entry.insert(provenance.clone());
-
-        // check for antisymmetry.
-        if var.upper.contains_key(ty_id) {
-            return self.incorporate_eq(sema, diag, idx, ty_id, VarBoundProvenance::Antisymmetry);
-        }
-
-        // ensure the new bound is consistent with upper bounds.
-        let upper = var.upper.keys().collect::<Vec<_>>();
-
-        for upper_ty_id in upper {
-            self.add(
-                sema,
-                diag,
-                Constr {
-                    provenance: ConstrProvenance::VarBoundConsistency { idx },
-                    kind: ConstrKind::Sub(ty_id, upper_ty_id),
-                },
-            )?;
-        }
-
-        if let Ty::Var(lower) = sema.tyck.tys[ty_id] {
-            // Var(lower) <: Var(idx).
-            let upper_ty_id = sema.tyck.add_ty(Ty::Var(idx));
-
-            return self.incorporate_upper(sema, diag, lower, upper_ty_id, provenance);
-        }
-
-        Ok(())
+        self.incorporate_subtype(sema, diag, idx, ty_id, SubtypeBoundKind::Lower, provenance)
     }
 
     fn incorporate_upper(
@@ -537,50 +576,7 @@ impl ConstrSet {
         ty_id: TyId,
         provenance: VarBoundProvenance,
     ) -> Result {
-        use slotmap::sparse_secondary::Entry;
-
-        // the upper type is not an inference variable.
-        let ty_id = self.repr(ty_id);
-        self.update_bounds(idx);
-        let var = self.bounds.var_mut(idx);
-
-        // check if we already have such a bound.
-        let Entry::Vacant(entry) = var.upper.entry(ty_id).unwrap() else {
-            return Ok(());
-        };
-
-        entry.insert(provenance.clone());
-
-        // check for antisymmetry.
-        if var.lower.contains_key(ty_id) {
-            return self.incorporate_eq(sema, diag, idx, ty_id, VarBoundProvenance::Antisymmetry);
-        }
-
-        // ensure the new bound is consistent with upper bounds.
-        let lower = var.lower.keys().collect::<Vec<_>>();
-
-        for lower_ty_id in lower {
-            self.add(
-                sema,
-                diag,
-                Constr {
-                    provenance: ConstrProvenance::VarBoundConsistency { idx },
-                    kind: ConstrKind::Sub(lower_ty_id, ty_id),
-                },
-            )?;
-        }
-
-        // TODO: can a type have two different supertypes with the same type constructor?
-        // (OOP languages tend to answer in the negative. assume yes for now.)
-
-        if let Ty::Var(upper) = sema.tyck.tys[ty_id] {
-            // Var(idx) <: Var(upper). handle the special case.
-            let lower_ty_id = sema.tyck.add_ty(Ty::Var(idx));
-
-            return self.incorporate_lower(sema, diag, upper, lower_ty_id, provenance);
-        }
-
-        Ok(())
+        self.incorporate_subtype(sema, diag, idx, ty_id, SubtypeBoundKind::Upper, provenance)
     }
 
     fn incorporate_eq(
@@ -716,6 +712,28 @@ pub struct VarConstr {
 
     unprocessed: Vec<(VarBound, VarBoundProvenance)>,
     status: Status,
+}
+
+impl VarConstr {
+    fn subtype_bounds(
+        &self,
+        kind: SubtypeBoundKind,
+    ) -> &SparseSecondaryMap<TyId, VarBoundProvenance> {
+        match kind {
+            SubtypeBoundKind::Lower => &self.lower,
+            SubtypeBoundKind::Upper => &self.upper,
+        }
+    }
+
+    fn subtype_bounds_mut(
+        &mut self,
+        kind: SubtypeBoundKind,
+    ) -> &mut SparseSecondaryMap<TyId, VarBoundProvenance> {
+        match kind {
+            SubtypeBoundKind::Lower => &mut self.lower,
+            SubtypeBoundKind::Upper => &mut self.upper,
+        }
+    }
 }
 
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {

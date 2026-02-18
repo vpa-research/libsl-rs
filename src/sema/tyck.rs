@@ -59,8 +59,14 @@ pub struct TyCk {
     pub fns: SparseSecondaryMap<DefId, FnTyInfo>,
     pub ctor_variances: SparseSecondaryMap<DefId, Vec<Variance>>,
 
+    // for each type stores a vec of inference variable occurring in it.
     var_occurrences: SecondaryMap<TyId, Vec<TyId>>,
+
+    // for each variable stores where it came from.
     var_provenances: Vec<VarProvenance>,
+
+    // for each type stores other types that refer to it.
+    ty_preds: SecondaryMap<TyId, Vec<TyId>>,
 }
 
 fn occurring_vars(var_occurrences: &SecondaryMap<TyId, Vec<TyId>>, ty: &Ty) -> Vec<TyId> {
@@ -344,6 +350,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         };
 
         self.check_ty(loc, expected, ty_id)
+    }
+
+    fn repr(&self, ty_id: TyId) -> TyId {
+        self.constrs.repr(ty_id)
     }
 }
 

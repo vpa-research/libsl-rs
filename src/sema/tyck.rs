@@ -10,7 +10,7 @@ use crate::diag::DiagCtx;
 use crate::loc::Loc;
 use crate::sema::def::DefId;
 use crate::sema::ty::{BuiltinTyCtor, ConstructedTy, FloatCtor, IntCtor, IntWidth, Ty, TyId};
-use crate::sema::tyck::constraints::{BoundSet, ConstrSet, VarProvenance};
+use crate::sema::tyck::constraints::{ConstrSet, VarProvenance};
 use crate::sema::{Result, Sema};
 use crate::{AccessId, DeclId, ExprId, TyExprId, ast};
 
@@ -67,6 +67,9 @@ pub struct TyCk {
 
     // for each type stores other types that refer to it.
     ty_preds: SecondaryMap<TyId, Vec<TyId>>,
+
+    // an append-only sequence of all registered types.
+    ty_vec: Vec<TyId>,
 }
 
 fn occurring_vars(var_occurrences: &SecondaryMap<TyId, Vec<TyId>>, ty: &Ty) -> Vec<TyId> {
@@ -89,11 +92,34 @@ fn occurring_vars(var_occurrences: &SecondaryMap<TyId, Vec<TyId>>, ty: &Ty) -> V
     occurrences
 }
 
+fn add_preds(preds: &mut SecondaryMap<TyId, Vec<TyId>>, ty: &Ty, ty_id: TyId) {
+    match ty {
+        Ty::Error => {}
+
+        Ty::Ctor(t) => {
+            for &arg in &t.args {
+                let p = preds.entry(arg).unwrap().or_default();
+
+                if !p.contains(&ty_id) {
+                    p.push(ty_id);
+                }
+            }
+        }
+
+        Ty::Var(_) => {}
+
+        Ty::Null => {}
+    }
+}
+
 impl TyCk {
     pub fn add_ty(&mut self, ty: Ty) -> TyId {
         *self.ty_dedup.entry(ty).or_insert_with_key(|ty| {
             let ty_id = self.tys.insert(ty.clone());
-            self.var_occurrences.insert(ty_id, occurring_vars(&self.var_occurrences, ty));
+            self.var_occurrences
+                .insert(ty_id, occurring_vars(&self.var_occurrences, ty));
+            self.ty_vec.push(ty_id);
+            add_preds(&mut self.ty_preds, ty, ty_id);
 
             ty_id
         })
@@ -303,7 +329,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 ctor: def_id,
                 args: vec![],
             }));
-            self.sema.tyck.ctor_variances.insert(def_id, ctor.variance().into());
+            self.sema
+                .tyck
+                .ctor_variances
+                .insert(def_id, ctor.variance().into());
 
             *prelude(&mut self.sema.tyck.builtin) = ty_id;
         }
@@ -318,7 +347,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         for (def_id, ctor) in ctors {
             self.sema.name_res.defs[*def_id].kind = ctor.clone().into();
-            self.sema.tyck.ctor_variances.insert(*def_id, ctor.variance().into());
+            self.sema
+                .tyck
+                .ctor_variances
+                .insert(*def_id, ctor.variance().into());
         }
     }
 

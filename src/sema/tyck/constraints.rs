@@ -2,7 +2,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::iter;
+use std::{iter, mem};
 use std::sync::LazyLock;
 
 use bit_set::BitSet;
@@ -11,7 +11,7 @@ use slotmap::{SecondaryMap, SlotMap, SparseSecondaryMap, new_key_type};
 use crate::ast::Variance;
 use crate::diag::DiagCtx;
 use crate::sema::def::DefId;
-use crate::sema::ty::{BuiltinTyCtor, Ty, TyId};
+use crate::sema::ty::{BuiltinTyCtor, ConstructedTy, Ty, TyId};
 use crate::sema::tyck::{Pass, TyCk};
 use crate::sema::{Result, Sema};
 use crate::{AccessId, ExprId};
@@ -92,7 +92,7 @@ impl TyUnionFind {
         ty_id
     }
 
-    fn union(&mut self, lhs: TyId, rhs: TyId) {
+    fn union(&self, lhs: TyId, rhs: TyId) {
         let lhs = self.repr(lhs);
         let rhs = self.repr(rhs);
 
@@ -100,7 +100,7 @@ impl TyUnionFind {
             return;
         }
 
-        self.parents.get_mut()[lhs] = rhs;
+        self.parents.borrow_mut()[lhs] = rhs;
     }
 }
 
@@ -111,7 +111,15 @@ pub struct ConstrSet {
     unprocessed: Vec<ConstrId>,
     pub bounds: BoundSet,
     status: Status,
+
     uf: TyUnionFind,
+
+    // quotient of TyCk.preds over the congruence induced by uf.
+    // the keys are congruence class representatives.
+    // does not contain duplicates.
+    preds: SecondaryMap<TyId, Vec<TyId>>,
+
+    last_registered_ty_idx: usize,
 }
 
 impl ConstrSet {
@@ -119,8 +127,81 @@ impl ConstrSet {
         self.uf.repr(ty_id)
     }
 
-    pub fn merge(&mut self, lhs_ty_id: TyId, rhs_ty_id: TyId) -> TyId {
-        todo!()
+    fn union(&mut self, sema: &Sema<'_>, lhs_ty_id: TyId, rhs_ty_id: TyId) -> TyId {
+        let lhs_ty_id = self.repr(lhs_ty_id);
+        let rhs_ty_id = self.repr(rhs_ty_id);
+
+        // avoid putting a variable at the top.
+        if sema.tyck.tys[lhs_ty_id].is_var() && !sema.tyck.tys[rhs_ty_id].is_var() {
+            return self.union(sema, rhs_ty_id, lhs_ty_id);
+        }
+
+        self.uf.union(lhs_ty_id, rhs_ty_id);
+
+        let rhs_preds = mem::take(self.preds_mut(sema, rhs_ty_id));
+        let preds = self.preds_mut(sema, lhs_ty_id);
+        preds.extend(rhs_preds);
+        preds.sort();
+        preds.dedup();
+
+        lhs_ty_id
+    }
+
+    fn are_congruent(&self, sema: &Sema<'_>, lhs_ty_id: TyId, rhs_ty_id: TyId) -> bool {
+        let lhs = &sema.tyck.tys[lhs_ty_id];
+        let rhs = &sema.tyck.tys[rhs_ty_id];
+
+        match (lhs, rhs) {
+            (Ty::Error, Ty::Error) => true,
+
+            (Ty::Ctor(l), Ty::Ctor(r)) => {
+                l.ctor == r.ctor
+                    && iter::zip(&l.args, &r.args).all(|(&l, &r)| self.repr(l) == self.repr(r))
+            }
+
+            (Ty::Var(l), Ty::Var(r)) => l == r,
+
+            (Ty::Null, Ty::Null) => true,
+
+            (Ty::Error | Ty::Ctor(_) | Ty::Var(_) | Ty::Null, _) => false,
+        }
+    }
+
+    pub fn merge(&mut self, sema: &mut Sema<'_>, lhs_ty_id: TyId, rhs_ty_id: TyId) {
+        let lhs_ty_id = self.normalize(sema, lhs_ty_id, true);
+        let rhs_ty_id = self.normalize(sema, rhs_ty_id, true);
+        let lhs_preds = self.preds(sema, lhs_ty_id).to_vec();
+        let rhs_preds = self.preds(sema, rhs_ty_id).to_vec();
+        self.union(sema, lhs_ty_id, rhs_ty_id);
+
+        for &l in &lhs_preds {
+            for &r in &rhs_preds {
+                if self.repr(l) == self.repr(r) {
+                    continue;
+                }
+
+                if self.are_congruent(sema, l, r) {
+                    self.merge(sema, l, r);
+                }
+            }
+        }
+    }
+
+    fn preds<'a>(&'a self, sema: &'a Sema<'_>, ty_id: TyId) -> &'a [TyId] {
+        self.preds
+            .get(ty_id)
+            .map(|preds| &preds[..])
+            .unwrap_or_else(|| &sema.tyck.ty_preds[ty_id])
+    }
+
+    fn preds_mut(&mut self, sema: &Sema<'_>, ty_id: TyId) -> &mut Vec<TyId> {
+        self.preds.entry(ty_id).unwrap().or_insert_with(|| {
+            let mut result = sema.tyck.ty_preds[ty_id].clone();
+            result.sort();
+            result.dedup();
+
+            result
+        })
     }
 
     pub fn add(&mut self, sema: &mut Sema<'_>, diag: &mut impl DiagCtx, constr: Constr) -> Result {
@@ -154,6 +235,11 @@ impl ConstrSet {
 
         self.status = Status::Processing;
 
+        while let Some(&ty_id) = sema.tyck.ty_vec.get(self.last_registered_ty_idx) {
+            self.normalize(sema, ty_id, false);
+            self.last_registered_ty_idx += 1;
+        }
+
         while let Some(constr_id) = self.unprocessed.pop() {
             if self.reduce(sema, diag, constr_id).is_err() {
                 self.status = Status::Unsat;
@@ -174,6 +260,37 @@ impl ConstrSet {
         constr_id: ConstrId,
     ) {
         todo!()
+    }
+
+    fn normalize(&mut self, sema: &mut Sema<'_>, ty_id: TyId, force: bool) -> TyId {
+        if !force && self.uf.parents.borrow().contains_key(ty_id) {
+            return self.repr(ty_id);
+        }
+
+        let ty_id = self.repr(ty_id);
+        let ty = &sema.tyck.tys[ty_id];
+
+        let normalized = match ty {
+            Ty::Error => Ty::Error,
+
+            Ty::Ctor(t) => Ty::Ctor(ConstructedTy {
+                ctor: t.ctor,
+                args: t
+                    .args
+                    .clone()
+                    .into_iter()
+                    .map(|arg| self.normalize(sema, arg, false))
+                    .collect(),
+            }),
+
+            &Ty::Var(idx) => Ty::Var(idx),
+
+            Ty::Null => Ty::Null,
+        };
+
+        let normalized_ty_id = sema.tyck.add_ty(normalized);
+
+        self.union(sema, ty_id, normalized_ty_id)
     }
 
     fn reduce(
@@ -199,6 +316,11 @@ impl ConstrSet {
         lhs: TyId,
         rhs: TyId,
     ) -> Result {
+        let lhs = self.repr(lhs);
+        let rhs = self.repr(rhs);
+
+        self.merge(sema, lhs, rhs);
+
         let l = &sema.tyck.tys[lhs];
         let r = &sema.tyck.tys[rhs];
 
@@ -229,6 +351,9 @@ impl ConstrSet {
                 }
 
                 for (lhs_arg, rhs_arg) in iter::zip(l.args.clone(), r.args.clone()) {
+                    let lhs_arg = self.repr(lhs_arg);
+                    let rhs_arg = self.repr(rhs_arg);
+
                     self.add(
                         sema,
                         diag,
@@ -489,7 +614,7 @@ impl ConstrSet {
         match bound {
             VarBound::Lower(ty_id) => self.incorporate_lower(sema, diag, idx, ty_id, provenance),
             VarBound::Upper(ty_id) => self.incorporate_upper(sema, diag, idx, ty_id, provenance),
-            VarBound::Eq(ty_id) => self.incorporate_eq(sema, diag, idx, ty_id, provenance),
+            VarBound::Eq(ty_id) => self.incorporate_eq(sema, diag, idx, ty_id, provenance, true),
         }
     }
 
@@ -525,7 +650,14 @@ impl ConstrSet {
 
         // check for antisymmetry.
         if var.subtype_bounds(kind.opposite()).contains_key(ty_id) {
-            return self.incorporate_eq(sema, diag, idx, ty_id, VarBoundProvenance::Antisymmetry);
+            return self.incorporate_eq(
+                sema,
+                diag,
+                idx,
+                ty_id,
+                VarBoundProvenance::Antisymmetry,
+                true,
+            );
         }
 
         // ensure the new bound is consistent with the opposite bounds.
@@ -594,6 +726,7 @@ impl ConstrSet {
         idx: usize,
         ty_id: TyId,
         provenance: VarBoundProvenance,
+        apply_symmetry: bool,
     ) -> Result {
         let ty_id = self.repr(ty_id);
         self.update_bounds(idx);
@@ -649,8 +782,8 @@ impl ConstrSet {
         }
 
         // if the type is a variable, apply symmetry.
-        if let Ty::Var(v) = sema.tyck.tys[ty_id] {
-            return self.incorporate_eq(sema, diag, v, var_ty_id, provenance);
+        if apply_symmetry && let Ty::Var(v) = sema.tyck.tys[ty_id] {
+            return self.incorporate_eq(sema, diag, v, var_ty_id, provenance, false);
         }
 
         Ok(())

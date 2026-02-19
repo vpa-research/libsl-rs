@@ -32,6 +32,12 @@ pub enum Ty {
     // TODO: literal types.
 }
 
+impl Ty {
+    pub fn is_var(&self) -> bool {
+        matches!(self, Self::Var(_))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct IntCtor {
     /// The number of bits comprising an integer.

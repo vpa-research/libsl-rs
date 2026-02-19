@@ -473,7 +473,7 @@ impl ConstrSet {
             }
         }
 
-        if let Some(ty_id) = &mut var.eq {
+        if let Some((ty_id, _)) = &mut var.eq {
             *ty_id = self.uf.repr(*ty_id);
         }
     }
@@ -506,6 +506,14 @@ impl ConstrSet {
 
         let ty_id = self.repr(ty_id);
         self.update_bounds(idx);
+
+        let var_ty_id = sema.tyck.add_ty(Ty::Var(idx));
+
+        // α <: α: true by reflexivity.
+        if ty_id == var_ty_id {
+            return Ok(());
+        }
+
         let var = self.bounds.var_mut(idx);
 
         // check if we already have such a bound.
@@ -533,7 +541,7 @@ impl ConstrSet {
                 sema,
                 diag,
                 Constr {
-                    provenance: ConstrProvenance::VarBoundConsistency { idx },
+                    provenance: ConstrProvenance::SubBound { idx },
                     kind: ConstrKind::Sub(lower_ty_id, upper_ty_id),
                 },
             )?;
@@ -587,7 +595,65 @@ impl ConstrSet {
         ty_id: TyId,
         provenance: VarBoundProvenance,
     ) -> Result {
-        todo!()
+        let ty_id = self.repr(ty_id);
+        self.update_bounds(idx);
+
+        let var_ty_id = sema.tyck.add_ty(Ty::Var(idx));
+
+        // α = α: true by reflexivity.
+        if ty_id == var_ty_id {
+            return Ok(());
+        }
+
+        let var = self.bounds.var_mut(idx);
+
+        // the type must equal an existing eq bound (transitivity).
+        if let Some((eq, _)) = var.eq {
+            self.add(
+                sema,
+                diag,
+                Constr {
+                    provenance: ConstrProvenance::SubBound { idx },
+                    kind: ConstrKind::Eq(eq, ty_id),
+                },
+            )?;
+        } else {
+            var.eq = Some((ty_id, provenance.clone()));
+        }
+
+        // the type must satisfy lower/upper bounds.
+        let var = self.bounds.var(idx);
+        let lower_bounds = var.lower.keys().collect::<Vec<_>>();
+        let upper_bounds = var.upper.keys().collect::<Vec<_>>();
+
+        for lower_ty_id in lower_bounds {
+            self.add(
+                sema,
+                diag,
+                Constr {
+                    provenance: ConstrProvenance::EqBound { idx },
+                    kind: ConstrKind::Sub(lower_ty_id, ty_id),
+                },
+            )?;
+        }
+
+        for upper_ty_id in upper_bounds {
+            self.add(
+                sema,
+                diag,
+                Constr {
+                    provenance: ConstrProvenance::EqBound { idx },
+                    kind: ConstrKind::Sub(ty_id, upper_ty_id),
+                },
+            )?;
+        }
+
+        // if the type is a variable, apply symmetry.
+        if let Ty::Var(v) = sema.tyck.tys[ty_id] {
+            return self.incorporate_eq(sema, diag, v, var_ty_id, provenance);
+        }
+
+        Ok(())
     }
 }
 
@@ -602,8 +668,11 @@ pub enum ConstrProvenance {
     /// Comes from an access's typing requirements.
     Access(AccessId),
 
-    /// Ensures variable bound consistency.
-    VarBoundConsistency { idx: usize },
+    /// Ensures a bound consistency.
+    SubBound { idx: usize },
+
+    /// Ensures that an equality bound satisfies subtyping bounds.
+    EqBound { idx: usize },
 }
 
 #[derive(Debug, Clone)]
@@ -657,7 +726,7 @@ impl BoundSet {
 
     pub fn is_free(&self, tyck: &TyCk, ty_id: TyId) -> bool {
         if let Ty::Var(idx) = tyck.tys[ty_id]
-            && let Some(inst) = self.var(idx).eq
+            && let Some((inst, _)) = self.var(idx).eq
         {
             self.is_free(tyck, inst)
         } else {
@@ -705,7 +774,7 @@ pub struct VarConstr {
     pub upper: SparseSecondaryMap<TyId, VarBoundProvenance>,
 
     /// An equality bound, if any.
-    pub eq: Option<TyId>,
+    pub eq: Option<(TyId, VarBoundProvenance)>,
 
     /// Indices of variables whose bounds mention this variable.
     used_by: BitSet,

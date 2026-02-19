@@ -455,6 +455,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
             _ => {
                 let key = (ns, name);
+                let (_, name) = &key;
 
                 if let Some((key, &prev_def_id)) = scope.defs.get_key_value(&key) {
                     let prev_def = &self.sema.name_res.defs[prev_def_id];

@@ -1,16 +1,16 @@
 //! Overload resolution.
 
 use std::cmp::Ordering;
-use std::fmt::{self, Display, Write};
+use std::fmt::Write;
 use std::iter;
 
 use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
-use crate::sema::def::{DefFunction, DefId};
+use crate::sema::def::DefId;
 use crate::sema::resolve::ScopeKind;
-use crate::sema::ty::{TyArg, TyId};
+use crate::sema::ty::TyId;
 use crate::sema::tyck::Pass;
-use crate::sema::{Result, Sema};
+use crate::sema::Result;
 use crate::{AccessId, WithLibSl, ast};
 
 #[derive(Debug, Clone)]
@@ -30,7 +30,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         &mut self,
         callee_access_id: AccessId,
         args: &[TyId],
-        ty_args: &[TyArg],
+        ty_args: &[TyId],
     ) -> Result<DefId> {
         let callee = &self.sema.libsl.accesses[callee_access_id];
 
@@ -64,7 +64,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         overloads: &[DefId],
         recv: &Receiver,
         args: &[TyId],
-        ty_args: &[TyArg],
+        ty_args: &[TyId],
     ) {
         candidates.extend(
             overloads
@@ -78,7 +78,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         access: &'ast ast::Access,
         a: &'ast ast::AccessName,
         args: &[TyId],
-        ty_args: &[TyArg],
+        ty_args: &[TyId],
     ) -> Result<DefId> {
         let name = a.name.to_string();
         let mut next_scope_id = Some(self.sema.name_res.access_scopes[access.id]);
@@ -150,11 +150,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             }
         }
 
-        self.select_overload_candidate(
-            &name,
-            &a.name.loc,
-            &candidates,
-        )
+        self.select_overload_candidate(&name, &a.name.loc, &candidates)
     }
 
     fn resolve_method_callee(
@@ -162,7 +158,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         access: &'ast ast::Access,
         a: &'ast ast::AccessField,
         args: &[TyId],
-        ty_args: &[TyArg],
+        ty_args: &[TyId],
     ) -> Result<DefId> {
         todo!()
     }
@@ -172,7 +168,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         access: &'ast ast::Access,
         a: &'ast ast::AccessAutomatonField,
         args: &[TyId],
-        ty_args: &[TyArg],
+        ty_args: &[TyId],
     ) -> Result<DefId> {
         unimplemented!()
     }
@@ -182,7 +178,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         def_id: DefId,
         recv: &Receiver,
         args: &[TyId],
-        ty_args: &[TyArg],
+        ty_args: &[TyId],
     ) -> bool {
         todo!()
     }
@@ -245,7 +241,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             for candidate in iter::once(best).chain(ambiguities.iter().copied()) {
                 let def = &self.sema.name_res.defs[candidate];
 
-                write!(
+                let _ = write!(
                     candidates_considered,
                     "\n  - {} defined at {}",
                     self.sema.format_signature(candidate),

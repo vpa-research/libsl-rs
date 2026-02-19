@@ -1431,13 +1431,11 @@ make_display_struct!(ContractRequiresDisplay { c } for ast::ContractRequires);
 
 impl Display for ContractRequiresDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "requires ")?;
-
-        if let Some(name) = &self.c.name {
-            write!(f, "{name}: ")?;
-        }
-
-        write!(f, "{};", self.libsl.preds[self.c.pred].display(self.libsl))
+        write!(
+            f,
+            "requires {};",
+            self.libsl.preds[self.c.pred].display(self.libsl),
+        )
     }
 }
 
@@ -1445,13 +1443,11 @@ make_display_struct!(ContractEnsuresDisplay { c } for ast::ContractEnsures);
 
 impl Display for ContractEnsuresDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ensures ")?;
-
-        if let Some(name) = &self.c.name {
-            write!(f, "{name}: ")?;
-        }
-
-        write!(f, "{};", self.libsl.preds[self.c.pred].display(self.libsl))
+        write!(
+            f,
+            "ensures {};",
+            self.libsl.preds[self.c.pred].display(self.libsl),
+        )
     }
 }
 

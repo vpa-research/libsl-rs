@@ -6,14 +6,14 @@ use std::iter;
 
 use slotmap::SparseSecondaryMap;
 
-use crate::diag::{Diag, DiagCtx, Label};
+use crate::diag::{Diag, DiagCtx, DummyDiagCtx, Label};
 use crate::loc::Loc;
-use crate::sema::Result;
-use crate::sema::def::{DefFunction, DefId};
+use crate::sema::def::DefId;
 use crate::sema::resolve::ScopeKind;
 use crate::sema::ty::TyId;
 use crate::sema::tyck::Pass;
 use crate::sema::tyck::constraints::{Constr, ConstrKind, ConstrProvenance, VarProvenance};
+use crate::sema::{Result, Sema};
 use crate::{AccessId, WithLibSl, ast};
 
 #[derive(Debug, Clone)]
@@ -26,6 +26,49 @@ pub struct OverloadResult {
 #[derive(Debug, Clone)]
 pub enum Receiver {
     None,
+}
+
+struct SelectionCriteria {
+    concrete_only: bool,
+}
+
+impl SelectionCriteria {
+    fn should_consider(&self, sema: &Sema<'_>, def_id: DefId) -> bool {
+        if self.concrete_only && !sema.tyck.fns[def_id].generics.is_empty() {
+            return false;
+        }
+
+        true
+    }
+
+    fn strengthen(&mut self, sema: &Sema<'_>, candidates: &[DefId]) -> bool {
+        if !self.concrete_only && self.strengthen_concrete(sema, candidates) {
+            return true;
+        }
+
+        false
+    }
+
+    fn strengthen_concrete(&mut self, sema: &Sema<'_>, candidates: &[DefId]) -> bool {
+        let mut has_concrete = false;
+        let mut has_parameterized = false;
+
+        for &candidate in candidates {
+            if sema.tyck.fns[candidate].generics.is_empty() {
+                has_concrete = true;
+            } else {
+                has_parameterized = true;
+            }
+
+            if has_concrete && has_parameterized {
+                self.concrete_only = true;
+
+                return true;
+            }
+        }
+
+        false
+    }
 }
 
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
@@ -200,7 +243,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             for (&param, &arg) in iter::zip(&info.generics, ty_args) {
                 constr.add(
                     self.sema,
-                    self.diag,
+                    &mut DummyDiagCtx,
                     Constr {
                         kind: ConstrKind::Eq(ty_param_map[param], arg),
                         provenance: ConstrProvenance::Fn(def_id),
@@ -221,7 +264,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
                 constr.add(
                     self.sema,
-                    self.diag,
+                    &mut DummyDiagCtx,
                     Constr {
                         kind: ConstrKind::Coerce(arg, param),
                         provenance: ConstrProvenance::Fn(def_id),
@@ -234,11 +277,35 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         .is_ok()
     }
 
-    fn is_lhs_more_specific(&self, lhs: DefId, rhs: DefId) -> bool {
-        todo!()
+    fn is_lhs_more_specific(&mut self, lhs: DefId, rhs: DefId) -> bool {
+        let lhs_info = self.sema.tyck.fns[lhs].clone();
+        let rhs_info = &self.sema.tyck.fns[rhs];
+
+        if lhs_info.params.len() != rhs_info.params.len() {
+            return false;
+        }
+
+        let ty_param_map = lhs_info
+            .generics
+            .iter()
+            .map(|&generic| (generic, self.sema.tyck.clone_param(generic)))
+            .collect();
+
+        let args = lhs_info
+            .params
+            .iter()
+            .map(|&param| self.sema.tyck.subst(param, &ty_param_map))
+            .collect::<Vec<_>>();
+
+        let recv = match lhs_info.recv {
+            Some(_) => unimplemented!(),
+            None => Receiver::None,
+        };
+
+        self.is_function_applicable(rhs, &recv, &args, &[])
     }
 
-    fn compare_overloads(&self, lhs: DefId, rhs: DefId) -> Option<Ordering> {
+    fn compare_overloads(&mut self, lhs: DefId, rhs: DefId) -> Option<Ordering> {
         match (
             self.is_lhs_more_specific(lhs, rhs),
             self.is_lhs_more_specific(rhs, lhs),
@@ -268,21 +335,42 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             return Err(());
         }
 
-        let mut best = candidates[0];
+        let mut criteria = SelectionCriteria {
+            concrete_only: false,
+        };
+
+        let mut best;
         let mut ambiguities = vec![];
 
-        for &candidate in candidates.iter().skip(1) {
-            match self.compare_overloads(candidate, best) {
-                Some(Ordering::Less) => {
-                    ambiguities.clear();
-                    best = candidate;
+        loop {
+            best = candidates
+                .iter()
+                .copied()
+                .find(|&def_id| criteria.should_consider(&self.sema, def_id))
+                .unwrap();
+            ambiguities.clear();
+
+            for &candidate in candidates.iter().skip(1) {
+                if !criteria.should_consider(&self.sema, candidate) {
+                    continue;
                 }
 
-                Some(Ordering::Greater) => {}
+                match self.compare_overloads(candidate, best) {
+                    Some(Ordering::Less) => {
+                        ambiguities.clear();
+                        best = candidate;
+                    }
 
-                None | Some(Ordering::Equal) => {
-                    ambiguities.push(candidate);
+                    Some(Ordering::Greater) => {}
+
+                    None | Some(Ordering::Equal) => {
+                        ambiguities.push(candidate);
+                    }
                 }
+            }
+
+            if !criteria.strengthen(&self.sema, &ambiguities) {
+                break;
             }
         }
 

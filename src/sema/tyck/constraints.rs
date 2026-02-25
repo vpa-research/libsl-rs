@@ -2,8 +2,8 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::{iter, mem};
 use std::sync::LazyLock;
+use std::{iter, mem};
 
 use bit_set::BitSet;
 use slotmap::{SecondaryMap, SlotMap, SparseSecondaryMap, new_key_type};
@@ -154,6 +154,8 @@ impl ConstrSet {
         match (lhs, rhs) {
             (Ty::Error, Ty::Error) => true,
 
+            (Ty::Param(l), Ty::Param(r)) => l == r,
+
             (Ty::Ctor(l), Ty::Ctor(r)) => {
                 l.ctor == r.ctor
                     && iter::zip(&l.args, &r.args).all(|(&l, &r)| self.repr(l) == self.repr(r))
@@ -163,7 +165,7 @@ impl ConstrSet {
 
             (Ty::Null, Ty::Null) => true,
 
-            (Ty::Error | Ty::Ctor(_) | Ty::Var(_) | Ty::Null, _) => false,
+            (Ty::Error | Ty::Param(_) | Ty::Ctor(_) | Ty::Var(_) | Ty::Null, _) => false,
         }
     }
 
@@ -273,6 +275,8 @@ impl ConstrSet {
         let normalized = match ty {
             Ty::Error => Ty::Error,
 
+            &Ty::Param(n) => Ty::Param(n),
+
             Ty::Ctor(t) => Ty::Ctor(ConstructedTy {
                 ctor: t.ctor,
                 args: t
@@ -343,6 +347,8 @@ impl ConstrSet {
 
             (Ty::Error, _) | (_, Ty::Error) => Ok(()),
 
+            (Ty::Param(l), Ty::Param(r)) if l == r => Ok(()),
+
             (Ty::Ctor(l), Ty::Ctor(r)) => {
                 if l.ctor != r.ctor {
                     self.report_constr_violation(sema, diag, constr_id);
@@ -369,7 +375,7 @@ impl ConstrSet {
 
             (Ty::Null, Ty::Null) => Ok(()),
 
-            (Ty::Ctor(_) | Ty::Null, _) => {
+            (Ty::Param(_) | Ty::Ctor(_) | Ty::Null, _) => {
                 self.report_constr_violation(sema, diag, constr_id);
 
                 Err(())
@@ -414,6 +420,8 @@ impl ConstrSet {
             ),
 
             (Ty::Error, _) | (_, Ty::Error) => Ok(()),
+
+            (Ty::Param(l), Ty::Param(r)) if l == r => Ok(()),
 
             (Ty::Ctor(l), Ty::Ctor(r)) => {
                 // TODO: refine the subtyping relation.
@@ -470,7 +478,7 @@ impl ConstrSet {
 
             (Ty::Null, Ty::Null) => Ok(()),
 
-            (Ty::Ctor(_) | Ty::Null, _) => {
+            (Ty::Param(_) | Ty::Ctor(_) | Ty::Null, _) => {
                 self.report_constr_violation(sema, diag, constr_id);
 
                 Err(())

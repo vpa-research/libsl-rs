@@ -225,3 +225,13 @@ pub trait DiagCtx {
     /// Records a diagnostic for reporting.
     fn emit(&mut self, diag: Diag);
 }
+
+/// A [DiagCtx] that ignores all diagnostics.
+#[derive(Debug, Clone, Copy)]
+pub struct DummyDiagCtx;
+
+impl DiagCtx for DummyDiagCtx {
+    fn emit(&mut self, _diag: Diag) {
+        // ignore.
+    }
+}

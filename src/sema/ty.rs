@@ -24,6 +24,9 @@ pub enum Ty {
     /// A type constructed by applying type parameters to a type constructor.
     Ctor(ConstructedTy),
 
+    /// A type parameter.
+    Param(usize),
+
     /// An inference variable.
     Var(usize),
 
@@ -35,6 +38,13 @@ pub enum Ty {
 impl Ty {
     pub fn is_var(&self) -> bool {
         matches!(self, Self::Var(_))
+    }
+
+    pub fn as_param(&self) -> Option<usize> {
+        match *self {
+            Self::Param(n) => Some(n),
+            _ => None,
+        }
     }
 }
 

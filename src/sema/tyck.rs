@@ -47,6 +47,12 @@ pub struct FnTyInfo {
     pub ret: TyId,
 }
 
+#[derive(Debug, Clone)]
+pub struct TyParam {
+    pub def_id: Option<DefId>,
+    pub name: String,
+}
+
 #[derive(Debug, Default)]
 pub struct TyCk {
     pub tys: SlotMap<TyId, Ty>,
@@ -58,6 +64,7 @@ pub struct TyCk {
     pub def_tys: SecondaryMap<DefId, TyId>,
     pub fns: SparseSecondaryMap<DefId, FnTyInfo>,
     pub ctor_variances: SparseSecondaryMap<DefId, Vec<Variance>>,
+    pub ty_params: Vec<TyParam>,
 
     // for each type stores a vec of inference variable occurring in it.
     var_occurrences: SecondaryMap<TyId, Vec<TyId>>,
@@ -78,6 +85,8 @@ fn occurring_vars(var_occurrences: &SecondaryMap<TyId, Vec<TyId>>, ty: &Ty) -> V
     match ty {
         Ty::Error => {}
 
+        Ty::Param(_) => {}
+
         Ty::Ctor(t) => {
             for &arg in &t.args {
                 occurrences.extend(&var_occurrences[arg])
@@ -95,6 +104,8 @@ fn occurring_vars(var_occurrences: &SecondaryMap<TyId, Vec<TyId>>, ty: &Ty) -> V
 fn add_preds(preds: &mut SecondaryMap<TyId, Vec<TyId>>, ty: &Ty, ty_id: TyId) {
     match ty {
         Ty::Error => {}
+
+        Ty::Param(_) => {}
 
         Ty::Ctor(t) => {
             for &arg in &t.args {
@@ -137,6 +148,8 @@ impl TyCk {
         let ty = match &self.tys[ty_id] {
             Ty::Error => return ty_id,
 
+            Ty::Param(_) => return ty_id,
+
             Ty::Ctor(t) => {
                 let mut t = t.clone();
 
@@ -153,6 +166,14 @@ impl TyCk {
 
         self.add_ty(ty)
     }
+
+    pub fn clone_param(&mut self, ty_id: TyId) -> TyId {
+        let idx = self.tys[ty_id].as_param().unwrap();
+        let new_idx = self.ty_params.len();
+        self.ty_params.push(self.ty_params[idx].clone());
+
+        self.add_ty(Ty::Param(new_idx))
+    }
 }
 
 impl Sema<'_> {
@@ -168,6 +189,8 @@ impl Sema<'_> {
         fmt::from_fn(move |f| {
             match ty {
                 Ty::Error => write!(f, "[error]"),
+
+                &Ty::Param(n) => write!(f, "{}", self.tyck.ty_params[n].name),
 
                 Ty::Ctor(t) => {
                     write!(f, "{}", self.name_res.defs[t.ctor].name)?;
@@ -214,7 +237,9 @@ impl Sema<'_> {
                         write!(f, ", ")?;
                     }
 
-                    write!(f, "{}", self.name_res.defs[generic].name)?;
+                    let param = self.tyck.tys[generic].as_param().unwrap();
+
+                    write!(f, "{}", self.tyck.ty_params[param].name)?;
                 }
 
                 write!(f, ">")?;

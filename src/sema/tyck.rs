@@ -39,10 +39,10 @@ pub struct BuiltinTys {
     pub nothing: TyId,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FnTyInfo {
     pub recv: Option<DefId>,
-    pub generics: Vec<DefId>,
+    pub generics: Vec<TyId>,
     pub params: Vec<TyId>,
     pub ret: TyId,
 }
@@ -127,6 +127,31 @@ impl TyCk {
 
     pub fn add_ctor_ty(&mut self, ctor: DefId, args: Vec<TyId>) -> TyId {
         self.add_ty(Ty::Ctor(ConstructedTy { ctor, args }))
+    }
+
+    pub fn subst(&mut self, ty_id: TyId, map: &SparseSecondaryMap<TyId, TyId>) -> TyId {
+        if let Some(&replacement) = map.get(ty_id) {
+            return replacement;
+        }
+
+        let ty = match &self.tys[ty_id] {
+            Ty::Error => return ty_id,
+
+            Ty::Ctor(t) => {
+                let mut t = t.clone();
+
+                for arg in &mut t.args {
+                    *arg = self.subst(*arg, map);
+                }
+
+                Ty::Ctor(t)
+            }
+
+            Ty::Var(_) => return ty_id,
+            Ty::Null => return ty_id,
+        };
+
+        self.add_ty(ty)
     }
 }
 

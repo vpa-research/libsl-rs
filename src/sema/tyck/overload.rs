@@ -4,13 +4,16 @@ use std::cmp::Ordering;
 use std::fmt::Write;
 use std::iter;
 
+use slotmap::SparseSecondaryMap;
+
 use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
-use crate::sema::def::DefId;
+use crate::sema::Result;
+use crate::sema::def::{DefFunction, DefId};
 use crate::sema::resolve::ScopeKind;
 use crate::sema::ty::TyId;
 use crate::sema::tyck::Pass;
-use crate::sema::Result;
+use crate::sema::tyck::constraints::{Constr, ConstrKind, ConstrProvenance, VarProvenance};
 use crate::{AccessId, WithLibSl, ast};
 
 #[derive(Debug, Clone)]
@@ -59,7 +62,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn find_applicable_overloads(
-        &self,
+        &mut self,
         candidates: &mut Vec<DefId>,
         overloads: &[DefId],
         recv: &Receiver,
@@ -100,7 +103,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     if let Some(overloads) = scope.functions.get(&name) {
                         self.find_applicable_overloads(
                             &mut candidates,
-                            overloads,
+                            &overloads.clone(),
                             &Receiver::None,
                             args,
                             ty_args,
@@ -118,7 +121,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     if let Some(overloads) = scope.functions.get(&name) {
                         self.find_applicable_overloads(
                             &mut candidates,
-                            overloads,
+                            &overloads.clone(),
                             &Receiver::None,
                             args,
                             ty_args,
@@ -136,7 +139,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     if let Some(overloads) = scope.functions.get(&name) {
                         self.find_applicable_overloads(
                             &mut candidates,
-                            overloads,
+                            &overloads.clone(),
                             &Receiver::None,
                             args,
                             ty_args,
@@ -174,13 +177,61 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn is_function_applicable(
-        &self,
+        &mut self,
         def_id: DefId,
         recv: &Receiver,
         args: &[TyId],
         ty_args: &[TyId],
     ) -> bool {
-        todo!()
+        (|| -> Result<()> {
+            let mut constr = self.constrs.clone();
+            let info = self.sema.tyck.fns[def_id].clone();
+
+            if ty_args.len() > info.generics.len() || args.len() != info.params.len() {
+                return Err(());
+            }
+
+            let ty_param_map = info
+                .generics
+                .iter()
+                .map(|&generic| (generic, self.fresh_var(VarProvenance::Generic(generic))))
+                .collect::<SparseSecondaryMap<_, _>>();
+
+            for (&param, &arg) in iter::zip(&info.generics, ty_args) {
+                constr.add(
+                    self.sema,
+                    self.diag,
+                    Constr {
+                        kind: ConstrKind::Eq(ty_param_map[param], arg),
+                        provenance: ConstrProvenance::Fn(def_id),
+                    },
+                )?;
+            }
+
+            match recv {
+                Receiver::None => {
+                    if info.recv.is_some() {
+                        return Err(());
+                    }
+                }
+            }
+
+            for (&param, &arg) in iter::zip(&info.params, args) {
+                let param = self.sema.tyck.subst(param, &ty_param_map);
+
+                constr.add(
+                    self.sema,
+                    self.diag,
+                    Constr {
+                        kind: ConstrKind::Coerce(arg, param),
+                        provenance: ConstrProvenance::Fn(def_id),
+                    },
+                )?;
+            }
+
+            Ok(())
+        })()
+        .is_ok()
     }
 
     fn is_lhs_more_specific(&self, lhs: DefId, rhs: DefId) -> bool {

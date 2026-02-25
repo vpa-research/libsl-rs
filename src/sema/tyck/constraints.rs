@@ -801,6 +801,9 @@ pub enum ConstrProvenance {
     /// Comes from an access's typing requirements.
     Access(AccessId),
 
+    /// Comes from a function signature.
+    Fn(DefId),
+
     /// Ensures a bound consistency.
     SubBound { idx: usize },
 
@@ -877,6 +880,9 @@ pub enum VarProvenance {
 
     /// The type of an aggregate element.
     Element { of: ExprId },
+
+    /// A generic instantiation.
+    Generic(TyId),
 }
 
 #[derive(Debug, Clone)]

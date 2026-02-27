@@ -2,15 +2,16 @@
 
 use std::collections::HashMap;
 use std::fmt::{self, Display};
+use std::iter;
 
 use slotmap::{SecondaryMap, SlotMap, SparseSecondaryMap};
 
 use crate::ast::Variance;
-use crate::diag::DiagCtx;
+use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
 use crate::sema::def::DefId;
 use crate::sema::ty::{BuiltinTyCtor, ConstructedTy, FloatCtor, IntCtor, IntWidth, Ty, TyId};
-use crate::sema::tyck::constraints::{ConstrSet, VarProvenance};
+use crate::sema::tyck::constraints::{ConstrProvenance, ConstrSet, VarProvenance};
 use crate::sema::{Result, Sema};
 use crate::{AccessId, DeclId, ExprId, TyExprId, ast};
 
@@ -437,6 +438,51 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn repr(&self, ty_id: TyId) -> TyId {
         self.constrs.repr(ty_id)
     }
+
+    fn fn_info(&self, def_id: DefId) -> &FnTyInfo {
+        &self.sema.tyck.fns[def_id]
+    }
+
+    fn check_ty_arg_arity(&mut self, loc: &Loc, expected: usize, actual: usize) {
+        if expected > actual {
+            self.result = Err(());
+            self.diag.emit(
+                Diag::err()
+                    .at(loc.clone())
+                    .with_msg(format!(
+                        "too many type arguments were provided: expected {expected}, got {actual}",
+                    ))
+                    .with_label(Label::primary(loc.clone()))
+                    .build(),
+            );
+        }
+    }
+
+    fn check_arg_arity(&mut self, loc: &Loc, expected: usize, actual: usize) {
+        if expected != actual {
+            self.result = Err(());
+            self.diag.emit(
+                Diag::err()
+                    .at(loc.clone())
+                    .with_msg(format!(
+                        "foo {quantifier} type arguments were provided: expected {expected}, got {actual}",
+                        quantifier = if expected < actual { "many" } else { "few" },
+                    ))
+                    .with_label(Label::primary(loc.clone()))
+                    .build()
+            );
+        }
+    }
+
+    fn make_fresh_vars_for_ty_params(
+        &mut self,
+        generics: &[TyId],
+    ) -> SparseSecondaryMap<TyId, TyId> {
+        generics
+            .iter()
+            .map(|&generic| (generic, self.fresh_var(VarProvenance::Generic(generic))))
+            .collect::<SparseSecondaryMap<_, _>>()
+    }
 }
 
 // The early type-checking phase: initialize signatures of globally visible entities.
@@ -768,13 +814,6 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         e: &'ast ast::ExprProcCall,
         expected: Option<TyId>,
     ) {
-        let args = e
-            .args
-            .iter()
-            .copied()
-            .map(|arg| self.tyck_expr(arg, None))
-            .collect::<Vec<_>>();
-
         let ty_args = e
             .generics
             .as_deref()
@@ -783,11 +822,46 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .map(|ty_arg| self.tyck_ty_arg(ty_arg))
             .collect::<Vec<_>>();
 
-        if let Ok(def_id) = self.resolve_callee(e.callee, &args, &ty_args) {
-            todo!()
+        let args = e
+            .args
+            .iter()
+            .copied()
+            .map(|arg| self.tyck_expr(arg, None))
+            .collect::<Vec<_>>();
+
+        let Ok((recv, def_id)) = self.resolve_callee(e.callee, &args, &ty_args) else {
+            self.sema.tyck.exprs.insert(expr.id, self.sema.tyck.builtin.error);
+
+            return;
+        };
+
+        self.check_ty_arg_arity(
+            &expr.loc,
+            ty_args.len(),
+            self.fn_info(def_id).generics.len(),
+        );
+        self.check_arg_arity(&expr.loc, args.len(), self.fn_info(def_id).params.len());
+
+        let info = self.fn_info(def_id).clone();
+        let ty_param_map = self.make_fresh_vars_for_ty_params(&info.generics);
+
+        for (&param, &arg) in iter::zip(&info.generics, &ty_args) {
+            self.constr_eq(arg, ty_param_map[param], ConstrProvenance::Expr(expr.id));
         }
 
-        todo!()
+        match info.recv {
+            Some(_) => todo!(),
+            None => {}
+        }
+
+        for (&param, &arg) in iter::zip(&info.params, &args) {
+            let param = self.sema.tyck.subst(param, &ty_param_map);
+            self.constr_coerce(arg, param, ConstrProvenance::Expr(expr.id));
+        }
+
+        let ret = self.sema.tyck.subst(info.ret, &ty_param_map);
+        let ty_id = self.check_ty(&expr.loc, expected, ret);
+        self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
     fn tyck_expr_action_call(

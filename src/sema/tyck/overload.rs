@@ -77,7 +77,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         callee_access_id: AccessId,
         args: &[TyId],
         ty_args: &[TyId],
-    ) -> Result<DefId> {
+    ) -> Result<(Receiver, DefId)> {
         let callee = &self.sema.libsl.accesses[callee_access_id];
 
         match &callee.kind {
@@ -94,6 +94,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         .with_label(Label::primary(callee.loc.clone()))
                         .build(),
                 );
+                self.result = Err(());
 
                 Err(())
             }
@@ -125,11 +126,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         a: &'ast ast::AccessName,
         args: &[TyId],
         ty_args: &[TyId],
-    ) -> Result<DefId> {
+    ) -> Result<(Receiver, DefId)> {
         let name = a.name.to_string();
         let mut next_scope_id = Some(self.sema.name_res.access_scopes[access.id]);
 
         let mut candidates = vec![];
+        let recv = Receiver::None;
 
         while let Some(scope_id) = next_scope_id {
             let scope = &self.sema.name_res.scopes[scope_id];
@@ -147,7 +149,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         self.find_applicable_overloads(
                             &mut candidates,
                             &overloads.clone(),
-                            &Receiver::None,
+                            &recv,
                             args,
                             ty_args,
                         );
@@ -165,7 +167,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         self.find_applicable_overloads(
                             &mut candidates,
                             &overloads.clone(),
-                            &Receiver::None,
+                            &recv,
                             args,
                             ty_args,
                         );
@@ -183,7 +185,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         self.find_applicable_overloads(
                             &mut candidates,
                             &overloads.clone(),
-                            &Receiver::None,
+                            &recv,
                             args,
                             ty_args,
                         );
@@ -197,6 +199,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
 
         self.select_overload_candidate(&name, &a.name.loc, &candidates)
+            .map(|def_id| (recv, def_id))
     }
 
     fn resolve_method_callee(
@@ -205,7 +208,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         a: &'ast ast::AccessField,
         args: &[TyId],
         ty_args: &[TyId],
-    ) -> Result<DefId> {
+    ) -> Result<(Receiver, DefId)> {
         todo!()
     }
 
@@ -215,7 +218,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         a: &'ast ast::AccessAutomatonField,
         args: &[TyId],
         ty_args: &[TyId],
-    ) -> Result<DefId> {
+    ) -> Result<(Receiver, DefId)> {
         unimplemented!()
     }
 
@@ -234,18 +237,14 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 return Err(());
             }
 
-            let ty_param_map = info
-                .generics
-                .iter()
-                .map(|&generic| (generic, self.fresh_var(VarProvenance::Generic(generic))))
-                .collect::<SparseSecondaryMap<_, _>>();
+            let ty_param_map = self.make_fresh_vars_for_ty_params(&info.generics);
 
             for (&param, &arg) in iter::zip(&info.generics, ty_args) {
                 constr.add(
                     self.sema,
                     &mut DummyDiagCtx,
                     Constr {
-                        kind: ConstrKind::Eq(ty_param_map[param], arg),
+                        kind: ConstrKind::Eq(arg, ty_param_map[param]),
                         provenance: ConstrProvenance::Fn(def_id),
                     },
                 )?;
@@ -331,6 +330,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     .with_label(Label::primary(loc.clone()))
                     .build(),
             );
+            self.result = Err(());
 
             return Err(());
         }
@@ -401,6 +401,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     )
                     .build(),
             );
+            self.result = Err(());
 
             return Err(());
         }

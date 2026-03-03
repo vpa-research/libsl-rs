@@ -830,7 +830,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .collect::<Vec<_>>();
 
         let Ok((recv, def_id)) = self.resolve_callee(e.callee, &args, &ty_args) else {
-            self.sema.tyck.exprs.insert(expr.id, self.sema.tyck.builtin.error);
+            self.sema
+                .tyck
+                .exprs
+                .insert(expr.id, self.sema.tyck.builtin.error);
 
             return;
         };
@@ -870,7 +873,46 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         e: &'ast ast::ExprActionCall,
         expected: Option<TyId>,
     ) {
-        todo!()
+        // TODO: deduplicate.
+        let ty_args = e
+            .generics
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .map(|ty_arg| self.tyck_ty_arg(ty_arg))
+            .collect::<Vec<_>>();
+
+        let args = e
+            .args
+            .iter()
+            .copied()
+            .map(|arg| self.tyck_expr(arg, None))
+            .collect::<Vec<_>>();
+
+        let def_id = self.sema.name_res.expr_action_calls[expr.id];
+
+        self.check_ty_arg_arity(
+            &expr.loc,
+            ty_args.len(),
+            self.fn_info(def_id).generics.len(),
+        );
+        self.check_arg_arity(&expr.loc, args.len(), self.fn_info(def_id).params.len());
+
+        let info = self.fn_info(def_id).clone();
+        let ty_param_map = self.make_fresh_vars_for_ty_params(&info.generics);
+
+        for (&param, &arg) in iter::zip(&info.generics, &ty_args) {
+            self.constr_eq(arg, ty_param_map[param], ConstrProvenance::Expr(expr.id));
+        }
+
+        for (&param, &arg) in iter::zip(&info.params, &args) {
+            let param = self.sema.tyck.subst(param, &ty_param_map);
+            self.constr_coerce(arg, param, ConstrProvenance::Expr(expr.id));
+        }
+
+        let ret = self.sema.tyck.subst(info.ret, &ty_param_map);
+        let ty_id = self.check_ty(&expr.loc, expected, ret);
+        self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
     fn tyck_expr_instantiate(
@@ -879,7 +921,27 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         e: &'ast ast::ExprInstantiate,
         expected: Option<TyId>,
     ) {
-        todo!()
+        let def_id = self.sema.name_res.expr_instantiations[expr.id];
+
+        let ty_args = e
+            .generics
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .map(|ty_arg| self.tyck_ty_arg(ty_arg))
+            .collect::<Vec<_>>();
+
+        let mut args: Vec<TyId> = vec![];
+        let mut state: Option<DefId> = None;
+
+        for arg in &e.args {
+            match arg {
+                ast::ConstructorArg::State(name) => todo!(),
+                ast::ConstructorArg::Var(name, expr_id) => todo!(),
+            }
+        }
+
+        // TODO.
     }
 
     fn tyck_expr_has_concept(
@@ -897,7 +959,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         e: &'ast ast::ExprCast,
         expected: Option<TyId>,
     ) {
-        todo!()
+        self.tyck_expr(e.expr, None);
+        let ty_id = self.tyck_ty_expr(e.ty_expr);
+        self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
     fn tyck_expr_ty_compare(
@@ -906,7 +970,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         e: &'ast ast::ExprTyCompare,
         expected: Option<TyId>,
     ) {
-        todo!()
+        self.tyck_expr(e.expr, None);
+        self.tyck_ty_expr(e.ty_expr);
+        self.sema
+            .tyck
+            .exprs
+            .insert(expr.id, self.sema.tyck.builtin.bool);
     }
 
     fn tyck_expr_unary(

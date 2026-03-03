@@ -17,6 +17,7 @@ use crate::{AccessId, DeclId, ExprId, TyExprId, ast};
 
 mod constraints;
 mod overload;
+mod operators;
 
 #[derive(Debug, Default)]
 pub struct BuiltinTys {
@@ -282,6 +283,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn run(mut self) -> Result {
         self.init_builtin_tys();
+        self.init_operators();
         self.early_tyck_decls();
         self.tyck_decls();
 
@@ -984,7 +986,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         e: &'ast ast::ExprUnary,
         expected: Option<TyId>,
     ) {
-        todo!()
+        match e.op {
+            ast::UnOp::Plus => todo!(),
+            ast::UnOp::Neg => todo!(),
+            ast::UnOp::BitNot => todo!(),
+            ast::UnOp::Not => todo!(),
+        }
     }
 
     fn tyck_expr_binary(

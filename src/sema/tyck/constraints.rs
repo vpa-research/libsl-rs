@@ -8,7 +8,7 @@ use std::{iter, mem};
 use bit_set::BitSet;
 use slotmap::{SecondaryMap, SlotMap, SparseSecondaryMap, new_key_type};
 
-use crate::ast::Variance;
+use crate::ast::{self, Variance};
 use crate::diag::DiagCtx;
 use crate::sema::def::DefId;
 use crate::sema::ty::{BuiltinTyCtor, ConstructedTy, Ty, TyId};
@@ -811,6 +811,12 @@ pub enum ConstrProvenance {
 
     /// Comes from a function signature.
     Fn(DefId),
+
+    /// Comes from a unary operator's typing requirements.
+    UnOp(ast::UnOp),
+
+    /// Comes from a binary operator's typing requirements.
+    BinOp(ast::BinOp),
 
     /// Ensures a bound consistency.
     SubBound { idx: usize },

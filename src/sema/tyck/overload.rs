@@ -28,7 +28,7 @@ pub enum Receiver {
     None,
 }
 
-trait FnInfoProvider {
+pub trait FnInfoProvider {
     fn fn_info<'a>(&'a self, sema: &'a Sema<'_>) -> &'a FnTyInfo;
 
     fn applicability_constr_provenance(&self) -> ConstrProvenance;
@@ -56,7 +56,7 @@ impl FnInfoProvider for DefFnInfoProvider {
     }
 }
 
-trait OverloadDiagProvider<F: FnInfoProvider> {
+pub trait OverloadDiagProvider<F: FnInfoProvider> {
     fn empty_candidate_set(&self, sema: &Sema<'_>) -> Diag;
 
     fn ambiguity(&self, sema: &Sema<'_>, ambiguities: &[&F]) -> Diag;
@@ -83,7 +83,7 @@ impl OverloadDiagProvider<DefFnInfoProvider> for CallOverloadDiagProvider<'_> {
             let _ = write!(
                 possible_candidates,
                 "\n  - {} defined at {}",
-                sema.format_signature(candidate.0),
+                sema.format_def_signature(candidate.0),
                 sema.name_res.defs[candidate.0].loc.with_libsl(sema.libsl),
             );
         }
@@ -93,7 +93,7 @@ impl OverloadDiagProvider<DefFnInfoProvider> for CallOverloadDiagProvider<'_> {
             .with_msg(format!(
                 "call to {} is ambiguous: found {} possible candidates",
                 self.name,
-                ambiguities.len() + 1
+                ambiguities.len(),
             ))
             .with_label(
                 Label::primary(self.loc.clone())
@@ -261,7 +261,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             name: &name,
         };
 
-        self.select_overload_candidate(&candidates, &diag_provider)
+        self.select_overload(&candidates, &diag_provider)
             .map(|candidate| (recv, candidate.0))
     }
 
@@ -285,7 +285,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         unimplemented!()
     }
 
-    fn is_function_applicable(
+    pub fn is_function_applicable(
         &mut self,
         candidate: &impl FnInfoProvider,
         recv: &Receiver,
@@ -388,7 +388,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn select_overload_candidate<'a, F: FnInfoProvider>(
+    pub fn select_overload<'a, F: FnInfoProvider>(
         &mut self,
         candidates: &'a [F],
         diag_provider: &impl OverloadDiagProvider<F>,

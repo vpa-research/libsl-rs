@@ -57,6 +57,48 @@ pub struct IntCtor {
     pub signed: bool,
 }
 
+impl IntCtor {
+    pub const I8: Self = Self {
+        width: IntWidth::I8,
+        signed: true,
+    };
+
+    pub const I16: Self = Self {
+        width: IntWidth::I16,
+        signed: true,
+    };
+
+    pub const I32: Self = Self {
+        width: IntWidth::I32,
+        signed: true,
+    };
+
+    pub const I64: Self = Self {
+        width: IntWidth::I64,
+        signed: true,
+    };
+
+    pub const U8: Self = Self {
+        width: IntWidth::I8,
+        signed: false,
+    };
+
+    pub const U16: Self = Self {
+        width: IntWidth::I16,
+        signed: false,
+    };
+
+    pub const U32: Self = Self {
+        width: IntWidth::I32,
+        signed: false,
+    };
+
+    pub const U64: Self = Self {
+        width: IntWidth::I64,
+        signed: false,
+    };
+}
+
 /// The width of an integer, determining its range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum IntWidth {

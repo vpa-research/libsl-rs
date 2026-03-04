@@ -12,12 +12,14 @@ use crate::loc::Loc;
 use crate::sema::def::DefId;
 use crate::sema::ty::{BuiltinTyCtor, ConstructedTy, FloatCtor, IntCtor, IntWidth, Ty, TyId};
 use crate::sema::tyck::constraints::{ConstrProvenance, ConstrSet, VarProvenance};
+use crate::sema::tyck::operators::{Op, OpFnInfoProvider, OpOverload, OpOverloadDiagProvider};
+use crate::sema::tyck::overload::Receiver;
 use crate::sema::{Result, Sema};
 use crate::{AccessId, DeclId, ExprId, TyExprId, ast};
 
 mod constraints;
-mod overload;
 mod operators;
+mod overload;
 
 #[derive(Debug, Default)]
 pub struct BuiltinTys {
@@ -39,6 +41,21 @@ pub struct BuiltinTys {
     pub void: TyId,
     pub any: TyId,
     pub nothing: TyId,
+}
+
+impl BuiltinTys {
+    pub fn int_tys(&self) -> [(IntCtor, TyId); 8] {
+        [
+            (IntCtor::I8, self.int8),
+            (IntCtor::I16, self.int16),
+            (IntCtor::I32, self.int32),
+            (IntCtor::I64, self.int64),
+            (IntCtor::U8, self.unsigned8),
+            (IntCtor::U16, self.unsigned16),
+            (IntCtor::U32, self.unsigned32),
+            (IntCtor::U64, self.unsigned64),
+        ]
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -67,6 +84,7 @@ pub struct TyCk {
     pub fns: SparseSecondaryMap<DefId, FnTyInfo>,
     pub ctor_variances: SparseSecondaryMap<DefId, Vec<Variance>>,
     pub ty_params: Vec<TyParam>,
+    pub operators: SparseSecondaryMap<ExprId, OpOverload>,
 
     // for each type stores a vec of inference variable occurring in it.
     var_occurrences: SecondaryMap<TyId, Vec<TyId>>,
@@ -169,6 +187,13 @@ impl TyCk {
         self.add_ty(ty)
     }
 
+    pub fn fresh_param(&mut self, name: String) -> TyId {
+        let idx = self.ty_params.len();
+        self.ty_params.push(TyParam { def_id: None, name });
+
+        self.add_ty(Ty::Param(idx))
+    }
+
     pub fn clone_param(&mut self, ty_id: TyId) -> TyId {
         let idx = self.tys[ty_id].as_param().unwrap();
         let new_idx = self.ty_params.len();
@@ -223,14 +248,24 @@ impl Sema<'_> {
     }
 
     /// Formats the function signature of a [`DefFunction`].
-    pub fn format_signature(&self, def_id: DefId) -> impl Display {
+    pub fn format_def_signature(&self, def_id: DefId) -> impl Display {
         let info = &self.tyck.fns[def_id];
 
         fmt::from_fn(move |f| {
             // TODO: receiver.
 
-            write!(f, "{}", self.name_res.defs[def_id].name)?;
+            write!(
+                f,
+                "{}{}",
+                self.name_res.defs[def_id].name,
+                self.format_signature(info)
+            )
+        })
+    }
 
+    /// Formats a function signature (without the receiver).
+    pub fn format_signature(&self, info: &FnTyInfo) -> impl Display {
+        fmt::from_fn(move |f| {
             if !info.generics.is_empty() {
                 write!(f, "<")?;
 
@@ -283,7 +318,6 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn run(mut self) -> Result {
         self.init_builtin_tys();
-        self.init_operators();
         self.early_tyck_decls();
         self.tyck_decls();
 
@@ -673,6 +707,41 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             ast::TyArg::Wildcard(_) => todo!(),
         }
     }
+
+    fn tyck_op_expr<O: Op>(
+        &mut self,
+        expr: &'ast ast::Expr,
+        expected: Option<TyId>,
+        op: O,
+        args: &[TyId],
+        mut candidates: Vec<OpFnInfoProvider<O>>,
+    ) {
+        candidates
+            .retain(|candidate| self.is_function_applicable(candidate, &Receiver::None, args, &[]));
+
+        let Ok(overload) =
+            self.select_overload(&candidates, &OpOverloadDiagProvider::new(op, &expr.loc))
+        else {
+            self.sema
+                .tyck
+                .exprs
+                .insert(expr.id, self.sema.tyck.builtin.error);
+
+            return;
+        };
+
+        let info = overload.fn_info();
+        let ty_param_map = self.make_fresh_vars_for_ty_params(&info.generics);
+
+        for (&param, &arg) in iter::zip(&info.params, args) {
+            let param = self.sema.tyck.subst(param, &ty_param_map);
+            self.constr_coerce(arg, param, ConstrProvenance::Expr(expr.id));
+        }
+
+        let ret = self.sema.tyck.subst(info.ret, &ty_param_map);
+        let ty_id = self.check_ty(&expr.loc, expected, ret);
+        self.sema.tyck.exprs.insert(expr.id, ty_id);
+    }
 }
 
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
@@ -986,12 +1055,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         e: &'ast ast::ExprUnary,
         expected: Option<TyId>,
     ) {
-        match e.op {
-            ast::UnOp::Plus => todo!(),
-            ast::UnOp::Neg => todo!(),
-            ast::UnOp::BitNot => todo!(),
-            ast::UnOp::Not => todo!(),
-        }
+        let args = vec![self.tyck_expr(e.expr, None)];
+        let candidates = self.overloads_for_unary(e.op);
+
+        self.tyck_op_expr(expr, expected, e.op, &args, candidates)
     }
 
     fn tyck_expr_binary(
@@ -1000,6 +1067,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         e: &'ast ast::ExprBinary,
         expected: Option<TyId>,
     ) {
-        todo!()
+        let args = vec![self.tyck_expr(e.lhs, None), self.tyck_expr(e.rhs, None)];
+        let candidates = self.overloads_for_binary(e.op);
+
+        self.tyck_op_expr(expr, expected, e.op, &args, candidates)
     }
 }

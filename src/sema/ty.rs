@@ -36,6 +36,13 @@ pub enum Ty {
 }
 
 impl Ty {
+    pub fn as_constructed(&self) -> Option<&ConstructedTy> {
+        match self {
+            Self::Ctor(t) => Some(t),
+            _ => None,
+        }
+    }
+
     pub fn is_var(&self) -> bool {
         matches!(self, Self::Var(_))
     }
@@ -168,6 +175,20 @@ impl BuiltinTyCtor {
             Self::Array => &[Variance::Invariant],
             Self::Set => &[Variance::Covariant],
             Self::Void => &[],
+        }
+    }
+
+    pub fn as_int(&self) -> Option<&IntCtor> {
+        match self {
+            Self::Int(c) => Some(c),
+            _ => None,
+        }
+    }
+
+    pub fn as_float(&self) -> Option<&FloatCtor> {
+        match self {
+            Self::Float(c) => Some(c),
+            _ => None,
         }
     }
 }

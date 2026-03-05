@@ -17,6 +17,9 @@ use crate::sema::tyck::overload::Receiver;
 use crate::sema::{Result, Sema};
 use crate::{AccessId, DeclId, ExprId, TyExprId, ast};
 
+use super::def::{DefEnum, DefKindProject, DefStruct};
+use super::resolve::NameRes;
+
 mod constraints;
 mod operators;
 mod overload;
@@ -88,6 +91,7 @@ pub struct TyCk {
     pub ctor_variances: SparseSecondaryMap<DefId, Vec<Variance>>,
     pub ty_params: Vec<TyParam>,
     pub operators: SparseSecondaryMap<ExprId, OpOverload>,
+    pub underlying_enum_tys: SparseSecondaryMap<DefId, TyId>,
 
     // for each type stores a vec of inference variable occurring in it.
     var_occurrences: SecondaryMap<TyId, Vec<TyId>>,
@@ -188,6 +192,16 @@ impl TyCk {
         };
 
         self.add_ty(ty)
+    }
+
+    fn make_param_for(&mut self, name_res: &NameRes, def_id: DefId) -> TyId {
+        let idx = self.ty_params.len();
+        self.ty_params.push(TyParam {
+            def_id: Some(def_id),
+            name: name_res.defs[def_id].name.clone(),
+        });
+
+        self.add_ty(Ty::Param(idx))
     }
 
     pub fn fresh_param(&mut self, name: String) -> TyId {
@@ -444,21 +458,72 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn lit_ty(&mut self, loc: &Loc, lit: &ast::PrimitiveLit, expected: Option<TyId>) -> TyId {
-        // FIXME: check if we expect a literal type and return that if so.
+    fn int_ctor_ty(&self, ctor: &IntCtor) -> TyId {
         let builtin = &self.sema.tyck.builtin;
 
-        let ty_id = match lit {
-            ast::PrimitiveLit::Int(lit) => match lit {
-                ast::IntLit::I8(_) => builtin.int8,
-                ast::IntLit::U8(_) => builtin.unsigned8,
-                ast::IntLit::I16(_) => builtin.int16,
-                ast::IntLit::U16(_) => builtin.unsigned16,
-                ast::IntLit::I32(_) => builtin.int32,
-                ast::IntLit::U32(_) => builtin.unsigned32,
-                ast::IntLit::I64(_) => builtin.int64,
-                ast::IntLit::U64(_) => builtin.unsigned64,
-            },
+        match ctor {
+            IntCtor {
+                width: IntWidth::I8,
+                signed: false,
+            } => builtin.int8,
+
+            IntCtor {
+                width: IntWidth::I16,
+                signed: false,
+            } => builtin.int16,
+
+            IntCtor {
+                width: IntWidth::I32,
+                signed: false,
+            } => builtin.int32,
+
+            IntCtor {
+                width: IntWidth::I64,
+                signed: false,
+            } => builtin.int64,
+
+            IntCtor {
+                width: IntWidth::I8,
+                signed: true,
+            } => builtin.unsigned8,
+
+            IntCtor {
+                width: IntWidth::I16,
+                signed: true,
+            } => builtin.unsigned16,
+
+            IntCtor {
+                width: IntWidth::I32,
+                signed: true,
+            } => builtin.unsigned32,
+
+            IntCtor {
+                width: IntWidth::I64,
+                signed: true,
+            } => builtin.unsigned64,
+        }
+    }
+
+    fn int_lit_ty(&self, lit: &ast::IntLit) -> TyId {
+        let builtin = &self.sema.tyck.builtin;
+
+        match lit {
+            ast::IntLit::I8(_) => builtin.int8,
+            ast::IntLit::U8(_) => builtin.unsigned8,
+            ast::IntLit::I16(_) => builtin.int16,
+            ast::IntLit::U16(_) => builtin.unsigned16,
+            ast::IntLit::I32(_) => builtin.int32,
+            ast::IntLit::U32(_) => builtin.unsigned32,
+            ast::IntLit::I64(_) => builtin.int64,
+            ast::IntLit::U64(_) => builtin.unsigned64,
+        }
+    }
+
+    fn lit_ty(&self, lit: &ast::PrimitiveLit) -> TyId {
+        let builtin = &self.sema.tyck.builtin;
+
+        match lit {
+            ast::PrimitiveLit::Int(lit) => self.int_lit_ty(lit),
 
             ast::PrimitiveLit::Float(lit) => match lit {
                 ast::FloatLit::F32(_) => builtin.float32,
@@ -469,7 +534,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             ast::PrimitiveLit::Char(_) => builtin.char,
             ast::PrimitiveLit::Bool(_) => builtin.bool,
             ast::PrimitiveLit::Null => builtin.null,
-        };
+        }
+    }
+
+    fn check_lit_ty(&mut self, loc: &Loc, lit: &ast::PrimitiveLit, expected: Option<TyId>) -> TyId {
+        let ty_id = self.lit_ty(lit);
 
         self.check_ty(loc, expected, ty_id)
     }
@@ -510,6 +579,56 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     .with_label(Label::primary(loc.clone()))
                     .build()
             );
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check_enum_value_ty(
+        &mut self,
+        error_reported: &mut bool,
+        enum_loc: &Loc,
+        prev: &IntCtor,
+        prev_variant: &'ast ast::EnumVariant,
+        ctor: &IntCtor,
+        ty_id: TyId,
+        variant: &'ast ast::EnumVariant,
+    ) -> (IntCtor, &'ast ast::EnumVariant) {
+        if !*error_reported && prev.signed != ctor.signed {
+            let prev_ty_id = self.int_ctor_ty(prev);
+
+            *error_reported = true;
+            self.result = Err(());
+            self.diag.emit(
+                Diag::err()
+                    .at(enum_loc.clone())
+                    .with_msg(format!(
+                        "could not infer an underlying type for this enum: `{}` and `{}` are incompatible",
+                        self.sema.format_ty(prev_ty_id),
+                        self.sema.format_ty(ty_id),
+                    ))
+                    .with_label(Label::primary(variant.value_loc.clone()).with_msg(format!(
+                        "this expression has type `{}`",
+                        self.sema.format_ty(ty_id),
+                    )))
+                    .with_label(Label::secondary(prev_variant.value_loc.clone()).with_msg(
+                        format!(
+                            "this expression has type `{}`",
+                            self.sema.format_ty(prev_ty_id)
+                        ),
+                    ))
+                    .build(),
+            );
+
+            (prev.clone(), prev_variant)
+        } else {
+            let signed = ctor.signed;
+            let (width, variant) = if prev.width < ctor.width {
+                (ctor.width, variant)
+            } else {
+                (prev.width, prev_variant)
+            };
+
+            (IntCtor { signed, width }, variant)
         }
     }
 
@@ -559,7 +678,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn early_tyck_decl_semantic_ty(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclSemanticTy) {
-        // do nothing.
+        unimplemented!()
     }
 
     fn early_tyck_decl_ty_alias(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclTyAlias) {
@@ -567,11 +686,59 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn early_tyck_decl_struct(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclStruct) {
-        todo!()
+        let def_id = self.sema.name_res.decl_defs[decl.id];
+        self.register_ty_ctor(def_id, |def: &DefStruct| &def.generics, &d.ty_name.generics);
+
+        for &decl_id in &d.decls {
+            self.early_tyck_decl(decl_id);
+        }
     }
 
     fn early_tyck_decl_enum(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclEnum) {
-        todo!()
+        let def_id = self.sema.name_res.decl_defs[decl.id];
+        self.register_ty_ctor(def_id, |def: &DefEnum| &def.generics, &d.ty_name.generics);
+
+        let mut common_ty: Option<(IntCtor, &ast::EnumVariant)> = None;
+        let mut error_reported = false;
+
+        for variant in &d.variants {
+            let ty_id = self.int_lit_ty(&variant.value);
+            let ctor = self.sema.tyck.tys[ty_id].as_constructed().unwrap().ctor;
+            let ctor = self
+                .sema
+                .name_res
+                .def::<BuiltinTyCtor>(ctor)
+                .as_int()
+                .unwrap()
+                .clone();
+
+            common_ty = Some(if let Some(common_ty) = common_ty {
+                let (prev, prev_variant) = &common_ty;
+
+                self.check_enum_value_ty(
+                    &mut error_reported,
+                    &d.ty_name.ty_name.loc,
+                    prev,
+                    prev_variant,
+                    &ctor,
+                    ty_id,
+                    variant,
+                )
+            } else {
+                (ctor, variant)
+            });
+        }
+
+        let common_ty = common_ty.map_or_else(
+            || self.sema.tyck.builtin.int32,
+            |(ctor, _)| self.int_ctor_ty(&ctor),
+        );
+
+        self.sema.tyck.underlying_enum_tys.insert(def_id, common_ty);
+
+        for &variant in &self.sema.name_res.def::<DefEnum>(def_id).variants {
+            self.sema.tyck.def_tys.insert(variant, common_ty);
+        }
     }
 
     fn early_tyck_decl_annotation(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAnnotation) {
@@ -616,6 +783,31 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn early_tyck_decl_proc(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclProc) {
         todo!()
+    }
+
+    fn register_ty_ctor<T: DefKindProject>(
+        &mut self,
+        def_id: DefId,
+        generics: impl FnOnce(&T) -> &[DefId],
+        generic_decls: &[ast::Generic],
+    ) {
+        let def: &T = self.sema.name_res.def(def_id);
+        let generics = generics(def);
+
+        debug_assert_eq!(generics.len(), generic_decls.len());
+
+        for &generic in generics {
+            let ty_id = self.sema.tyck.make_param_for(&self.sema.name_res, generic);
+            self.sema.tyck.def_tys.insert(generic, ty_id);
+        }
+
+        self.sema.tyck.ctor_variances.insert(
+            def_id,
+            generic_decls
+                .iter()
+                .map(|generic| generic.variance.clone().unwrap_or(Variance::Invariant))
+                .collect(),
+        );
     }
 }
 
@@ -843,7 +1035,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         e: &'ast ast::ExprPrimitiveLit,
         expected: Option<TyId>,
     ) {
-        let ty_id = self.lit_ty(&expr.loc, &e.lit, expected);
+        let ty_id = self.check_lit_ty(&expr.loc, &e.lit, expected);
 
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }

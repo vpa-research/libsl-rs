@@ -713,9 +713,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
                 let member_scope_id =
                     self.add_member_scope(def_id, param_scope_id, ScopeKind::Enum(def_id));
+                self.def_mut::<DefEnum>(def_id).member_scope_id = member_scope_id;
 
                 for (idx, variant) in decl.variants.iter().enumerate() {
-                    let _ = self.add_def(
+                    let Ok(def_id) = self.add_def(
                         member_scope_id,
                         Ns::Var,
                         variant.name.to_string(),
@@ -724,7 +725,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                             enum_def_id: def_id,
                             variant_idx: idx,
                         },
-                    );
+                    ) else {
+                        continue;
+                    };
+
+                    self.def_mut::<DefEnum>(def_id).variants.push(def_id);
                 }
             }
 

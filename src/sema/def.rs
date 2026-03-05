@@ -484,6 +484,8 @@ pub struct DefEnum {
     pub decl_id: DeclId,
     pub param_scope_id: ScopeId,
     pub generics: Vec<DefId>,
+    pub member_scope_id: ScopeId,
+    pub variants: Vec<DefId>,
 }
 
 impl DefEnum {
@@ -492,6 +494,8 @@ impl DefEnum {
             decl_id,
             param_scope_id: Default::default(),
             generics: Default::default(),
+            member_scope_id: Default::default(),
+            variants: Default::default(),
         }
     }
 }

@@ -695,9 +695,15 @@ impl<'a> AstConstructor<'a> {
         ctx: &EnumDeclVariantContextAll<'_>,
     ) -> Result<ast::EnumVariant> {
         let name = self.process_name(ctx.name.as_ref().unwrap());
-        let value = self.process_signed_int_lit(ctx.value.as_ref().unwrap())?;
+        let value_ctx = ctx.value.as_ref().unwrap();
+        let value = self.process_signed_int_lit(&value_ctx)?;
+        let value_loc = self.get_loc(&value_ctx.start(), &value_ctx.stop());
 
-        Ok(ast::EnumVariant { name, value })
+        Ok(ast::EnumVariant {
+            name,
+            value,
+            value_loc,
+        })
     }
 
     fn process_signed_int_lit(&mut self, ctx: &SignedIntLitContextAll<'_>) -> Result<ast::IntLit> {

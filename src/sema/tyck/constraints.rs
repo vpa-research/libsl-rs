@@ -497,6 +497,7 @@ impl ConstrSet {
         let l = &sema.tyck.tys[lhs];
         let r = &sema.tyck.tys[rhs];
 
+        #[allow(clippy::single_match)]
         match (l, r) {
             (Ty::Ctor(l), Ty::Ctor(r)) => {
                 if l.ctor != r.ctor {
@@ -995,8 +996,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     pub fn fresh_var(&mut self, provenance: VarProvenance) -> TyId {
         let idx = self.sema.tyck.var_provenances.len();
         self.sema.tyck.var_provenances.push(provenance);
-        let ty_id = self.sema.tyck.add_ty(Ty::Var(idx));
 
-        ty_id
+        self.sema.tyck.add_ty(Ty::Var(idx))
     }
 }

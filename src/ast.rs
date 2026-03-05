@@ -143,6 +143,136 @@ pub enum DeclKind {
     Proc(DeclProc),
 }
 
+impl DeclKind {
+    /// Checks if this is an import declaration and returns it.
+    pub fn as_import(&self) -> Option<&DeclImport> {
+        match self {
+            Self::Import(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this is an include declaration and returns it.
+    pub fn as_include(&self) -> Option<&DeclInclude> {
+        match self {
+            Self::Include(d) => Some(d),
+            _ => None
+        }
+    }
+
+    /// Checks if this is a semantic type declaration and returns it.
+    pub fn as_semantic_ty(&self) -> Option<&DeclSemanticTy> {
+        match self {
+            Self::SemanticTy(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this is a type alias declaration and returns it.
+    pub fn as_ty_alias(&self) -> Option<&DeclTyAlias> {
+        match self {
+            Self::TyAlias(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this is a struct declaration and returns it.
+    pub fn as_struct(&self) -> Option<&DeclStruct> {
+        match self {
+            Self::Struct(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this is an enum declaration and returns it.
+    pub fn as_enum(&self) -> Option<&DeclEnum> {
+        match self {
+            Self::Enum(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this is an annotation declaration and returns it.
+    pub fn as_annotation(&self) -> Option<&DeclAnnotation> {
+        match self {
+            Self::Annotation(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this is an action declaration and returns it.
+    pub fn as_action(&self) -> Option<&DeclAction> {
+        match self {
+            Self::Action(d) => Some(d),
+        _ => None,
+        }
+    }
+
+    /// Checks if this is an automaton declaration and returns it.
+    pub fn as_automaton(&self) -> Option<&DeclAutomaton> {
+        match self {
+            Self::Automaton(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this is a function declaration and returns it.
+    pub fn as_function(&self) -> Option<&DeclFunction> {
+        match self {
+            Self::Function(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this is a variable declaration and returns it.
+    pub fn as_variable(&self) -> Option<&DeclVariable> {
+        match self {
+            Self::Variable(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this is a state declaration and returns it.
+    pub fn as_state(&self) -> Option<&DeclState> {
+        match self {
+            Self::State(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this is a state transition declaration and returns it.
+    pub fn as_shift(&self) -> Option<&DeclShift> {
+        match self {
+            Self::Shift(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this a constructor declaration and returns it.
+    pub fn as_constructor(&self) -> Option<&DeclConstructor> {
+        match self {
+            Self::Constructor(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this is a destructor declaration and returns it.
+    pub fn as_destructor(&self) -> Option<&DeclDestructor> {
+        match self {
+            Self::Destructor(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this is a procedure declaration and returns it.
+    pub fn as_proc(&self) -> Option<&DeclProc> {
+        match self {
+            Self::Proc(d) => Some(d),
+            _ => None,
+        }
+    }
+}
+
 impl From<DeclImport> for DeclKind {
     fn from(decl: DeclImport) -> Self {
         Self::Import(decl)
@@ -378,6 +508,9 @@ pub struct EnumVariant {
     /// The value of the variant.
     #[cfg_attr(feature = "serde", no_wrap)]
     pub value: IntLit,
+
+    /// The [`Loc`] associated with the value expression.
+    pub value_loc: Loc,
 }
 
 impl WithLibSl for EnumVariant {}
@@ -1673,6 +1806,7 @@ pub enum ConstructorArg {
 }
 
 impl ConstructorArg {
+    /// Returns the [`Loc`] spanning the argument.
     pub fn loc(&self) -> &Loc {
         match self {
             Self::State(loc, _) => loc,

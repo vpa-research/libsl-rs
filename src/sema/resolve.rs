@@ -97,6 +97,15 @@ impl ScopeKind {
     }
 }
 
+/// Resolved names in instantiation expressions.
+#[derive(Debug, Clone)]
+pub struct InstantiationExprInfo {
+    pub automaton: DefId,
+
+    /// Points to either a state or a variable for every argument in the original order.
+    pub args: Vec<DefId>,
+}
+
 /// Definitions in the prelude scope.
 #[derive(Debug, Default, Clone)]
 pub struct PreludeDefs {
@@ -182,7 +191,7 @@ pub struct NameRes {
     pub expr_action_calls: SparseSecondaryMap<ExprId, DefId>,
 
     /// Maps automaton instantiation expressions to resolved automata.
-    pub expr_instantiations: SparseSecondaryMap<ExprId, DefId>,
+    pub expr_instantiations: SparseSecondaryMap<ExprId, InstantiationExprInfo>,
 
     /// Maps `has`-concept expressions to resolved automaton concepts.
     pub expr_has_concepts: SparseSecondaryMap<ExprId, DefId>,
@@ -2077,18 +2086,17 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         expr_id: ExprId,
         expr: &'ast ast::ExprInstantiate,
     ) {
-        if let Ok(def_id) = self.sema.name_res.resolve(
-            self.diag,
-            scope_id,
-            Ns::Automaton,
-            &expr.name.to_string(),
-            &expr.name.loc,
-        ) {
-            self.sema
-                .name_res
-                .expr_instantiations
-                .insert(expr_id, def_id);
-        }
+        let automaton = self
+            .sema
+            .name_res
+            .resolve(
+                self.diag,
+                scope_id,
+                Ns::Automaton,
+                &expr.name.to_string(),
+                &expr.name.loc,
+            )
+            .ok();
 
         if let Some(ty_args) = &expr.generics {
             for ty_arg in ty_args {
@@ -2096,19 +2104,67 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             }
         }
 
-        for arg in &expr.args {
-            match arg {
-                ast::ConstructorArg::State(_) => {
-                    // will be handled in typeck.
-                }
+        let args = expr
+            .args
+            .iter()
+            .map(|arg| match arg {
+                ast::ConstructorArg::State(_, name) => automaton
+                    .and_then(|automaton| {
+                        let scope_id = self.sema.name_res.def_member_scopes[automaton];
 
-                &ast::ConstructorArg::Var(_, arg_expr_id) => {
-                    // the name will be checked in typeck.
+                        self.sema
+                            .name_res
+                            .resolve(self.diag, scope_id, Ns::State, &name.to_string(), &name.loc)
+                            .ok()
+                    })
+                    .unwrap_or_default(),
 
-                    self.process_expr(scope_id, arg_expr_id);
+                ast::ConstructorArg::Var(_, name, arg_expr_id) => {
+                    let def_id = automaton
+                        .and_then(|automaton| {
+                            let scope_id = self.sema.name_res.def_member_scopes[automaton];
+
+                            self.sema
+                                .name_res
+                                .resolve(self.diag, scope_id, Ns::Var, &name.to_string(), &name.loc)
+                                .ok()
+                                .and_then(|def_id| {
+                                    // TODO: is this necessary?
+                                    let def = self.def::<DefAutomaton>(automaton);
+
+                                    if def.constructor_params.contains(&def_id) {
+                                        Some(def_id)
+                                    } else {
+                                        self.result = Err(());
+                                        self.diag.emit(
+                                            Diag::err()
+                                                .at(name.loc.clone())
+                                                .with_msg(format!(
+                                                    "`{name}` is not a constructor parameter"
+                                                ))
+                                                .with_label(Label::primary(name.loc.clone()))
+                                                .build(),
+                                        );
+
+                                        None
+                                    }
+                                })
+                        })
+                        .unwrap_or_default();
+
+                    self.process_expr(scope_id, *arg_expr_id);
+
+                    def_id
                 }
-            }
-        }
+            })
+            .collect();
+
+        let automaton = automaton.unwrap_or_default();
+
+        self.sema
+            .name_res
+            .expr_instantiations
+            .insert(expr_id, InstantiationExprInfo { automaton, args });
     }
 
     fn process_expr_has_concept(

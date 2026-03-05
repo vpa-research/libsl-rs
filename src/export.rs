@@ -2151,11 +2151,11 @@ impl Display for ExprInstantiateDisplay<'_> {
                 }
 
                 match arg {
-                    ast::ConstructorArg::State(name) => {
+                    ast::ConstructorArg::State(_, name) => {
                         write!(f, "state = {name}")?;
                     }
 
-                    ast::ConstructorArg::Var(name, expr_id) => {
+                    ast::ConstructorArg::Var(_, name, expr_id) => {
                         write!(
                             f,
                             "{name} = {}",

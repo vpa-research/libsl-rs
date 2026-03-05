@@ -1666,10 +1666,19 @@ impl WithLibSl for ExprInstantiate {}
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub enum ConstructorArg {
     /// An automaton state assignment.
-    State(#[no_walk] Name),
+    State(#[no_walk] Loc, #[no_walk] Name),
 
     /// A value for a constructor variable.
-    Var(#[no_walk] Name, ExprId),
+    Var(#[no_walk] Loc, #[no_walk] Name, ExprId),
+}
+
+impl ConstructorArg {
+    pub fn loc(&self) -> &Loc {
+        match self {
+            Self::State(loc, _) => loc,
+            Self::Var(loc, ..) => loc,
+        }
+    }
 }
 
 impl WithLibSl for ConstructorArg {}

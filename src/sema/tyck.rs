@@ -1,7 +1,7 @@
 //! Type checking and inference for LibSL.
 
 use std::collections::HashMap;
-use std::fmt::{self, Display};
+use std::fmt::{self, Display, Write};
 use std::iter;
 
 use slotmap::{SecondaryMap, SlotMap, SparseSecondaryMap};
@@ -9,7 +9,7 @@ use slotmap::{SecondaryMap, SlotMap, SparseSecondaryMap};
 use crate::ast::Variance;
 use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
-use crate::sema::def::DefId;
+use crate::sema::def::{DefAutomaton, DefId};
 use crate::sema::ty::{BuiltinTyCtor, ConstructedTy, FloatCtor, IntCtor, IntWidth, Ty, TyId};
 use crate::sema::tyck::constraints::{ConstrProvenance, ConstrSet, VarProvenance};
 use crate::sema::tyck::operators::{Op, OpFnInfoProvider, OpOverload, OpOverloadDiagProvider};
@@ -80,7 +80,10 @@ pub struct TyCk {
     pub exprs: SecondaryMap<ExprId, TyId>,
     pub accesses: SecondaryMap<AccessId, TyId>,
     pub ty_exprs: SecondaryMap<TyExprId, TyId>,
+
+    // maps variables and generics to their types.
     pub def_tys: SecondaryMap<DefId, TyId>,
+
     pub fns: SparseSecondaryMap<DefId, FnTyInfo>,
     pub ctor_variances: SparseSecondaryMap<DefId, Vec<Variance>>,
     pub ty_params: Vec<TyParam>,
@@ -742,6 +745,37 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         let ty_id = self.check_ty(&expr.loc, expected, ret);
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
+
+    fn make_missing_constructor_args_err(loc: Loc, missing_args: &[String]) -> Diag {
+        Diag::err()
+            .at(loc.clone())
+            .with_msg(match &missing_args[..] {
+                [] => unreachable!(),
+                [name] => {
+                    format!("no argument initializes the constructor parameter `{name}`")
+                }
+
+                _ => {
+                    let mut msg = "no arguments initialize the constructor parameters ".to_owned();
+
+                    for (idx, name) in missing_args.iter().enumerate() {
+                        if idx > 0 && !(idx == 1 && missing_args.len() == 2) {
+                            let _ = write!(msg, ", ");
+                        }
+
+                        if idx + 1 == missing_args.len() {
+                            let _ = write!(msg, "and ");
+                        }
+
+                        let _ = write!(msg, "{name}");
+                    }
+
+                    msg
+                }
+            })
+            .with_label(Label::primary(loc))
+            .build()
+    }
 }
 
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
@@ -992,7 +1026,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         e: &'ast ast::ExprInstantiate,
         expected: Option<TyId>,
     ) {
-        let def_id = self.sema.name_res.expr_instantiations[expr.id];
+        let automaton_def_id = self.sema.name_res.expr_instantiations[expr.id].automaton;
 
         let ty_args = e
             .generics
@@ -1002,17 +1036,165 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .map(|ty_arg| self.tyck_ty_arg(ty_arg))
             .collect::<Vec<_>>();
 
-        let mut args: Vec<TyId> = vec![];
-        let mut state: Option<DefId> = None;
+        type ArgState<'a, T> = Result<(&'a ast::ConstructorArg, T), Diag>;
 
-        for arg in &e.args {
+        let mut args: SparseSecondaryMap<DefId, ArgState<_>> = Default::default();
+        let mut state: Option<ArgState<DefId>> = None;
+
+        for (idx, arg) in e.args.iter().enumerate() {
             match arg {
-                ast::ConstructorArg::State(name) => todo!(),
-                ast::ConstructorArg::Var(name, expr_id) => todo!(),
+                ast::ConstructorArg::State(loc, _) => {
+                    let diag = match state {
+                        Some(Ok((prev, _))) => {
+                            self.result = Err(());
+                            state
+                                .insert(Err(Diag::err()
+                                    .at(prev.loc().clone())
+                                    .with_msg("too many state arguments were provided")
+                                    .with_label(Label::primary(prev.loc().clone()))
+                                    .build()))
+                                .as_mut()
+                                .unwrap_err()
+                        }
+
+                        Some(Err(ref mut diag)) => diag,
+
+                        None => {
+                            let info = &self.sema.name_res.expr_instantiations[expr.id];
+                            state = Some(Ok((arg, info.args[idx])));
+
+                            continue;
+                        }
+                    };
+
+                    diag.labels.push(Label::primary(loc.clone()));
+                }
+
+                ast::ConstructorArg::Var(loc, _, expr_id) => {
+                    use slotmap::sparse_secondary::Entry;
+
+                    let ty_id = self.tyck_expr(*expr_id, None);
+                    let info = &self.sema.name_res.expr_instantiations[expr.id];
+
+                    match args.entry(info.args[idx]).unwrap() {
+                        Entry::Vacant(entry) => {
+                            entry.insert(Ok((arg, ty_id)));
+                        }
+
+                        Entry::Occupied(mut entry) => {
+                            let diag = match entry.get_mut() {
+                                r @ &mut Ok((prev, _)) => {
+                                    self.result = Err(());
+                                    *r = Err(Diag::err()
+                                        .at(prev.loc().clone())
+                                        .with_msg(
+                                            "constructor parameter is initialized more than once",
+                                        )
+                                        .with_label(Label::primary(prev.loc().clone()))
+                                        .build());
+
+                                    r.as_mut().unwrap_err()
+                                }
+
+                                Err(diag) => diag,
+                            };
+
+                            diag.labels.push(Label::primary(loc.clone()));
+                        }
+                    }
+                }
             }
         }
 
-        // TODO.
+        let def = self.sema.name_res.def::<DefAutomaton>(automaton_def_id);
+        let mut missing_args = vec![];
+        let args = def
+            .constructor_params
+            .iter()
+            .map(|&def_id| match args.remove(def_id) {
+                Some(Ok((_, ty_id))) => (def_id, ty_id),
+
+                Some(Err(diag)) => {
+                    self.diag.emit(diag);
+
+                    Default::default()
+                }
+
+                None => {
+                    missing_args.push(self.sema.name_res.defs[def_id].name.clone());
+
+                    Default::default()
+                }
+            })
+            .collect::<Vec<_>>();
+
+        if !missing_args.is_empty() {
+            self.result = Err(());
+            self.diag.emit(Self::make_missing_constructor_args_err(
+                expr.loc.clone(),
+                &missing_args,
+            ));
+        }
+
+        match state {
+            Some(Ok((arg, def_id))) => {
+                if !def.init_states.contains(&def_id) {
+                    self.result = Err(());
+                    self.diag.emit(
+                        Diag::err()
+                            .at(arg.loc().clone())
+                            .with_msg(format_args!(
+                                "state `{}` cannot be initial",
+                                self.sema.name_res.defs[def_id].name,
+                            ))
+                            .with_label(Label::primary(arg.loc().clone()))
+                            .build(),
+                    );
+                }
+            }
+
+            Some(Err(diag)) => {
+                self.diag.emit(diag);
+            }
+
+            None => {
+                self.result = Err(());
+                self.diag.emit(
+                    Diag::err()
+                        .at(expr.loc.clone())
+                        .with_msg("no initial state was provided")
+                        .with_label(Label::primary(expr.loc.clone()))
+                        .build(),
+                );
+            }
+        }
+
+        let generics = def
+            .generics
+            .iter()
+            .map(|&def_id| self.sema.tyck.def_tys[def_id])
+            .collect::<Vec<_>>();
+        let ty_param_map = self.make_fresh_vars_for_ty_params(&generics);
+
+        for (&param, &arg) in iter::zip(&generics, &ty_args) {
+            self.constr_eq(arg, ty_param_map[param], ConstrProvenance::Expr(expr.id));
+        }
+
+        for &(def_id, arg) in &args {
+            let def_ty_id = self
+                .sema
+                .tyck
+                .subst(self.sema.tyck.def_tys[def_id], &ty_param_map);
+            self.constr_coerce(arg, def_ty_id, ConstrProvenance::Expr(expr.id));
+        }
+
+        let ty_args = generics.iter().map(|ty_arg| self.repr(*ty_arg)).collect();
+
+        let ty_id = self.sema.tyck.add_ty(Ty::Ctor(ConstructedTy {
+            ctor: automaton_def_id,
+            args: ty_args,
+        }));
+        self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
     fn tyck_expr_has_concept(

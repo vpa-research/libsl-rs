@@ -2420,18 +2420,20 @@ impl<'a> AstConstructor<'a> {
         &mut self,
         ctx: &ConstructorArgContextAll<'_>,
     ) -> Result<ast::ConstructorArg> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+
         Ok(match ctx {
             ConstructorArgContextAll::ConstructorArgStateContext(ctx) => {
                 let value = self.process_name(ctx.state.as_ref().unwrap());
 
-                ast::ConstructorArg::State(value)
+                ast::ConstructorArg::State(loc, value)
             }
 
             ConstructorArgContextAll::ConstructorArgVarContext(ctx) => {
                 let name = self.process_name(ctx.name.as_ref().unwrap());
                 let value = self.process_expr(ctx.value.as_ref().unwrap())?;
 
-                ast::ConstructorArg::Var(name, value)
+                ast::ConstructorArg::Var(loc, name, value)
             }
 
             ConstructorArgContextAll::Error(_) => unreachable!(),

@@ -1138,13 +1138,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         match state {
             Some(Ok((arg, def_id))) => {
-                if !def.init_states.contains(&def_id) {
+                if def.final_states.contains(&def_id) {
                     self.result = Err(());
                     self.diag.emit(
                         Diag::err()
                             .at(arg.loc().clone())
                             .with_msg(format_args!(
-                                "state `{}` cannot be initial",
+                                "state `{}` is declared as final and cannot be initial",
                                 self.sema.name_res.defs[def_id].name,
                             ))
                             .with_label(Label::primary(arg.loc().clone()))

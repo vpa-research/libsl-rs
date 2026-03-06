@@ -9,7 +9,9 @@ use slotmap::{SecondaryMap, SlotMap, SparseSecondaryMap};
 use crate::ast::Variance;
 use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
-use crate::sema::def::{DefAction, DefAnnotation, DefAutomaton, DefId, DefTyVariable};
+use crate::sema::def::{
+    DefAction, DefAnnotation, DefAutomaton, DefFunction, DefId, DefTyVariable, FunctionKind,
+};
 use crate::sema::ty::{BuiltinTyCtor, ConstructedTy, FloatCtor, IntCtor, IntWidth, Ty, TyId};
 use crate::sema::tyck::constraints::{ConstrProvenance, ConstrSet, VarProvenance};
 use crate::sema::tyck::operators::{Op, OpFnSigProvider, OpOverload, OpOverloadDiagProvider};
@@ -738,19 +740,20 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn early_tyck_decl_function(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclFunction) {
-        todo!()
+        let def_id = self.sema.name_res.decl_defs[decl.id];
+        self.register_parametrized_entity(def_id, |def: &DefFunction| &def.generics, &d.generics);
     }
 
     fn early_tyck_decl_variable(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclVariable) {
-        todo!()
+        // do nothing.
     }
 
     fn early_tyck_decl_state(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclState) {
-        todo!()
+        // do nothing.
     }
 
     fn early_tyck_decl_shift(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclShift) {
-        todo!()
+        // do nothing.
     }
 
     fn early_tyck_decl_constructor(
@@ -758,15 +761,16 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         decl: &'ast ast::Decl,
         d: &'ast ast::DeclConstructor,
     ) {
-        todo!()
+        // do nothing.
     }
 
     fn early_tyck_decl_destructor(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclDestructor) {
-        todo!()
+        // do nothing.
     }
 
     fn early_tyck_decl_proc(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclProc) {
-        todo!()
+        let def_id = self.sema.name_res.decl_defs[decl.id];
+        self.register_parametrized_entity(def_id, |def: &DefFunction| &def.generics, &d.generics);
     }
 
     fn register_parametrized_entity<T: DefKindProject>(
@@ -954,31 +958,53 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_decl_function(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclFunction) {
-        todo!()
+        let def_id = self.sema.name_res.decl_defs[decl.id];
+        self.tyck_fn_decl(
+            def_id,
+            d.params.iter().map(|param| param.ty_expr),
+            d.ret_ty_expr,
+        );
     }
 
     fn tyck_decl_variable(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclVariable) {
-        todo!()
+        let def_id = self.sema.name_res.decl_defs[decl.id];
+        let ty_id = self.tyck_ty_expr(d.ty_expr);
+        self.sema.tyck.def_tys.insert(def_id, ty_id);
     }
 
     fn tyck_decl_state(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclState) {
-        todo!()
+        // do nothing.
     }
 
     fn tyck_decl_shift(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclShift) {
-        todo!()
+        // do nothing.
     }
 
     fn tyck_decl_constructor(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclConstructor) {
-        todo!()
+        let def_id = self.sema.name_res.decl_defs[decl.id];
+        self.tyck_fn_decl(
+            def_id,
+            d.params.iter().map(|param| param.ty_expr),
+            d.ret_ty_expr,
+        );
     }
 
     fn tyck_decl_destructor(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclDestructor) {
-        todo!()
+        let def_id = self.sema.name_res.decl_defs[decl.id];
+        self.tyck_fn_decl(
+            def_id,
+            d.params.iter().map(|param| param.ty_expr),
+            d.ret_ty_expr,
+        );
     }
 
     fn tyck_decl_proc(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclProc) {
-        todo!()
+        let def_id = self.sema.name_res.decl_defs[decl.id];
+        self.tyck_fn_decl(
+            def_id,
+            d.params.iter().map(|param| param.ty_expr),
+            d.ret_ty_expr,
+        );
     }
 
     fn tyck_ty_expr(&mut self, ty_expr_id: TyExprId) -> TyId {
@@ -1041,6 +1067,30 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 params,
                 ret,
             },
+        );
+    }
+
+    fn tyck_fn_decl(
+        &mut self,
+        def_id: DefId,
+        param_ty_exprs: impl Iterator<Item = TyExprId>,
+        ret: Option<TyExprId>,
+    ) {
+        let recv = match self.sema.name_res.def::<DefFunction>(def_id).kind {
+            FunctionKind::Fun { of } => of,
+            FunctionKind::Proc { of, .. } => of,
+            FunctionKind::Constructor { of } => Some(of),
+            FunctionKind::Destructor { of } => Some(of),
+        };
+
+        self.tyck_params(def_id, param_ty_exprs, |def: &DefFunction| &def.params);
+        let ret = self.tyck_ret_ty_expr(ret);
+        self.register_fn_sig::<DefFunction>(
+            def_id,
+            recv,
+            |def| &def.generics,
+            |def| &def.params,
+            Some(ret),
         );
     }
 }

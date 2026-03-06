@@ -14,7 +14,7 @@ use crate::sema::tyck::constraints::{Constr, ConstrKind, ConstrProvenance};
 use crate::sema::{Result, Sema};
 use crate::{AccessId, WithLibSl, ast};
 
-use super::FnTyInfo;
+use super::FnSig;
 
 #[derive(Debug, Clone)]
 pub struct OverloadResult {
@@ -28,15 +28,15 @@ pub enum Receiver {
     None,
 }
 
-pub trait FnInfoProvider {
-    fn fn_info<'a>(&'a self, sema: &'a Sema<'_>) -> &'a FnTyInfo;
+pub trait FnSigProvider {
+    fn fn_sig<'a>(&'a self, sema: &'a Sema<'_>) -> &'a FnSig;
 
     fn applicability_constr_provenance(&self) -> ConstrProvenance;
 }
 
-impl<T: FnInfoProvider> FnInfoProvider for &'_ T {
-    fn fn_info<'a>(&'a self, sema: &'a Sema<'_>) -> &'a FnTyInfo {
-        (*self).fn_info(sema)
+impl<T: FnSigProvider> FnSigProvider for &'_ T {
+    fn fn_sig<'a>(&'a self, sema: &'a Sema<'_>) -> &'a FnSig {
+        (*self).fn_sig(sema)
     }
 
     fn applicability_constr_provenance(&self) -> ConstrProvenance {
@@ -44,11 +44,11 @@ impl<T: FnInfoProvider> FnInfoProvider for &'_ T {
     }
 }
 
-struct DefFnInfoProvider(DefId);
+struct DefFnSigProvider(DefId);
 
-impl FnInfoProvider for DefFnInfoProvider {
-    fn fn_info<'a>(&'a self, sema: &'a Sema<'_>) -> &'a FnTyInfo {
-        &sema.tyck.fns[self.0]
+impl FnSigProvider for DefFnSigProvider {
+    fn fn_sig<'a>(&'a self, sema: &'a Sema<'_>) -> &'a FnSig {
+        &sema.tyck.sigs[self.0]
     }
 
     fn applicability_constr_provenance(&self) -> ConstrProvenance {
@@ -56,7 +56,7 @@ impl FnInfoProvider for DefFnInfoProvider {
     }
 }
 
-pub trait OverloadDiagProvider<F: FnInfoProvider> {
+pub trait OverloadDiagProvider<F: FnSigProvider> {
     fn empty_candidate_set(&self, sema: &Sema<'_>) -> Diag;
 
     fn ambiguity(&self, sema: &Sema<'_>, ambiguities: &[&F]) -> Diag;
@@ -67,7 +67,7 @@ struct CallOverloadDiagProvider<'a> {
     loc: &'a Loc,
 }
 
-impl OverloadDiagProvider<DefFnInfoProvider> for CallOverloadDiagProvider<'_> {
+impl OverloadDiagProvider<DefFnSigProvider> for CallOverloadDiagProvider<'_> {
     fn empty_candidate_set(&self, _sema: &Sema<'_>) -> Diag {
         Diag::err()
             .at(self.loc.clone())
@@ -76,7 +76,7 @@ impl OverloadDiagProvider<DefFnInfoProvider> for CallOverloadDiagProvider<'_> {
             .build()
     }
 
-    fn ambiguity(&self, sema: &Sema<'_>, ambiguities: &[&DefFnInfoProvider]) -> Diag {
+    fn ambiguity(&self, sema: &Sema<'_>, ambiguities: &[&DefFnSigProvider]) -> Diag {
         let mut possible_candidates = "the following candidates are possible:".to_owned();
 
         for candidate in ambiguities {
@@ -109,15 +109,15 @@ struct SelectionCriteria {
 }
 
 impl SelectionCriteria {
-    fn should_consider(&self, sema: &Sema<'_>, f: &impl FnInfoProvider) -> bool {
-        if self.concrete_only && !f.fn_info(sema).generics.is_empty() {
+    fn should_consider(&self, sema: &Sema<'_>, f: &impl FnSigProvider) -> bool {
+        if self.concrete_only && !f.fn_sig(sema).generics.is_empty() {
             return false;
         }
 
         true
     }
 
-    fn strengthen(&mut self, sema: &Sema<'_>, candidates: &[impl FnInfoProvider]) -> bool {
+    fn strengthen(&mut self, sema: &Sema<'_>, candidates: &[impl FnSigProvider]) -> bool {
         if !self.concrete_only && self.strengthen_concrete(sema, candidates) {
             return true;
         }
@@ -125,12 +125,12 @@ impl SelectionCriteria {
         false
     }
 
-    fn strengthen_concrete(&mut self, sema: &Sema<'_>, candidates: &[impl FnInfoProvider]) -> bool {
+    fn strengthen_concrete(&mut self, sema: &Sema<'_>, candidates: &[impl FnSigProvider]) -> bool {
         let mut has_concrete = false;
         let mut has_parameterized = false;
 
         for candidate in candidates {
-            if candidate.fn_info(sema).generics.is_empty() {
+            if candidate.fn_sig(sema).generics.is_empty() {
                 has_concrete = true;
             } else {
                 has_parameterized = true;
@@ -208,7 +208,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 ScopeKind::Prelude | ScopeKind::Import(_) | ScopeKind::File(_) => {
                     if let Some(overloads) = scope.functions.get(&name) {
                         candidates.extend(overloads.clone().into_iter().filter_map(|def_id| {
-                            let provider = DefFnInfoProvider(def_id);
+                            let provider = DefFnSigProvider(def_id);
 
                             self.is_function_applicable(&provider, &recv, args, ty_args)
                                 .then_some(provider)
@@ -225,7 +225,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
                     if let Some(overloads) = scope.functions.get(&name) {
                         candidates.extend(overloads.clone().into_iter().filter_map(|def_id| {
-                            let provider = DefFnInfoProvider(def_id);
+                            let provider = DefFnSigProvider(def_id);
 
                             self.is_function_applicable(&provider, &recv, args, ty_args)
                                 .then_some(provider)
@@ -242,7 +242,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
                     if let Some(overloads) = scope.functions.get(&name) {
                         candidates.extend(overloads.clone().into_iter().filter_map(|def_id| {
-                            let provider = DefFnInfoProvider(def_id);
+                            let provider = DefFnSigProvider(def_id);
 
                             self.is_function_applicable(&provider, &recv, args, ty_args)
                                 .then_some(provider)
@@ -287,22 +287,22 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     pub fn is_function_applicable(
         &mut self,
-        candidate: &impl FnInfoProvider,
+        candidate: &impl FnSigProvider,
         recv: &Receiver,
         args: &[TyId],
         ty_args: &[TyId],
     ) -> bool {
         (|| -> Result<()> {
             let mut constr = self.constrs.clone();
-            let info = candidate.fn_info(self.sema).clone();
+            let sig = candidate.fn_sig(self.sema).clone();
 
-            if ty_args.len() > info.generics.len() || args.len() != info.params.len() {
+            if ty_args.len() > sig.generics.len() || args.len() != sig.params.len() {
                 return Err(());
             }
 
-            let ty_param_map = self.make_fresh_vars_for_ty_params(&info.generics);
+            let ty_param_map = self.make_fresh_vars_for_ty_params(&sig.generics);
 
-            for (&param, &arg) in iter::zip(&info.generics, ty_args) {
+            for (&param, &arg) in iter::zip(&sig.generics, ty_args) {
                 constr.add(
                     self.sema,
                     &mut DummyDiagCtx,
@@ -315,13 +315,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
             match recv {
                 Receiver::None => {
-                    if info.recv.is_some() {
+                    if sig.recv.is_some() {
                         return Err(());
                     }
                 }
             }
 
-            for (&param, &arg) in iter::zip(&info.params, args) {
+            for (&param, &arg) in iter::zip(&sig.params, args) {
                 let param = self.sema.tyck.subst(param, &ty_param_map);
 
                 constr.add(
@@ -341,15 +341,15 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn is_lhs_more_specific(
         &mut self,
-        lhs: &impl FnInfoProvider,
-        rhs: &impl FnInfoProvider,
+        lhs: &impl FnSigProvider,
+        rhs: &impl FnSigProvider,
     ) -> bool {
-        if lhs.fn_info(self.sema).params.len() != rhs.fn_info(self.sema).params.len() {
+        if lhs.fn_sig(self.sema).params.len() != rhs.fn_sig(self.sema).params.len() {
             return false;
         }
 
         let ty_param_map = lhs
-            .fn_info(self.sema)
+            .fn_sig(self.sema)
             .generics
             .clone()
             .into_iter()
@@ -357,14 +357,14 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .collect();
 
         let args = lhs
-            .fn_info(self.sema)
+            .fn_sig(self.sema)
             .params
             .clone()
             .into_iter()
             .map(|param| self.sema.tyck.subst(param, &ty_param_map))
             .collect::<Vec<_>>();
 
-        let recv = match lhs.fn_info(self.sema).recv {
+        let recv = match lhs.fn_sig(self.sema).recv {
             Some(_) => unimplemented!(),
             None => Receiver::None,
         };
@@ -374,8 +374,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn compare_overloads(
         &mut self,
-        lhs: &impl FnInfoProvider,
-        rhs: &impl FnInfoProvider,
+        lhs: &impl FnSigProvider,
+        rhs: &impl FnSigProvider,
     ) -> Option<Ordering> {
         match (
             self.is_lhs_more_specific(lhs, rhs),
@@ -388,7 +388,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    pub fn select_overload<'a, F: FnInfoProvider>(
+    pub fn select_overload<'a, F: FnSigProvider>(
         &mut self,
         candidates: &'a [F],
         diag_provider: &impl OverloadDiagProvider<F>,

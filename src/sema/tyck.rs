@@ -9,10 +9,10 @@ use slotmap::{SecondaryMap, SlotMap, SparseSecondaryMap};
 use crate::ast::Variance;
 use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
-use crate::sema::def::{DefAutomaton, DefId};
+use crate::sema::def::{DefAction, DefAnnotation, DefAutomaton, DefId, DefTyVariable};
 use crate::sema::ty::{BuiltinTyCtor, ConstructedTy, FloatCtor, IntCtor, IntWidth, Ty, TyId};
 use crate::sema::tyck::constraints::{ConstrProvenance, ConstrSet, VarProvenance};
-use crate::sema::tyck::operators::{Op, OpFnInfoProvider, OpOverload, OpOverloadDiagProvider};
+use crate::sema::tyck::operators::{Op, OpFnSigProvider, OpOverload, OpOverloadDiagProvider};
 use crate::sema::tyck::overload::Receiver;
 use crate::sema::{Result, Sema};
 use crate::{AccessId, DeclId, ExprId, TyExprId, ast};
@@ -62,11 +62,11 @@ impl BuiltinTys {
 }
 
 #[derive(Debug, Clone)]
-pub struct FnTyInfo {
+pub struct FnSig {
     pub recv: Option<DefId>,
     pub generics: Vec<TyId>,
     pub params: Vec<TyId>,
-    pub ret: TyId,
+    pub ret: Option<TyId>,
 }
 
 #[derive(Debug, Clone)]
@@ -87,11 +87,13 @@ pub struct TyCk {
     // maps variables and generics to their types.
     pub def_tys: SecondaryMap<DefId, TyId>,
 
-    pub fns: SparseSecondaryMap<DefId, FnTyInfo>,
-    pub ctor_variances: SparseSecondaryMap<DefId, Vec<Variance>>,
+    pub sigs: SparseSecondaryMap<DefId, FnSig>,
+    pub param_variances: SparseSecondaryMap<DefId, Vec<Variance>>,
     pub ty_params: Vec<TyParam>,
     pub operators: SparseSecondaryMap<ExprId, OpOverload>,
-    pub underlying_enum_tys: SparseSecondaryMap<DefId, TyId>,
+
+    // applicable to enums and automata.
+    pub underlying_tys: SparseSecondaryMap<DefId, TyId>,
 
     // for each type stores a vec of inference variable occurring in it.
     var_occurrences: SecondaryMap<TyId, Vec<TyId>>,
@@ -266,7 +268,7 @@ impl Sema<'_> {
 
     /// Formats the function signature of a [`DefFunction`].
     pub fn format_def_signature(&self, def_id: DefId) -> impl Display {
-        let info = &self.tyck.fns[def_id];
+        let sig = &self.tyck.sigs[def_id];
 
         fmt::from_fn(move |f| {
             // TODO: receiver.
@@ -275,18 +277,18 @@ impl Sema<'_> {
                 f,
                 "{}{}",
                 self.name_res.defs[def_id].name,
-                self.format_signature(info)
+                self.format_signature(sig)
             )
         })
     }
 
     /// Formats a function signature (without the receiver).
-    pub fn format_signature(&self, info: &FnTyInfo) -> impl Display {
+    pub fn format_signature(&self, sig: &FnSig) -> impl Display {
         fmt::from_fn(move |f| {
-            if !info.generics.is_empty() {
+            if !sig.generics.is_empty() {
                 write!(f, "<")?;
 
-                for (idx, &generic) in info.generics.iter().enumerate() {
+                for (idx, &generic) in sig.generics.iter().enumerate() {
                     if idx > 0 {
                         write!(f, ", ")?;
                     }
@@ -301,7 +303,7 @@ impl Sema<'_> {
 
             write!(f, "(")?;
 
-            for (idx, &param_ty_id) in info.params.iter().enumerate() {
+            for (idx, &param_ty_id) in sig.params.iter().enumerate() {
                 if idx > 0 {
                     write!(f, ", ")?;
                 }
@@ -309,7 +311,11 @@ impl Sema<'_> {
                 write!(f, "{}", self.format_ty(param_ty_id))?;
             }
 
-            write!(f, "): {}", self.format_ty(info.ret))?;
+            write!(f, ")")?;
+
+            if let Some(ret) = sig.ret {
+                write!(f, ": {}", self.format_ty(ret))?;
+            }
 
             Ok(())
         })
@@ -337,6 +343,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.init_builtin_tys();
         self.early_tyck_decls();
         self.tyck_decls();
+        self.tyck_decl_bodies();
 
         self.result
     }
@@ -435,7 +442,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             }));
             self.sema
                 .tyck
-                .ctor_variances
+                .param_variances
                 .insert(def_id, ctor.variance().into());
 
             *prelude(&mut self.sema.tyck.builtin) = ty_id;
@@ -453,7 +460,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             self.sema.name_res.defs[*def_id].kind = ctor.clone().into();
             self.sema
                 .tyck
-                .ctor_variances
+                .param_variances
                 .insert(*def_id, ctor.variance().into());
         }
     }
@@ -547,8 +554,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.constrs.repr(ty_id)
     }
 
-    fn fn_info(&self, def_id: DefId) -> &FnTyInfo {
-        &self.sema.tyck.fns[def_id]
+    fn fn_sig(&self, def_id: DefId) -> &FnSig {
+        &self.sema.tyck.sigs[def_id]
     }
 
     fn check_ty_arg_arity(&mut self, loc: &Loc, expected: usize, actual: usize) {
@@ -643,7 +650,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 }
 
-// The early type-checking phase: initialize signatures of globally visible entities.
+// The early type-checking phase: initializes type constructors to allow type-checking type
+// expressions.
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn early_tyck_decls(&mut self) {
         for file in self.sema.libsl.files.values() {
@@ -687,7 +695,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn early_tyck_decl_struct(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclStruct) {
         let def_id = self.sema.name_res.decl_defs[decl.id];
-        self.register_ty_ctor(def_id, |def: &DefStruct| &def.generics, &d.ty_name.generics);
+        self.register_parametrized_entity(
+            def_id,
+            |def: &DefStruct| &def.generics,
+            &d.ty_name.generics,
+        );
 
         for &decl_id in &d.decls {
             self.early_tyck_decl(decl_id);
@@ -696,8 +708,144 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn early_tyck_decl_enum(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclEnum) {
         let def_id = self.sema.name_res.decl_defs[decl.id];
-        self.register_ty_ctor(def_id, |def: &DefEnum| &def.generics, &d.ty_name.generics);
+        self.register_parametrized_entity(
+            def_id,
+            |def: &DefEnum| &def.generics,
+            &d.ty_name.generics,
+        );
+    }
 
+    fn early_tyck_decl_annotation(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAnnotation) {
+        // do nothing.
+    }
+
+    fn early_tyck_decl_action(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAction) {
+        let def_id = self.sema.name_res.decl_defs[decl.id];
+        self.register_parametrized_entity(def_id, |def: &DefAction| &def.generics, &d.generics);
+    }
+
+    fn early_tyck_decl_automaton(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAutomaton) {
+        let def_id = self.sema.name_res.decl_defs[decl.id];
+        self.register_parametrized_entity(
+            def_id,
+            |def: &DefAutomaton| &def.generics,
+            &d.name.generics,
+        );
+
+        for &decl_id in iter::chain(&d.constructor_variables, &d.decls) {
+            self.early_tyck_decl(decl_id);
+        }
+    }
+
+    fn early_tyck_decl_function(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclFunction) {
+        todo!()
+    }
+
+    fn early_tyck_decl_variable(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclVariable) {
+        todo!()
+    }
+
+    fn early_tyck_decl_state(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclState) {
+        todo!()
+    }
+
+    fn early_tyck_decl_shift(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclShift) {
+        todo!()
+    }
+
+    fn early_tyck_decl_constructor(
+        &mut self,
+        decl: &'ast ast::Decl,
+        d: &'ast ast::DeclConstructor,
+    ) {
+        todo!()
+    }
+
+    fn early_tyck_decl_destructor(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclDestructor) {
+        todo!()
+    }
+
+    fn early_tyck_decl_proc(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclProc) {
+        todo!()
+    }
+
+    fn register_parametrized_entity<T: DefKindProject>(
+        &mut self,
+        def_id: DefId,
+        generics: impl FnOnce(&T) -> &[DefId],
+        generic_decls: &[ast::Generic],
+    ) {
+        let def: &T = self.sema.name_res.def(def_id);
+        let generics = generics(def);
+
+        debug_assert_eq!(generics.len(), generic_decls.len());
+
+        for &generic in generics {
+            let ty_id = self.sema.tyck.make_param_for(&self.sema.name_res, generic);
+            self.sema.tyck.def_tys.insert(generic, ty_id);
+        }
+
+        self.sema.tyck.param_variances.insert(
+            def_id,
+            generic_decls
+                .iter()
+                .map(|generic| generic.variance.clone().unwrap_or(Variance::Invariant))
+                .collect(),
+        );
+    }
+}
+
+// The declaration type-checking phase: assigns types to globally visible entities, such as
+// variables and functions.
+impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
+    fn tyck_decls(&mut self) {
+        for file in self.sema.libsl.files.values() {
+            for &decl_id in &file.decls {
+                self.tyck_decl(decl_id);
+            }
+        }
+    }
+
+    fn tyck_decl(&mut self, decl_id: DeclId) {
+        let decl = &self.sema.libsl.decls[decl_id];
+
+        match &decl.kind {
+            ast::DeclKind::Dummy => unreachable!(),
+            ast::DeclKind::Import(_) => {}
+            ast::DeclKind::Include(_) => {}
+            ast::DeclKind::SemanticTy(d) => self.tyck_decl_semantic_ty(decl, d),
+            ast::DeclKind::TyAlias(d) => self.tyck_decl_ty_alias(decl, d),
+            ast::DeclKind::Struct(d) => self.tyck_decl_struct(decl, d),
+            ast::DeclKind::Enum(d) => self.tyck_decl_enum(decl, d),
+            ast::DeclKind::Annotation(d) => self.tyck_decl_annotation(decl, d),
+            ast::DeclKind::Action(d) => self.tyck_decl_action(decl, d),
+            ast::DeclKind::Automaton(d) => self.tyck_decl_automaton(decl, d),
+            ast::DeclKind::Function(d) => self.tyck_decl_function(decl, d),
+            ast::DeclKind::Variable(d) => self.tyck_decl_variable(decl, d),
+            ast::DeclKind::State(d) => self.tyck_decl_state(decl, d),
+            ast::DeclKind::Shift(d) => self.tyck_decl_shift(decl, d),
+            ast::DeclKind::Constructor(d) => self.tyck_decl_constructor(decl, d),
+            ast::DeclKind::Destructor(d) => self.tyck_decl_destructor(decl, d),
+            ast::DeclKind::Proc(d) => self.tyck_decl_proc(decl, d),
+        }
+    }
+
+    fn tyck_decl_semantic_ty(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclSemanticTy) {
+        unimplemented!()
+    }
+
+    fn tyck_decl_ty_alias(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclTyAlias) {
+        unimplemented!()
+    }
+
+    fn tyck_decl_struct(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclStruct) {
+        for &decl_id in &d.decls {
+            self.tyck_decl(decl_id);
+        }
+    }
+
+    fn tyck_decl_enum(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclEnum) {
+        let def_id = self.sema.name_res.decl_defs[decl.id];
         let mut common_ty: Option<(IntCtor, &ast::EnumVariant)> = None;
         let mut error_reported = false;
 
@@ -734,115 +882,103 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             |(ctor, _)| self.int_ctor_ty(&ctor),
         );
 
-        self.sema.tyck.underlying_enum_tys.insert(def_id, common_ty);
+        self.sema.tyck.underlying_tys.insert(def_id, common_ty);
 
         for &variant in &self.sema.name_res.def::<DefEnum>(def_id).variants {
             self.sema.tyck.def_tys.insert(variant, common_ty);
         }
     }
 
-    fn early_tyck_decl_annotation(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAnnotation) {
-        todo!()
-    }
+    fn tyck_decl_annotation(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAnnotation) {
+        let def_id = self.sema.name_res.decl_defs[decl.id];
 
-    fn early_tyck_decl_action(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAction) {
-        todo!()
-    }
-
-    fn early_tyck_decl_automaton(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAutomaton) {
-        todo!()
-    }
-
-    fn early_tyck_decl_function(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclFunction) {
-        todo!()
-    }
-
-    fn early_tyck_decl_variable(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclVariable) {
-        todo!()
-    }
-
-    fn early_tyck_decl_state(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclState) {
-        todo!()
-    }
-
-    fn early_tyck_decl_shift(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclShift) {
-        todo!()
-    }
-
-    fn early_tyck_decl_constructor(
-        &mut self,
-        decl: &'ast ast::Decl,
-        d: &'ast ast::DeclConstructor,
-    ) {
-        todo!()
-    }
-
-    fn early_tyck_decl_destructor(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclDestructor) {
-        todo!()
-    }
-
-    fn early_tyck_decl_proc(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclProc) {
-        todo!()
-    }
-
-    fn register_ty_ctor<T: DefKindProject>(
-        &mut self,
-        def_id: DefId,
-        generics: impl FnOnce(&T) -> &[DefId],
-        generic_decls: &[ast::Generic],
-    ) {
-        let def: &T = self.sema.name_res.def(def_id);
-        let generics = generics(def);
-
-        debug_assert_eq!(generics.len(), generic_decls.len());
-
-        for &generic in generics {
-            let ty_id = self.sema.tyck.make_param_for(&self.sema.name_res, generic);
-            self.sema.tyck.def_tys.insert(generic, ty_id);
-        }
-
-        self.sema.tyck.ctor_variances.insert(
+        self.tyck_params(
             def_id,
-            generic_decls
-                .iter()
-                .map(|generic| generic.variance.clone().unwrap_or(Variance::Invariant))
-                .collect(),
+            d.params.iter().map(|param| param.ty_expr),
+            |def: &DefAnnotation| &def.params,
+        );
+
+        self.register_fn_sig::<DefAnnotation>(def_id, None, |_| &[], |def| &def.params, None);
+    }
+
+    fn tyck_decl_action(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAction) {
+        let def_id = self.sema.name_res.decl_defs[decl.id];
+
+        self.tyck_params(
+            def_id,
+            d.params.iter().map(|param| param.ty_expr),
+            |def: &DefAction| &def.params,
+        );
+
+        let ret = self.tyck_ret_ty_expr(d.ret_ty_expr);
+        self.register_fn_sig::<DefAction>(
+            def_id,
+            None,
+            |def| &def.generics,
+            |def| &def.params,
+            Some(ret),
         );
     }
-}
 
-// The main type-checking phase.
-impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
-    fn tyck_decls(&mut self) {
-        for file in self.sema.libsl.files.values() {
-            for &decl_id in &file.decls {
-                self.tyck_decl(decl_id);
-            }
+    fn tyck_decl_automaton(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAutomaton) {
+        let def_id = self.sema.name_res.decl_defs[decl.id];
+
+        for &decl_id in &d.constructor_variables {
+            self.tyck_decl(decl_id);
+        }
+
+        let underlying = self.tyck_ty_expr(d.ty_expr);
+        self.sema.tyck.underlying_tys.insert(def_id, underlying);
+
+        let def = self.sema.name_res.def::<DefAutomaton>(def_id);
+        let ty_params = def
+            .generics
+            .iter()
+            .map(|&def_id| self.sema.tyck.def_tys[def_id])
+            .collect::<Vec<_>>();
+        let ty_id = self.sema.tyck.add_ctor_ty(def_id, ty_params.clone());
+
+        self.sema.tyck.sigs.insert(
+            def_id,
+            FnSig {
+                recv: None,
+                generics: ty_params,
+                params: vec![underlying],
+                ret: Some(ty_id),
+            },
+        );
+
+        for &decl_id in &d.decls {
+            self.tyck_decl(decl_id);
         }
     }
 
-    fn tyck_decl(&mut self, decl_id: DeclId) {
-        let decl = &self.sema.libsl.decls[decl_id];
+    fn tyck_decl_function(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclFunction) {
+        todo!()
+    }
 
-        match &decl.kind {
-            ast::DeclKind::Dummy => unreachable!(),
-            ast::DeclKind::Import(_) => {}
-            ast::DeclKind::Include(_) => {}
-            ast::DeclKind::SemanticTy(d) => self.tyck_decl_semantic_ty(decl, d),
-            ast::DeclKind::TyAlias(d) => self.tyck_decl_ty_alias(decl, d),
-            ast::DeclKind::Struct(d) => self.tyck_decl_struct(decl, d),
-            ast::DeclKind::Enum(d) => self.tyck_decl_enum(decl, d),
-            ast::DeclKind::Annotation(d) => self.tyck_decl_annotation(decl, d),
-            ast::DeclKind::Action(d) => self.tyck_decl_action(decl, d),
-            ast::DeclKind::Automaton(d) => self.tyck_decl_automaton(decl, d),
-            ast::DeclKind::Function(d) => self.tyck_decl_function(decl, d),
-            ast::DeclKind::Variable(d) => self.tyck_decl_variable(decl, d),
-            ast::DeclKind::State(d) => self.tyck_decl_state(decl, d),
-            ast::DeclKind::Shift(d) => self.tyck_decl_shift(decl, d),
-            ast::DeclKind::Constructor(d) => self.tyck_decl_constructor(decl, d),
-            ast::DeclKind::Destructor(d) => self.tyck_decl_destructor(decl, d),
-            ast::DeclKind::Proc(d) => self.tyck_decl_proc(decl, d),
-        }
+    fn tyck_decl_variable(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclVariable) {
+        todo!()
+    }
+
+    fn tyck_decl_state(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclState) {
+        todo!()
+    }
+
+    fn tyck_decl_shift(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclShift) {
+        todo!()
+    }
+
+    fn tyck_decl_constructor(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclConstructor) {
+        todo!()
+    }
+
+    fn tyck_decl_destructor(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclDestructor) {
+        todo!()
+    }
+
+    fn tyck_decl_proc(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclProc) {
+        todo!()
     }
 
     fn tyck_ty_expr(&mut self, ty_expr_id: TyExprId) -> TyId {
@@ -850,6 +986,97 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         todo!();
 
         self.sema.tyck.ty_exprs[ty_expr_id]
+    }
+
+    fn tyck_ret_ty_expr(&mut self, ret_ty_expr: Option<TyExprId>) -> TyId {
+        match ret_ty_expr {
+            Some(ty_expr_id) => self.tyck_ty_expr(ty_expr_id),
+            None => self.sema.tyck.builtin.void,
+        }
+    }
+
+    fn tyck_params<T: DefKindProject>(
+        &mut self,
+        def_id: DefId,
+        param_ty_exprs: impl Iterator<Item = TyExprId>,
+        param_defs: impl FnOnce(&T) -> &[DefId],
+    ) {
+        let param_tys = param_ty_exprs
+            .map(|ty_expr_id| self.tyck_ty_expr(ty_expr_id))
+            .collect::<Vec<_>>();
+
+        let def: &T = self.sema.name_res.def(def_id);
+
+        for (&param_def_id, ty_id) in iter::zip(param_defs(def), param_tys) {
+            self.sema.tyck.def_tys.insert(param_def_id, ty_id);
+        }
+    }
+
+    fn register_fn_sig<T: DefKindProject>(
+        &mut self,
+        def_id: DefId,
+        recv: Option<DefId>,
+        generics: impl FnOnce(&T) -> &[DefId],
+        params: impl FnOnce(&T) -> &[DefId],
+        ret: Option<TyId>,
+    ) {
+        let def = self.sema.name_res.def(def_id);
+        let generics = generics(def);
+        let params = params(def);
+
+        let generics = generics
+            .iter()
+            .map(|&generic| self.sema.tyck.def_tys[generic])
+            .collect();
+        let params = params
+            .iter()
+            .map(|&param| self.sema.tyck.def_tys[param])
+            .collect();
+
+        self.sema.tyck.sigs.insert(
+            def_id,
+            FnSig {
+                recv,
+                generics,
+                params,
+                ret,
+            },
+        );
+    }
+}
+
+// The main type-checking phase.
+impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
+    fn tyck_decl_bodies(&mut self) {
+        for file in self.sema.libsl.files.values() {
+            for &decl_id in &file.decls {
+                self.tyck_decl_body(decl_id);
+            }
+        }
+    }
+
+    fn tyck_decl_body(&mut self, decl_id: DeclId) {
+        let decl = &self.sema.libsl.decls[decl_id];
+
+        match &decl.kind {
+            ast::DeclKind::Dummy => unreachable!(),
+            ast::DeclKind::Import(_) => {}
+            ast::DeclKind::Include(_) => {}
+            ast::DeclKind::SemanticTy(d) => self.tyck_decl_semantic_ty_body(decl, d),
+            ast::DeclKind::TyAlias(d) => self.tyck_decl_ty_alias_body(decl, d),
+            ast::DeclKind::Struct(d) => self.tyck_decl_struct_body(decl, d),
+            ast::DeclKind::Enum(d) => self.tyck_decl_enum_body(decl, d),
+            ast::DeclKind::Annotation(d) => self.tyck_decl_annotation_body(decl, d),
+            ast::DeclKind::Action(d) => self.tyck_decl_action_body(decl, d),
+            ast::DeclKind::Automaton(d) => self.tyck_decl_automaton_body(decl, d),
+            ast::DeclKind::Function(d) => self.tyck_decl_function_body(decl, d),
+            ast::DeclKind::Variable(d) => self.tyck_decl_variable_body(decl, d),
+            ast::DeclKind::State(d) => self.tyck_decl_state_body(decl, d),
+            ast::DeclKind::Shift(d) => self.tyck_decl_shift_body(decl, d),
+            ast::DeclKind::Constructor(d) => self.tyck_decl_constructor_body(decl, d),
+            ast::DeclKind::Destructor(d) => self.tyck_decl_destructor_body(decl, d),
+            ast::DeclKind::Proc(d) => self.tyck_decl_proc_body(decl, d),
+        }
     }
 
     fn tyck_expr(&mut self, expr_id: ExprId, expected: Option<TyId>) -> TyId {
@@ -909,7 +1136,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         expected: Option<TyId>,
         op: O,
         args: &[TyId],
-        mut candidates: Vec<OpFnInfoProvider<O>>,
+        mut candidates: Vec<OpFnSigProvider<O>>,
     ) {
         candidates
             .retain(|candidate| self.is_function_applicable(candidate, &Receiver::None, args, &[]));
@@ -925,15 +1152,15 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             return;
         };
 
-        let info = overload.fn_info();
-        let ty_param_map = self.make_fresh_vars_for_ty_params(&info.generics);
+        let sig = overload.fn_sig();
+        let ty_param_map = self.make_fresh_vars_for_ty_params(&sig.generics);
 
-        for (&param, &arg) in iter::zip(&info.params, args) {
+        for (&param, &arg) in iter::zip(&sig.params, args) {
             let param = self.sema.tyck.subst(param, &ty_param_map);
             self.constr_coerce(arg, param, ConstrProvenance::Expr(expr.id));
         }
 
-        let ret = self.sema.tyck.subst(info.ret, &ty_param_map);
+        let ret = self.sema.tyck.subst(sig.ret.unwrap(), &ty_param_map);
         let ty_id = self.check_ty(&expr.loc, expected, ret);
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
@@ -971,59 +1198,59 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 }
 
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
-    fn tyck_decl_semantic_ty(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclSemanticTy) {
+    fn tyck_decl_semantic_ty_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclSemanticTy) {
         todo!()
     }
 
-    fn tyck_decl_ty_alias(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclTyAlias) {
+    fn tyck_decl_ty_alias_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclTyAlias) {
         todo!()
     }
 
-    fn tyck_decl_struct(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclStruct) {
+    fn tyck_decl_struct_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclStruct) {
         todo!()
     }
 
-    fn tyck_decl_enum(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclEnum) {
+    fn tyck_decl_enum_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclEnum) {
         todo!()
     }
 
-    fn tyck_decl_annotation(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAnnotation) {
+    fn tyck_decl_annotation_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAnnotation) {
         todo!()
     }
 
-    fn tyck_decl_action(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAction) {
+    fn tyck_decl_action_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAction) {
         todo!()
     }
 
-    fn tyck_decl_automaton(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAutomaton) {
+    fn tyck_decl_automaton_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAutomaton) {
         todo!()
     }
 
-    fn tyck_decl_function(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclFunction) {
+    fn tyck_decl_function_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclFunction) {
         todo!()
     }
 
-    fn tyck_decl_variable(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclVariable) {
+    fn tyck_decl_variable_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclVariable) {
         todo!()
     }
 
-    fn tyck_decl_state(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclState) {
+    fn tyck_decl_state_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclState) {
         todo!()
     }
 
-    fn tyck_decl_shift(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclShift) {
+    fn tyck_decl_shift_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclShift) {
         todo!()
     }
 
-    fn tyck_decl_constructor(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclConstructor) {
+    fn tyck_decl_constructor_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclConstructor) {
         todo!()
     }
 
-    fn tyck_decl_destructor(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclDestructor) {
+    fn tyck_decl_destructor_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclDestructor) {
         todo!()
     }
 
-    fn tyck_decl_proc(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclProc) {
+    fn tyck_decl_proc_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclProc) {
         todo!()
     }
 }
@@ -1135,31 +1362,27 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             return;
         };
 
-        self.check_ty_arg_arity(
-            &expr.loc,
-            ty_args.len(),
-            self.fn_info(def_id).generics.len(),
-        );
-        self.check_arg_arity(&expr.loc, args.len(), self.fn_info(def_id).params.len());
+        self.check_ty_arg_arity(&expr.loc, ty_args.len(), self.fn_sig(def_id).generics.len());
+        self.check_arg_arity(&expr.loc, args.len(), self.fn_sig(def_id).params.len());
 
-        let info = self.fn_info(def_id).clone();
-        let ty_param_map = self.make_fresh_vars_for_ty_params(&info.generics);
+        let sig = self.fn_sig(def_id).clone();
+        let ty_param_map = self.make_fresh_vars_for_ty_params(&sig.generics);
 
-        for (&param, &arg) in iter::zip(&info.generics, &ty_args) {
+        for (&param, &arg) in iter::zip(&sig.generics, &ty_args) {
             self.constr_eq(arg, ty_param_map[param], ConstrProvenance::Expr(expr.id));
         }
 
-        match info.recv {
+        match sig.recv {
             Some(_) => todo!(),
             None => {}
         }
 
-        for (&param, &arg) in iter::zip(&info.params, &args) {
+        for (&param, &arg) in iter::zip(&sig.params, &args) {
             let param = self.sema.tyck.subst(param, &ty_param_map);
             self.constr_coerce(arg, param, ConstrProvenance::Expr(expr.id));
         }
 
-        let ret = self.sema.tyck.subst(info.ret, &ty_param_map);
+        let ret = self.sema.tyck.subst(sig.ret.unwrap(), &ty_param_map);
         let ty_id = self.check_ty(&expr.loc, expected, ret);
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
@@ -1188,26 +1411,22 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         let def_id = self.sema.name_res.expr_action_calls[expr.id];
 
-        self.check_ty_arg_arity(
-            &expr.loc,
-            ty_args.len(),
-            self.fn_info(def_id).generics.len(),
-        );
-        self.check_arg_arity(&expr.loc, args.len(), self.fn_info(def_id).params.len());
+        self.check_ty_arg_arity(&expr.loc, ty_args.len(), self.fn_sig(def_id).generics.len());
+        self.check_arg_arity(&expr.loc, args.len(), self.fn_sig(def_id).params.len());
 
-        let info = self.fn_info(def_id).clone();
-        let ty_param_map = self.make_fresh_vars_for_ty_params(&info.generics);
+        let sig = self.fn_sig(def_id).clone();
+        let ty_param_map = self.make_fresh_vars_for_ty_params(&sig.generics);
 
-        for (&param, &arg) in iter::zip(&info.generics, &ty_args) {
+        for (&param, &arg) in iter::zip(&sig.generics, &ty_args) {
             self.constr_eq(arg, ty_param_map[param], ConstrProvenance::Expr(expr.id));
         }
 
-        for (&param, &arg) in iter::zip(&info.params, &args) {
+        for (&param, &arg) in iter::zip(&sig.params, &args) {
             let param = self.sema.tyck.subst(param, &ty_param_map);
             self.constr_coerce(arg, param, ConstrProvenance::Expr(expr.id));
         }
 
-        let ret = self.sema.tyck.subst(info.ret, &ty_param_map);
+        let ret = self.sema.tyck.subst(sig.ret.unwrap(), &ty_param_map);
         let ty_id = self.check_ty(&expr.loc, expected, ret);
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
@@ -1382,10 +1601,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         let ty_args = generics.iter().map(|ty_arg| self.repr(*ty_arg)).collect();
 
-        let ty_id = self.sema.tyck.add_ty(Ty::Ctor(ConstructedTy {
-            ctor: automaton_def_id,
-            args: ty_args,
-        }));
+        let ty_id = self.sema.tyck.add_ctor_ty(automaton_def_id, ty_args);
+        let ty_id = self.check_ty(&expr.loc, expected, ty_id);
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 

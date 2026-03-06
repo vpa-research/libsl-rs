@@ -618,7 +618,7 @@ pub struct DeclAutomaton {
     /// Type parameter constraints, specified in a `where`-clause.
     pub ty_constraints: Vec<TyConstraint>,
 
-    /// Entities defines as members of this automaton.
+    /// Entities defined as members of this automaton.
     pub decls: Vec<DeclId>,
 }
 

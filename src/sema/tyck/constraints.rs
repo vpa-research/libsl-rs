@@ -452,7 +452,7 @@ impl ConstrSet {
 
                 // the two types have the same type constructor. this is now a question of variance.
                 let ctor = l.ctor;
-                let variances = sema.tyck.ctor_variances[ctor].clone();
+                let variances = sema.tyck.param_variances[ctor].clone();
 
                 for (variance, (l_arg, r_arg)) in
                     iter::zip(variances, iter::zip(l.args.clone(), r.args.clone()))

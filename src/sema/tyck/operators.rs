@@ -6,8 +6,8 @@ use crate::loc::Loc;
 use crate::sema::Sema;
 use crate::sema::ty::{ConstructedTy, IntCtor, Ty, TyId};
 use crate::sema::tyck::constraints::ConstrProvenance;
-use crate::sema::tyck::overload::{FnInfoProvider, OverloadDiagProvider};
-use crate::sema::tyck::{BuiltinTys, FnTyInfo, Pass};
+use crate::sema::tyck::overload::{FnSigProvider, OverloadDiagProvider};
+use crate::sema::tyck::{BuiltinTys, FnSig, Pass};
 
 #[derive(Debug, Clone)]
 pub enum OpOverload {
@@ -69,21 +69,21 @@ impl Op for ast::BinOp {
     }
 }
 
-pub struct OpFnInfoProvider<O> {
+pub struct OpFnSigProvider<O> {
     op: O,
-    info: FnTyInfo,
+    sig: FnSig,
     pub overload: OpOverload,
 }
 
-impl<O: Op> OpFnInfoProvider<O> {
+impl<O: Op> OpFnSigProvider<O> {
     fn concrete(op: O, overload: OpOverload, params: Vec<TyId>, result: TyId) -> Self {
         Self {
             op,
-            info: FnTyInfo {
+            sig: FnSig {
                 recv: None,
                 generics: vec![],
                 params,
-                ret: result,
+                ret: Some(result),
             },
             overload,
         }
@@ -101,24 +101,24 @@ impl<O: Op> OpFnInfoProvider<O> {
 
         Self {
             op,
-            info: FnTyInfo {
+            sig: FnSig {
                 recv: None,
                 generics: generics.to_vec(),
                 params,
-                ret,
+                ret: Some(ret),
             },
             overload,
         }
     }
 
-    pub fn fn_info(&self) -> &FnTyInfo {
-        &self.info
+    pub fn fn_sig(&self) -> &FnSig {
+        &self.sig
     }
 }
 
-impl<O: Op> FnInfoProvider for OpFnInfoProvider<O> {
-    fn fn_info<'a>(&'a self, sema: &'a Sema<'_>) -> &'a FnTyInfo {
-        &self.info
+impl<O: Op> FnSigProvider for OpFnSigProvider<O> {
+    fn fn_sig<'a>(&'a self, sema: &'a Sema<'_>) -> &'a FnSig {
+        &self.sig
     }
 
     fn applicability_constr_provenance(&self) -> ConstrProvenance {
@@ -126,8 +126,8 @@ impl<O: Op> FnInfoProvider for OpFnInfoProvider<O> {
     }
 }
 
-pub type UnOpFnInfoProvider = OpFnInfoProvider<ast::UnOp>;
-pub type BinOpFnInfoProvider = OpFnInfoProvider<ast::BinOp>;
+pub type UnOpFnSigProvider = OpFnSigProvider<ast::UnOp>;
+pub type BinOpFnSigProvider = OpFnSigProvider<ast::BinOp>;
 
 pub struct OpOverloadDiagProvider<'a, O> {
     op: O,
@@ -140,7 +140,7 @@ impl<'a, O: Op> OpOverloadDiagProvider<'a, O> {
     }
 }
 
-impl<O: Op> OverloadDiagProvider<OpFnInfoProvider<O>> for OpOverloadDiagProvider<'_, O> {
+impl<O: Op> OverloadDiagProvider<OpFnSigProvider<O>> for OpOverloadDiagProvider<'_, O> {
     fn empty_candidate_set(&self, sema: &Sema<'_>) -> Diag {
         Diag::err()
             .at(self.loc.clone())
@@ -149,13 +149,13 @@ impl<O: Op> OverloadDiagProvider<OpFnInfoProvider<O>> for OpOverloadDiagProvider
             .build()
     }
 
-    fn ambiguity(&self, sema: &Sema<'_>, ambiguities: &[&OpFnInfoProvider<O>]) -> Diag {
+    fn ambiguity(&self, sema: &Sema<'_>, ambiguities: &[&OpFnSigProvider<O>]) -> Diag {
         let mut possible_candidates = "the following candidates are possible:".to_owned();
 
         for &candidate in ambiguities {
             let _ = write!(possible_candidates, "\n  - ");
 
-            for (idx, &ty_id) in candidate.info.params.iter().enumerate() {
+            for (idx, &ty_id) in candidate.sig.params.iter().enumerate() {
                 if idx > 0 && !(idx == 1 && O::ARITY == 2) {
                     let _ = write!(possible_candidates, ", ");
                 }
@@ -185,11 +185,11 @@ fn arith<O: Op + Clone>(
     op: O,
     builtin: &BuiltinTys,
     overload: impl Fn(IntCtor) -> OpOverload,
-) -> Vec<OpFnInfoProvider<O>> {
+) -> Vec<OpFnSigProvider<O>> {
     builtin
         .int_tys()
         .into_iter()
-        .map(|(ctor, ty)| OpFnInfoProvider::concrete(op.clone(), overload(ctor), vec![ty, ty], ty))
+        .map(|(ctor, ty)| OpFnSigProvider::concrete(op.clone(), overload(ctor), vec![ty, ty], ty))
         .collect()
 }
 
@@ -197,19 +197,19 @@ fn cmp<O: Op + Clone>(
     op: O,
     builtin: &BuiltinTys,
     overload: impl Fn(IntCtor) -> OpOverload,
-) -> Vec<OpFnInfoProvider<O>> {
+) -> Vec<OpFnSigProvider<O>> {
     builtin
         .int_tys()
         .into_iter()
         .map(|(ctor, ty)| {
-            OpFnInfoProvider::concrete(op.clone(), overload(ctor), vec![ty, ty], builtin.bool)
+            OpFnSigProvider::concrete(op.clone(), overload(ctor), vec![ty, ty], builtin.bool)
         })
         .collect()
 }
 
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
-    pub(super) fn overloads_for_unary(&mut self, op: ast::UnOp) -> Vec<UnOpFnInfoProvider> {
-        type P = UnOpFnInfoProvider;
+    pub(super) fn overloads_for_unary(&mut self, op: ast::UnOp) -> Vec<UnOpFnSigProvider> {
+        type P = UnOpFnSigProvider;
 
         let b = &self.sema.tyck.builtin;
 
@@ -221,8 +221,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    pub(super) fn overloads_for_binary(&mut self, op: ast::BinOp) -> Vec<BinOpFnInfoProvider> {
-        type P = BinOpFnInfoProvider;
+    pub(super) fn overloads_for_binary(&mut self, op: ast::BinOp) -> Vec<BinOpFnSigProvider> {
+        type P = BinOpFnSigProvider;
 
         let b @ &BuiltinTys { bool, string, .. } = &self.sema.tyck.builtin;
 

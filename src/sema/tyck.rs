@@ -241,6 +241,10 @@ impl Sema<'_> {
 
                 &Ty::Param(n) => write!(f, "{}", self.tyck.ty_params[n].name),
 
+                Ty::Ctor(t) if t.ctor == self.name_res.prelude_defs.pointer => {
+                    write!(f, "*({})", self.format_ty(t.args[0]))
+                }
+
                 Ty::Ctor(t) => {
                     write!(f, "{}", self.name_res.defs[t.ctor].name)?;
 
@@ -457,6 +461,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         let ctors = &[
             (self.sema.name_res.prelude_defs.array, BuiltinTyCtor::Array),
             (self.sema.name_res.prelude_defs.set, BuiltinTyCtor::Set),
+            (
+                self.sema.name_res.prelude_defs.pointer,
+                BuiltinTyCtor::Pointer,
+            ),
         ];
 
         for (def_id, ctor) in ctors {
@@ -1133,7 +1141,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_ty_expr_pointer(&mut self, ty_expr: &'ast ast::TyExpr, t: &'ast ast::TyExprPointer) {
-        todo!()
+        let base = self.tyck_ty_expr(t.base);
+        let ty_id = self
+            .sema
+            .tyck
+            .add_ctor_ty(self.sema.name_res.prelude_defs.pointer, vec![base]);
+        self.sema.tyck.ty_exprs.insert(ty_expr.id, ty_id);
     }
 
     fn tyck_ty_expr_intersection(

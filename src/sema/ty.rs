@@ -159,6 +159,7 @@ pub enum BuiltinTyCtor {
     Float(FloatCtor),
     Array,
     Set,
+    Pointer,
     Void,
 }
 
@@ -174,6 +175,7 @@ impl BuiltinTyCtor {
             Self::Float(_) => &[],
             Self::Array => &[Variance::Invariant],
             Self::Set => &[Variance::Covariant],
+            Self::Pointer => &[Variance::Invariant],
             Self::Void => &[],
         }
     }

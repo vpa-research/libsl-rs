@@ -10,7 +10,8 @@ use crate::ast::Variance;
 use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
 use crate::sema::def::{
-    DefAction, DefAnnotation, DefAutomaton, DefFunction, DefId, DefTyVariable, FunctionKind,
+    DefAction, DefAnnotation, DefAutomaton, DefFunction, DefId, DefKind, DefTyVariable,
+    FunctionKind,
 };
 use crate::sema::ty::{BuiltinTyCtor, ConstructedTy, FloatCtor, IntCtor, IntWidth, Ty, TyId};
 use crate::sema::tyck::constraints::{ConstrProvenance, ConstrSet, VarProvenance};
@@ -560,7 +561,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         &self.sema.tyck.sigs[def_id]
     }
 
-    fn check_ty_arg_arity(&mut self, loc: &Loc, expected: usize, actual: usize) {
+    fn check_ty_arg_arity(&mut self, loc: &Loc, expected: usize, actual: usize) -> bool {
         if expected > actual {
             self.result = Err(());
             self.diag.emit(
@@ -572,6 +573,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     .with_label(Label::primary(loc.clone()))
                     .build(),
             );
+
+            false
+        } else {
+            true
         }
     }
 
@@ -1009,9 +1014,138 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn tyck_ty_expr(&mut self, ty_expr_id: TyExprId) -> TyId {
         let ty_expr = &self.sema.libsl.ty_exprs[ty_expr_id];
-        todo!();
+
+        match &ty_expr.kind {
+            ast::TyExprKind::Dummy => unreachable!(),
+            ast::TyExprKind::PrimitiveLit(t) => self.tyck_ty_expr_primitive_lit(ty_expr, t),
+            ast::TyExprKind::Name(t) => self.tyck_ty_expr_name(ty_expr, t),
+            ast::TyExprKind::Pointer(t) => self.tyck_ty_expr_pointer(ty_expr, t),
+            ast::TyExprKind::Intersection(t) => self.tyck_ty_expr_intersection(ty_expr, t),
+            ast::TyExprKind::Union(t) => self.tyck_ty_expr_union(ty_expr, t),
+        }
 
         self.sema.tyck.ty_exprs[ty_expr_id]
+    }
+
+    fn tyck_ty_expr_primitive_lit(
+        &mut self,
+        ty_expr: &'ast ast::TyExpr,
+        t: &'ast ast::TyExprPrimitiveLit,
+    ) {
+        let ty_id = self.lit_ty(&t.lit);
+        self.sema.tyck.ty_exprs.insert(ty_expr.id, ty_id);
+    }
+
+    fn tyck_ty_expr_name(&mut self, ty_expr: &'ast ast::TyExpr, t: &'ast ast::TyExprName) {
+        let ty_args = t
+            .generics
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .map(|arg| self.tyck_ty_arg(arg))
+            .collect::<Vec<_>>();
+
+        let def_id = self.sema.name_res.ty_expr_names[ty_expr.id];
+        let def_id = self.sema.name_res.resolve_import(def_id);
+
+        match &self.sema.name_res.defs[def_id].kind {
+            DefKind::Dummy => unreachable!(),
+            DefKind::Import(_) => unreachable!(),
+            DefKind::BuiltinCtor(_) => {}
+            DefKind::SemanticTy(_) => {}
+            DefKind::SemanticTyEnumValue { .. } => unreachable!(),
+            DefKind::TyAlias(_) => {
+                return self.tyck_ty_expr_name_alias(ty_expr, t, ty_args, def_id);
+            }
+            DefKind::Struct(_) => {}
+            DefKind::Enum(_) => {}
+            DefKind::EnumVariant { .. } => unreachable!(),
+            DefKind::Annotation(_) => unreachable!(),
+            DefKind::Action(_) => unreachable!(),
+            DefKind::Automaton(_) => {}
+            DefKind::Function(_) => unreachable!(),
+            DefKind::Variable(_) => unreachable!(),
+            DefKind::State(_) => unreachable!(),
+            DefKind::TyVariable(_) => {
+                return self.tyck_ty_expr_name_ty_var(ty_expr, t, ty_args, def_id);
+            }
+            DefKind::Param { .. } => unreachable!(),
+            DefKind::Pred(_) => unreachable!(),
+        }
+
+        if !self.check_ty_arg_arity(
+            &ty_expr.loc,
+            self.sema.tyck.param_variances[def_id].len(),
+            ty_args.len(),
+        ) {
+            self.sema
+                .tyck
+                .ty_exprs
+                .insert(ty_expr.id, self.sema.tyck.builtin.error);
+
+            return;
+        }
+
+        // TODO: constraints.
+        let ty_id = self.sema.tyck.add_ctor_ty(def_id, ty_args);
+        self.sema.tyck.ty_exprs.insert(ty_expr.id, ty_id);
+    }
+
+    fn tyck_ty_expr_name_alias(
+        &mut self,
+        ty_expr: &'ast ast::TyExpr,
+        t: &'ast ast::TyExprName,
+        ty_args: Vec<TyId>,
+        def_id: DefId,
+    ) {
+        unimplemented!()
+    }
+
+    fn tyck_ty_expr_name_ty_var(
+        &mut self,
+        ty_expr: &'ast ast::TyExpr,
+        _t: &'ast ast::TyExprName,
+        ty_args: Vec<TyId>,
+        def_id: DefId,
+    ) {
+        if ty_args.len() != 0 {
+            self.result = Err(());
+            self.diag.emit(
+                Diag::err()
+                    .at(ty_expr.loc.clone())
+                    .with_msg("type parameter cannot have type arguments")
+                    .with_label(
+                        Label::primary(ty_expr.loc.clone()).with_msg("refers to a type parameter"),
+                    )
+                    .build(),
+            );
+
+            self.sema
+                .tyck
+                .ty_exprs
+                .insert(ty_expr.id, self.sema.tyck.builtin.error);
+
+            return;
+        }
+
+        let ty_id = self.sema.tyck.def_tys[def_id];
+        self.sema.tyck.ty_exprs.insert(ty_expr.id, ty_id);
+    }
+
+    fn tyck_ty_expr_pointer(&mut self, ty_expr: &'ast ast::TyExpr, t: &'ast ast::TyExprPointer) {
+        todo!()
+    }
+
+    fn tyck_ty_expr_intersection(
+        &mut self,
+        ty_expr: &'ast ast::TyExpr,
+        t: &'ast ast::TyExprIntersection,
+    ) {
+        unimplemented!()
+    }
+
+    fn tyck_ty_expr_union(&mut self, ty_expr: &'ast ast::TyExpr, t: &'ast ast::TyExprUnion) {
+        unimplemented!()
     }
 
     fn tyck_ret_ty_expr(&mut self, ret_ty_expr: Option<TyExprId>) -> TyId {

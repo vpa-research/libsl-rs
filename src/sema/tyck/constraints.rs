@@ -52,7 +52,7 @@ enum VarBound {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SubtypeBoundKind {
+pub enum SubtypeBoundKind {
     Lower,
     Upper,
 }
@@ -443,8 +443,6 @@ impl ConstrSet {
                         _ => {}
                     }
 
-                    // determinine the subtyping relationship between two different user-defined types.
-                    // TODO: is there such in the first place?
                     self.report_constr_violation(sema, diag, constr_id);
 
                     return Err(());
@@ -627,7 +625,7 @@ impl ConstrSet {
         }
     }
 
-    fn incorporate_subtype(
+    fn incorporate_sub(
         &mut self,
         sema: &mut Sema<'_>,
         diag: &mut impl DiagCtx,
@@ -714,7 +712,7 @@ impl ConstrSet {
         ty_id: TyId,
         provenance: VarBoundProvenance,
     ) -> Result {
-        self.incorporate_subtype(sema, diag, idx, ty_id, SubtypeBoundKind::Lower, provenance)
+        self.incorporate_sub(sema, diag, idx, ty_id, SubtypeBoundKind::Lower, provenance)
     }
 
     fn incorporate_upper(
@@ -725,7 +723,7 @@ impl ConstrSet {
         ty_id: TyId,
         provenance: VarBoundProvenance,
     ) -> Result {
-        self.incorporate_subtype(sema, diag, idx, ty_id, SubtypeBoundKind::Upper, provenance)
+        self.incorporate_sub(sema, diag, idx, ty_id, SubtypeBoundKind::Upper, provenance)
     }
 
     fn incorporate_eq(
@@ -796,6 +794,26 @@ impl ConstrSet {
         }
 
         Ok(())
+    }
+
+    pub fn has_var_bound(
+        &self,
+        tyck: &TyCk,
+        idx: usize,
+        kind: SubtypeBoundKind,
+        ty_id: TyId,
+    ) -> bool {
+        let bounds = self.bounds.var(idx).subtype_bounds(kind);
+
+        bounds.keys().any(|bound_ty_id| {
+            let (l, r) = kind.order_subtype(ty_id, bound_ty_id);
+
+            tyck.is_subty(l, r, Some(self))
+        })
+    }
+
+    pub fn solve_all(&mut self, sema: &mut Sema<'_>, diag: &mut impl DiagCtx) {
+        todo!()
     }
 }
 
@@ -931,6 +949,7 @@ pub struct VarConstr {
     pub eq: Option<(TyId, VarBoundProvenance)>,
 
     /// Indices of variables whose bounds mention this variable.
+    // TODO
     used_by: BitSet,
 
     unprocessed: Vec<(VarBound, VarBoundProvenance)>,

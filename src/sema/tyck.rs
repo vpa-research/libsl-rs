@@ -19,6 +19,8 @@ use crate::sema::tyck::overload::Receiver;
 use crate::sema::{Result, Sema};
 use crate::{AccessId, DeclId, ExprId, PredId, StmtId, TyExprId, ast};
 
+use self::constraints::SubtypeBoundKind;
+
 use super::def::{DefEnum, DefKindProject, DefStruct};
 use super::resolve::NameRes;
 
@@ -221,6 +223,162 @@ impl TyCk {
         self.ty_params.push(self.ty_params[idx].clone());
 
         self.add_ty(Ty::Param(new_idx))
+    }
+
+    pub fn is_subty(&self, lhs_ty_id: TyId, rhs_ty_id: TyId, constrs: Option<&ConstrSet>) -> bool {
+        let lhs_ty_id = constrs.map(|set| set.repr(lhs_ty_id)).unwrap_or(lhs_ty_id);
+        let rhs_ty_id = constrs.map(|set| set.repr(rhs_ty_id)).unwrap_or(rhs_ty_id);
+
+        if lhs_ty_id == rhs_ty_id {
+            return true;
+        }
+
+        match (&self.tys[lhs_ty_id], &self.tys[rhs_ty_id]) {
+            (Ty::Error, _) | (_, Ty::Error) => true,
+
+            (Ty::Var(l), _) => {
+                if let Some(constrs) = constrs {
+                    constrs.has_var_bound(self, *l, SubtypeBoundKind::Upper, rhs_ty_id)
+                } else {
+                    false
+                }
+            }
+
+            (_, Ty::Var(r)) => {
+                if let Some(constrs) = constrs {
+                    constrs.has_var_bound(self, *r, SubtypeBoundKind::Lower, rhs_ty_id)
+                } else {
+                    false
+                }
+            }
+
+            (Ty::Ctor(l), Ty::Ctor(r)) if l.ctor == r.ctor => {
+                let variances = &self.param_variances[l.ctor];
+
+                variances
+                    .iter()
+                    .zip(iter::zip(&l.args, &r.args))
+                    .all(|(variance, (&l, &r))| match variance {
+                        Variance::Covariant => self.is_subty(l, r, constrs),
+                        Variance::Contravariant => self.is_subty(r, l, constrs),
+
+                        Variance::Invariant => {
+                            let l = constrs.map(|set| set.repr(l)).unwrap_or(l);
+                            let r = constrs.map(|set| set.repr(r)).unwrap_or(r);
+
+                            l == r
+                        }
+                    })
+            }
+
+            (Ty::Ctor(_) | Ty::Param(_) | Ty::Null, _) => false,
+        }
+    }
+
+    pub fn lub(
+        &mut self,
+        lhs_ty_id: TyId,
+        rhs_ty_id: TyId,
+        constrs: Option<&ConstrSet>,
+    ) -> Option<TyId> {
+        let lhs_ty_id = constrs.map(|set| set.repr(lhs_ty_id)).unwrap_or(lhs_ty_id);
+        let rhs_ty_id = constrs.map(|set| set.repr(rhs_ty_id)).unwrap_or(rhs_ty_id);
+
+        if lhs_ty_id == rhs_ty_id {
+            return Some(lhs_ty_id);
+        }
+
+        if lhs_ty_id == self.builtin.error || rhs_ty_id == self.builtin.error {
+            return Some(self.builtin.error);
+        }
+
+        if self.is_subty(lhs_ty_id, rhs_ty_id, constrs) {
+            return Some(lhs_ty_id);
+        }
+
+        if self.is_subty(rhs_ty_id, lhs_ty_id, constrs) {
+            return Some(rhs_ty_id);
+        }
+
+        match (&self.tys[lhs_ty_id], &self.tys[rhs_ty_id]) {
+            (Ty::Ctor(l), Ty::Ctor(r)) if l.ctor == r.ctor => {
+                let ctor = l.ctor;
+                let variances = self.param_variances[ctor].clone();
+
+                let args = variances
+                    .into_iter()
+                    .zip(iter::zip(l.args.clone(), r.args.clone()))
+                    .map(|(variance, (l, r))| match variance {
+                        Variance::Covariant => self.lub(l, r, constrs),
+                        Variance::Contravariant => self.glb(l, r, constrs),
+
+                        Variance::Invariant => {
+                            let l = constrs.map(|set| set.repr(l)).unwrap_or(l);
+                            let r = constrs.map(|set| set.repr(r)).unwrap_or(r);
+
+                            (l == r).then_some(l)
+                        }
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+
+                Some(self.add_ctor_ty(ctor, args))
+            }
+
+            (Ty::Error | Ty::Ctor(_) | Ty::Param(_) | Ty::Var(_) | Ty::Null, _) => None,
+        }
+    }
+
+    pub fn glb(
+        &mut self,
+        lhs_ty_id: TyId,
+        rhs_ty_id: TyId,
+        constrs: Option<&ConstrSet>,
+    ) -> Option<TyId> {
+        let lhs_ty_id = constrs.map(|set| set.repr(lhs_ty_id)).unwrap_or(lhs_ty_id);
+        let rhs_ty_id = constrs.map(|set| set.repr(rhs_ty_id)).unwrap_or(rhs_ty_id);
+
+        if lhs_ty_id == rhs_ty_id {
+            return Some(lhs_ty_id);
+        }
+
+        if lhs_ty_id == self.builtin.error || rhs_ty_id == self.builtin.error {
+            return Some(self.builtin.error);
+        }
+
+        if self.is_subty(lhs_ty_id, rhs_ty_id, constrs) {
+            return Some(rhs_ty_id);
+        }
+
+        if self.is_subty(rhs_ty_id, lhs_ty_id, constrs) {
+            return Some(lhs_ty_id);
+        }
+
+        match (&self.tys[lhs_ty_id], &self.tys[rhs_ty_id]) {
+            (Ty::Ctor(l), Ty::Ctor(r)) if l.ctor == r.ctor => {
+                let ctor = l.ctor;
+                let variances = self.param_variances[ctor].clone();
+
+                let args = variances
+                    .into_iter()
+                    .zip(iter::zip(l.args.clone(), r.args.clone()))
+                    .map(|(variance, (l, r))| match variance {
+                        Variance::Covariant => self.glb(l, r, constrs),
+                        Variance::Contravariant => self.lub(l, r, constrs),
+
+                        Variance::Invariant => {
+                            let l = constrs.map(|set| set.repr(l)).unwrap_or(l);
+                            let r = constrs.map(|set| set.repr(r)).unwrap_or(r);
+
+                            (l == r).then_some(l)
+                        }
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+
+                Some(self.add_ctor_ty(ctor, args))
+            }
+
+            (Ty::Error | Ty::Ctor(_) | Ty::Param(_) | Ty::Var(_) | Ty::Null, _) => None,
+        }
     }
 }
 

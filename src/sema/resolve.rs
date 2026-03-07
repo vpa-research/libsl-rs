@@ -156,8 +156,14 @@ impl PreludeDefs {
     }
 }
 
+#[derive(Default, Debug, Clone)]
+pub struct StmtCtx {
+    /// The [`DefId`] of the function this statement is enclosed in.
+    pub enclosing_fn: DefId,
+}
+
 /// Information collected during name resolution.
-#[derive(Debug, Default)]
+#[derive(Default, Debug)]
 pub struct NameRes {
     /// Entity definitions.
     pub defs: SlotMap<DefId, Def>,
@@ -212,6 +218,9 @@ pub struct NameRes {
 
     /// Maps accesses to their local scopes.
     pub access_scopes: SecondaryMap<AccessId, ScopeId>,
+
+    /// Maps statements to their context.
+    pub stmts: SecondaryMap<StmtId, StmtCtx>,
 }
 
 impl NameRes {
@@ -1743,6 +1752,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn process_stmt(&mut self, func_def_id: DefId, scope_id: ScopeId, stmt_id: StmtId) {
         let stmt = &self.sema.libsl.stmts[stmt_id];
+
+        self.sema.name_res.stmts.insert(stmt_id, StmtCtx {
+            enclosing_fn: func_def_id,
+        });
 
         match &stmt.kind {
             ast::StmtKind::Dummy => unreachable!(),

@@ -43,13 +43,20 @@ impl Ty {
         }
     }
 
+    pub fn as_param(&self) -> Option<usize> {
+        match *self {
+            Self::Param(n) => Some(n),
+            _ => None,
+        }
+    }
+
     pub fn is_var(&self) -> bool {
         matches!(self, Self::Var(_))
     }
 
-    pub fn as_param(&self) -> Option<usize> {
+    pub fn as_var(&self) -> Option<usize> {
         match *self {
-            Self::Param(n) => Some(n),
+            Self::Var(n) => Some(n),
             _ => None,
         }
     }

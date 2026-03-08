@@ -1,7 +1,7 @@
 //! Type constraint solving.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 use std::{iter, mem};
 
@@ -127,12 +127,24 @@ impl ConstrSet {
         self.uf.repr(ty_id)
     }
 
+    pub fn is_free(&self, tyck: &TyCk, ty_id: TyId) -> bool {
+        tyck.var_occurrences[self.repr(ty_id)].is_empty()
+    }
+
+    fn is_solved(&self, tyck: &TyCk, idx: usize) -> bool {
+        let Some((eq, _)) = self.bounds.var(idx).eq else {
+            return false;
+        };
+
+        !self.is_free(tyck, eq)
+    }
+
     fn union(&mut self, sema: &Sema<'_>, lhs_ty_id: TyId, rhs_ty_id: TyId) -> TyId {
         let lhs_ty_id = self.repr(lhs_ty_id);
         let rhs_ty_id = self.repr(rhs_ty_id);
 
-        // avoid putting a variable at the top.
-        if sema.tyck.tys[lhs_ty_id].is_var() && !sema.tyck.tys[rhs_ty_id].is_var() {
+        // prefer proper types on the top.
+        if sema.tyck.var_occurrences[lhs_ty_id] > sema.tyck.var_occurrences[rhs_ty_id] {
             return self.union(sema, rhs_ty_id, lhs_ty_id);
         }
 
@@ -260,6 +272,17 @@ impl ConstrSet {
         sema: &mut Sema<'_>,
         diag: &mut impl DiagCtx,
         constr_id: ConstrId,
+    ) {
+        todo!()
+    }
+
+    fn report_inconsistent_bounds(
+        &mut self,
+        sema: &mut Sema<'_>,
+        diag: &mut impl DiagCtx,
+        idx: usize,
+        kind: SubtypeBoundKind,
+        bounds: Vec<TyId>,
     ) {
         todo!()
     }
@@ -812,8 +835,131 @@ impl ConstrSet {
         })
     }
 
-    pub fn solve_all(&mut self, sema: &mut Sema<'_>, diag: &mut impl DiagCtx) {
+    pub fn solve(
+        &mut self,
+        sema: &mut Sema<'_>,
+        diag: &mut impl DiagCtx,
+        mut vars: Vec<usize>,
+    ) -> Result {
+        while let Some(idx) = vars.pop() {
+            self.update_bounds(idx);
+
+            if self.is_solved(&sema.tyck, idx) {
+                continue;
+            }
+
+            let mut worklist = vec![];
+            let mut discovered = HashSet::new();
+
+            self.find_dependent_vars(&sema.tyck, idx, |idx| {
+                if discovered.insert(idx) {
+                    worklist.push(idx);
+
+                    true
+                } else {
+                    false
+                }
+            });
+
+            while let Some(idx) = worklist.pop() {
+                if self.is_solved(&sema.tyck, idx) {
+                    continue;
+                }
+
+                self.solve_in_isolation(sema, diag, idx)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn find_dependent_vars(&self, tyck: &TyCk, idx: usize, mut insert: impl FnMut(usize) -> bool) {
+        let mut worklist = vec![idx];
+
+        // FIXME: use post-order.
+
+        while let Some(idx) = worklist.pop() {
+            let var = self.bounds.var(idx);
+            let bounds = var
+                .eq
+                .iter()
+                .map(|(ty_id, _)| *ty_id)
+                .chain(var.lower.keys())
+                .chain(var.upper.keys());
+
+            for ty_id in bounds {
+                for &used in &tyck.var_occurrences[ty_id] {
+                    let used_idx = tyck.tys[used].as_var().unwrap();
+
+                    if insert(used_idx) {
+                        worklist.push(used_idx);
+                    }
+                }
+            }
+        }
+    }
+
+    fn solve_in_isolation(
+        &mut self,
+        sema: &mut Sema<'_>,
+        diag: &mut impl DiagCtx,
+        idx: usize,
+    ) -> Result {
+        let var_ty_id = sema.tyck.add_ty(Ty::Var(idx));
+
+        if self.derive_solution_from_bounds(sema, diag, var_ty_id, idx, SubtypeBoundKind::Lower)? {
+            return Ok(());
+        }
+
+        if self.derive_solution_from_bounds(sema, diag, var_ty_id, idx, SubtypeBoundKind::Upper)? {
+            return Ok(());
+        }
+
         todo!()
+    }
+
+    fn derive_solution_from_bounds(
+        &mut self,
+        sema: &mut Sema<'_>,
+        diag: &mut impl DiagCtx,
+        var_ty_id: TyId,
+        idx: usize,
+        kind: SubtypeBoundKind,
+    ) -> Result<bool> {
+        let var = self.bounds.var(idx);
+        let bounds = var
+            .subtype_bounds(kind)
+            .keys()
+            .filter(|&ty_id| !self.is_free(&sema.tyck, ty_id))
+            .collect::<Vec<_>>();
+
+        let [mut solution, ..] = bounds[..] else {
+            return Ok(false);
+        };
+
+        for &bound in &bounds[1..] {
+            if let Some(r) = match kind {
+                SubtypeBoundKind::Upper => sema.tyck.glb(solution, bound, Some(self)),
+                SubtypeBoundKind::Lower => sema.tyck.lub(solution, bound, Some(self)),
+            } {
+                solution = r;
+            } else {
+                self.report_inconsistent_bounds(sema, diag, idx, kind, bounds);
+
+                return Err(());
+            }
+        }
+
+        self.add(
+            sema,
+            diag,
+            Constr {
+                provenance: ConstrProvenance::Solution { idx, kind },
+                kind: ConstrKind::Eq(var_ty_id, solution),
+            },
+        )?;
+
+        Ok(true)
     }
 }
 
@@ -842,6 +988,9 @@ pub enum ConstrProvenance {
 
     /// Ensures that an equality bound satisfies subtyping bounds.
     EqBound { idx: usize },
+
+    /// Represents a solution derived from subtyping bounds.
+    Solution { idx: usize, kind: SubtypeBoundKind },
 }
 
 #[derive(Debug, Clone)]
@@ -891,18 +1040,6 @@ impl BoundSet {
         }
 
         &mut self.vars[idx]
-    }
-
-    pub fn is_free(&self, tyck: &TyCk, ty_id: TyId) -> bool {
-        if let Ty::Var(idx) = tyck.tys[ty_id]
-            && let Some((inst, _)) = self.var(idx).eq
-        {
-            self.is_free(tyck, inst)
-        } else {
-            tyck.var_occurrences[ty_id]
-                .iter()
-                .any(|&var| self.is_free(tyck, var))
-        }
     }
 }
 

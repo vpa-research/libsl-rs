@@ -233,6 +233,10 @@ impl TyCk {
             return true;
         }
 
+        if rhs_ty_id == self.builtin.any {
+            return true;
+        }
+
         match (&self.tys[lhs_ty_id], &self.tys[rhs_ty_id]) {
             (Ty::Error, _) | (_, Ty::Error) => true,
 
@@ -275,29 +279,24 @@ impl TyCk {
         }
     }
 
-    pub fn lub(
-        &mut self,
-        lhs_ty_id: TyId,
-        rhs_ty_id: TyId,
-        constrs: Option<&ConstrSet>,
-    ) -> Option<TyId> {
+    pub fn lub(&mut self, lhs_ty_id: TyId, rhs_ty_id: TyId, constrs: Option<&ConstrSet>) -> TyId {
         let lhs_ty_id = constrs.map(|set| set.repr(lhs_ty_id)).unwrap_or(lhs_ty_id);
         let rhs_ty_id = constrs.map(|set| set.repr(rhs_ty_id)).unwrap_or(rhs_ty_id);
 
         if lhs_ty_id == rhs_ty_id {
-            return Some(lhs_ty_id);
+            return lhs_ty_id;
         }
 
         if lhs_ty_id == self.builtin.error || rhs_ty_id == self.builtin.error {
-            return Some(self.builtin.error);
+            return self.builtin.error;
         }
 
         if self.is_subty(lhs_ty_id, rhs_ty_id, constrs) {
-            return Some(lhs_ty_id);
+            return lhs_ty_id;
         }
 
         if self.is_subty(rhs_ty_id, lhs_ty_id, constrs) {
-            return Some(rhs_ty_id);
+            return rhs_ty_id;
         }
 
         match (&self.tys[lhs_ty_id], &self.tys[rhs_ty_id]) {
@@ -305,11 +304,11 @@ impl TyCk {
                 let ctor = l.ctor;
                 let variances = self.param_variances[ctor].clone();
 
-                let args = variances
+                let Some(args) = variances
                     .into_iter()
                     .zip(iter::zip(l.args.clone(), r.args.clone()))
                     .map(|(variance, (l, r))| match variance {
-                        Variance::Covariant => self.lub(l, r, constrs),
+                        Variance::Covariant => Some(self.lub(l, r, constrs)),
                         Variance::Contravariant => self.glb(l, r, constrs),
 
                         Variance::Invariant => {
@@ -319,12 +318,15 @@ impl TyCk {
                             (l == r).then_some(l)
                         }
                     })
-                    .collect::<Option<Vec<_>>>()?;
+                    .collect::<Option<Vec<_>>>()
+                else {
+                    return self.builtin.any;
+                };
 
-                Some(self.add_ctor_ty(ctor, args))
+                self.add_ctor_ty(ctor, args)
             }
 
-            (Ty::Error | Ty::Ctor(_) | Ty::Param(_) | Ty::Var(_) | Ty::Null, _) => None,
+            (Ty::Error | Ty::Ctor(_) | Ty::Param(_) | Ty::Var(_) | Ty::Null, _) => self.builtin.any,
         }
     }
 
@@ -363,7 +365,7 @@ impl TyCk {
                     .zip(iter::zip(l.args.clone(), r.args.clone()))
                     .map(|(variance, (l, r))| match variance {
                         Variance::Covariant => self.glb(l, r, constrs),
-                        Variance::Contravariant => self.lub(l, r, constrs),
+                        Variance::Contravariant => Some(self.lub(l, r, constrs)),
 
                         Variance::Invariant => {
                             let l = constrs.map(|set| set.repr(l)).unwrap_or(l);

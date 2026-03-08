@@ -287,6 +287,10 @@ impl ConstrSet {
         todo!()
     }
 
+    fn report_ambiguous_var(&mut self, sema: &mut Sema<'_>, diag: &mut impl DiagCtx, idx: usize) {
+        todo!()
+    }
+
     fn normalize(&mut self, sema: &mut Sema<'_>, ty_id: TyId, force: bool) -> TyId {
         if !force && self.uf.parents.borrow().contains_key(ty_id) {
             return self.repr(ty_id);
@@ -915,7 +919,18 @@ impl ConstrSet {
             return Ok(());
         }
 
-        todo!()
+        // default to `any`.
+        self.add(
+            sema,
+            diag,
+            Constr {
+                provenance: ConstrProvenance::Solution {
+                    idx,
+                    kind: SubtypeBoundKind::Upper,
+                },
+                kind: ConstrKind::Eq(var_ty_id, sema.tyck.builtin.any),
+            },
+        )
     }
 
     fn derive_solution_from_bounds(
@@ -940,7 +955,7 @@ impl ConstrSet {
         for &bound in &bounds[1..] {
             if let Some(r) = match kind {
                 SubtypeBoundKind::Upper => sema.tyck.glb(solution, bound, Some(self)),
-                SubtypeBoundKind::Lower => sema.tyck.lub(solution, bound, Some(self)),
+                SubtypeBoundKind::Lower => Some(sema.tyck.lub(solution, bound, Some(self))),
             } {
                 solution = r;
             } else {

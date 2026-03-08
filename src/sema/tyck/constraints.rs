@@ -852,20 +852,7 @@ impl ConstrSet {
                 continue;
             }
 
-            let mut worklist = vec![];
-            let mut discovered = HashSet::new();
-
-            self.find_dependent_vars(&sema.tyck, idx, |idx| {
-                if discovered.insert(idx) {
-                    worklist.push(idx);
-
-                    true
-                } else {
-                    false
-                }
-            });
-
-            while let Some(idx) = worklist.pop() {
+            for idx in self.find_dependent_vars(&sema.tyck, idx) {
                 if self.is_solved(&sema.tyck, idx) {
                     continue;
                 }
@@ -877,30 +864,46 @@ impl ConstrSet {
         Ok(())
     }
 
-    fn find_dependent_vars(&self, tyck: &TyCk, idx: usize, mut insert: impl FnMut(usize) -> bool) {
-        let mut worklist = vec![idx];
+    fn find_dependent_vars(&self, tyck: &TyCk, idx: usize) -> Vec<usize> {
+        let mut worklist = vec![];
+        let mut result = vec![];
+        let mut discovered = HashSet::new();
 
-        // FIXME: use post-order.
+        fn make_task(
+            this: &ConstrSet,
+            tyck: &TyCk,
+            idx: usize,
+        ) -> (usize, impl Iterator<Item = TyId>) {
+            let var = this.bounds.var(idx);
 
-        while let Some(idx) = worklist.pop() {
-            let var = self.bounds.var(idx);
-            let bounds = var
-                .eq
-                .iter()
-                .map(|(ty_id, _)| *ty_id)
-                .chain(var.lower.keys())
-                .chain(var.upper.keys());
+            (
+                idx,
+                var.eq
+                    .iter()
+                    .map(|(ty_id, _)| *ty_id)
+                    .chain(var.lower.keys())
+                    .chain(var.upper.keys())
+                    .flat_map(|ty_id| &tyck.var_occurrences[ty_id])
+                    .copied(),
+            )
+        }
 
-            for ty_id in bounds {
-                for &used in &tyck.var_occurrences[ty_id] {
-                    let used_idx = tyck.tys[used].as_var().unwrap();
+        worklist.push(make_task(self, tyck, idx));
 
-                    if insert(used_idx) {
-                        worklist.push(used_idx);
-                    }
+        while let Some((idx, vars)) = worklist.last_mut() {
+            if let Some(used) = vars.next() {
+                let used_idx = tyck.tys[used].as_var().unwrap();
+
+                if discovered.insert(used_idx) {
+                    worklist.push(make_task(self, tyck, used_idx));
                 }
+            } else {
+                result.push(*idx);
+                worklist.pop();
             }
         }
+
+        result
     }
 
     fn solve_in_isolation(

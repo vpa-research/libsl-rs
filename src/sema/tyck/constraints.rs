@@ -1298,37 +1298,49 @@ impl VarConstr {
 }
 
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
-    pub fn constr_coerce(&mut self, lhs: TyId, rhs: TyId, provenance: ConstrProvenance) {
-        self.result = self.result.or(self.constrs.add(
+    pub fn constr_coerce(&mut self, lhs: TyId, rhs: TyId, provenance: ConstrProvenance) -> Result {
+        let result = self.constrs.add(
             self.sema,
             self.diag,
             Constr {
                 provenance,
                 kind: ConstrKind::Coerce(lhs, rhs),
             },
-        ));
+        );
+
+        self.result = self.result.or(result);
+
+        result
     }
 
-    pub fn constr_sub(&mut self, lhs: TyId, rhs: TyId, provenance: ConstrProvenance) {
-        self.result = self.result.or(self.constrs.add(
+    pub fn constr_sub(&mut self, lhs: TyId, rhs: TyId, provenance: ConstrProvenance) -> Result {
+        let result = self.constrs.add(
             self.sema,
             self.diag,
             Constr {
                 provenance,
                 kind: ConstrKind::Sub(lhs, rhs),
             },
-        ));
+        );
+
+        self.result = self.result.or(result);
+
+        result
     }
 
-    pub fn constr_eq(&mut self, lhs: TyId, rhs: TyId, provenance: ConstrProvenance) {
-        self.result = self.result.or(self.constrs.add(
+    pub fn constr_eq(&mut self, lhs: TyId, rhs: TyId, provenance: ConstrProvenance) -> Result {
+        let result = self.constrs.add(
             self.sema,
             self.diag,
             Constr {
                 provenance,
                 kind: ConstrKind::Eq(lhs, rhs),
             },
-        ));
+        );
+
+        self.result = self.result.or(result);
+
+        result
     }
 
     pub fn fresh_var(&mut self, provenance: VarProvenance) -> TyId {

@@ -714,10 +714,15 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn check_lit_ty(&mut self, loc: &Loc, lit: &ast::PrimitiveLit, expected: Option<TyId>) -> TyId {
+    fn check_lit_ty(
+        &mut self,
+        provenance: ConstrProvenance,
+        lit: &ast::PrimitiveLit,
+        expected: Option<TyId>,
+    ) -> TyId {
         let ty_id = self.lit_ty(lit);
 
-        self.check_ty(loc, expected, ty_id)
+        self.check_ty(provenance, expected, ty_id)
     }
 
     fn repr(&self, ty_id: TyId) -> TyId {
@@ -870,7 +875,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn early_tyck_decl_ty_alias(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclTyAlias) {
-        todo!()
+        unimplemented!()
     }
 
     fn early_tyck_decl_struct(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclStruct) {
@@ -1471,8 +1476,21 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.sema.tyck.accesses[access_id]
     }
 
-    fn check_ty(&mut self, loc: &Loc, expected: Option<TyId>, actual: TyId) -> TyId {
-        todo!()
+    fn check_ty(
+        &mut self,
+        provenance: ConstrProvenance,
+        expected: Option<TyId>,
+        actual: TyId,
+    ) -> TyId {
+        if let Some(expected) = expected {
+            if self.constr_coerce(actual, expected, provenance).is_ok() {
+                self.repr(expected)
+            } else {
+                self.sema.tyck.builtin.error
+            }
+        } else {
+            actual
+        }
     }
 
     fn tyck_ty_arg(&mut self, ty_arg: &'ast ast::TyArg) -> TyId {
@@ -1519,11 +1537,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         for (&param, &arg) in iter::zip(&sig.params, args) {
             let param = self.sema.tyck.subst(param, &ty_param_map);
-            self.constr_coerce(arg, param, ConstrProvenance::Expr(expr.id));
+            let _ = self.constr_coerce(arg, param, ConstrProvenance::Expr(expr.id));
         }
 
         let ret = self.sema.tyck.subst(sig.ret.unwrap(), &ty_param_map);
-        let ty_id = self.check_ty(&expr.loc, expected, ret);
+        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), expected, ret);
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
@@ -1749,7 +1767,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         e: &'ast ast::ExprPrimitiveLit,
         expected: Option<TyId>,
     ) {
-        let ty_id = self.check_lit_ty(&expr.loc, &e.lit, expected);
+        let ty_id = self.check_lit_ty(ConstrProvenance::Expr(expr.id), &e.lit, expected);
 
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
@@ -1770,7 +1788,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .sema
             .tyck
             .add_ctor_ty(self.sema.name_res.prelude_defs.array, vec![elem_ty_id]);
-        let ty_id = self.check_ty(&expr.loc, expected, ty_id);
+        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), expected, ty_id);
 
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
@@ -1791,7 +1809,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .sema
             .tyck
             .add_ctor_ty(self.sema.name_res.prelude_defs.set, vec![elem_ty_id]);
-        let ty_id = self.check_ty(&expr.loc, expected, ty_id);
+        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), expected, ty_id);
 
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
@@ -1856,7 +1874,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         let ty_param_map = self.make_fresh_vars_for_ty_params(&sig.generics, &expr.loc);
 
         for (&param, &arg) in iter::zip(&sig.generics, &ty_args) {
-            self.constr_eq(arg, ty_param_map[param], ConstrProvenance::Expr(expr.id));
+            let _ = self.constr_eq(arg, ty_param_map[param], ConstrProvenance::Expr(expr.id));
         }
 
         match sig.recv {
@@ -1866,11 +1884,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         for (&param, &arg) in iter::zip(&sig.params, &args) {
             let param = self.sema.tyck.subst(param, &ty_param_map);
-            self.constr_coerce(arg, param, ConstrProvenance::Expr(expr.id));
+            let _ = self.constr_coerce(arg, param, ConstrProvenance::Expr(expr.id));
         }
 
         let ret = self.sema.tyck.subst(sig.ret.unwrap(), &ty_param_map);
-        let ty_id = self.check_ty(&expr.loc, expected, ret);
+        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), expected, ret);
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
@@ -1905,16 +1923,16 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         let ty_param_map = self.make_fresh_vars_for_ty_params(&sig.generics, &expr.loc);
 
         for (&param, &arg) in iter::zip(&sig.generics, &ty_args) {
-            self.constr_eq(arg, ty_param_map[param], ConstrProvenance::Expr(expr.id));
+            let _ = self.constr_eq(arg, ty_param_map[param], ConstrProvenance::Expr(expr.id));
         }
 
         for (&param, &arg) in iter::zip(&sig.params, &args) {
             let param = self.sema.tyck.subst(param, &ty_param_map);
-            self.constr_coerce(arg, param, ConstrProvenance::Expr(expr.id));
+            let _ = self.constr_coerce(arg, param, ConstrProvenance::Expr(expr.id));
         }
 
         let ret = self.sema.tyck.subst(sig.ret.unwrap(), &ty_param_map);
-        let ty_id = self.check_ty(&expr.loc, expected, ret);
+        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), expected, ret);
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
@@ -2075,7 +2093,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         let ty_param_map = self.make_fresh_vars_for_ty_params(&generics, &expr.loc);
 
         for (&param, &arg) in iter::zip(&generics, &ty_args) {
-            self.constr_eq(arg, ty_param_map[param], ConstrProvenance::Expr(expr.id));
+            let _ = self.constr_eq(arg, ty_param_map[param], ConstrProvenance::Expr(expr.id));
         }
 
         for &(def_id, arg) in &args {
@@ -2083,13 +2101,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 .sema
                 .tyck
                 .subst(self.sema.tyck.def_tys[def_id], &ty_param_map);
-            self.constr_coerce(arg, def_ty_id, ConstrProvenance::Expr(expr.id));
+            let _ = self.constr_coerce(arg, def_ty_id, ConstrProvenance::Expr(expr.id));
         }
 
         let ty_args = generics.iter().map(|ty_arg| self.repr(*ty_arg)).collect();
 
         let ty_id = self.sema.tyck.add_ctor_ty(automaton_def_id, ty_args);
-        let ty_id = self.check_ty(&expr.loc, expected, ty_id);
+        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), expected, ty_id);
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
@@ -2110,7 +2128,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     ) {
         self.tyck_expr(e.expr, None);
         let ty_id = self.tyck_ty_expr(e.ty_expr);
-        let ty_id = self.check_ty(&expr.loc, expected, ty_id);
+        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), expected, ty_id);
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
@@ -2122,7 +2140,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     ) {
         self.tyck_expr(e.expr, None);
         self.tyck_ty_expr(e.ty_expr);
-        let ty_id = self.check_ty(&expr.loc, expected, self.sema.tyck.builtin.bool);
+        let ty_id = self.check_ty(
+            ConstrProvenance::Expr(expr.id),
+            expected,
+            self.sema.tyck.builtin.bool,
+        );
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 

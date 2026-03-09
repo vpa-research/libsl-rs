@@ -1402,7 +1402,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         decl_id: DeclId,
         decl: &'ast ast::DeclVariable,
     ) {
-        let (_, scope_id) = ctx.outer(&self.sema);
+        let (_, scope_id) = ctx.outer(self.sema);
 
         match ctx {
             DeclCtx::Global(_) | DeclCtx::Struct(_) | DeclCtx::Automaton { .. } => {
@@ -2149,7 +2149,6 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                                 .resolve(self.diag, scope_id, Ns::Var, &name.to_string(), &name.loc)
                                 .ok()
                                 .and_then(|def_id| {
-                                    // TODO: is this necessary?
                                     let def = self.def::<DefAutomaton>(automaton);
 
                                     if def.constructor_params.contains(&def_id) {

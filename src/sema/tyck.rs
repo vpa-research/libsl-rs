@@ -816,10 +816,16 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn make_fresh_vars_for_ty_params(
         &mut self,
         generics: &[TyId],
+        loc: &Loc,
     ) -> SparseSecondaryMap<TyId, TyId> {
         generics
             .iter()
-            .map(|&generic| (generic, self.fresh_var(VarProvenance::Generic(generic))))
+            .map(|&generic| {
+                (
+                    generic,
+                    self.fresh_var(VarProvenance::Generic(generic, loc.clone())),
+                )
+            })
             .collect::<SparseSecondaryMap<_, _>>()
     }
 }
@@ -1509,7 +1515,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         };
 
         let sig = overload.fn_sig();
-        let ty_param_map = self.make_fresh_vars_for_ty_params(&sig.generics);
+        let ty_param_map = self.make_fresh_vars_for_ty_params(&sig.generics, &expr.loc);
 
         for (&param, &arg) in iter::zip(&sig.params, args) {
             let param = self.sema.tyck.subst(param, &ty_param_map);
@@ -1847,7 +1853,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.check_arg_arity(&expr.loc, args.len(), self.fn_sig(def_id).params.len());
 
         let sig = self.fn_sig(def_id).clone();
-        let ty_param_map = self.make_fresh_vars_for_ty_params(&sig.generics);
+        let ty_param_map = self.make_fresh_vars_for_ty_params(&sig.generics, &expr.loc);
 
         for (&param, &arg) in iter::zip(&sig.generics, &ty_args) {
             self.constr_eq(arg, ty_param_map[param], ConstrProvenance::Expr(expr.id));
@@ -1896,7 +1902,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.check_arg_arity(&expr.loc, args.len(), self.fn_sig(def_id).params.len());
 
         let sig = self.fn_sig(def_id).clone();
-        let ty_param_map = self.make_fresh_vars_for_ty_params(&sig.generics);
+        let ty_param_map = self.make_fresh_vars_for_ty_params(&sig.generics, &expr.loc);
 
         for (&param, &arg) in iter::zip(&sig.generics, &ty_args) {
             self.constr_eq(arg, ty_param_map[param], ConstrProvenance::Expr(expr.id));
@@ -2066,7 +2072,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .iter()
             .map(|&def_id| self.sema.tyck.def_tys[def_id])
             .collect::<Vec<_>>();
-        let ty_param_map = self.make_fresh_vars_for_ty_params(&generics);
+        let ty_param_map = self.make_fresh_vars_for_ty_params(&generics, &expr.loc);
 
         for (&param, &arg) in iter::zip(&generics, &ty_args) {
             self.constr_eq(arg, ty_param_map[param], ConstrProvenance::Expr(expr.id));
@@ -2104,6 +2110,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     ) {
         self.tyck_expr(e.expr, None);
         let ty_id = self.tyck_ty_expr(e.ty_expr);
+        let ty_id = self.check_ty(&expr.loc, expected, ty_id);
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
@@ -2115,10 +2122,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     ) {
         self.tyck_expr(e.expr, None);
         self.tyck_ty_expr(e.ty_expr);
-        self.sema
-            .tyck
-            .exprs
-            .insert(expr.id, self.sema.tyck.builtin.bool);
+        let ty_id = self.check_ty(&expr.loc, expected, self.sema.tyck.builtin.bool);
+        self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
     fn tyck_expr_unary(
@@ -2128,7 +2133,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         expected: Option<TyId>,
     ) {
         let args = vec![self.tyck_expr(e.expr, None)];
-        let candidates = self.overloads_for_unary(e.op);
+        let candidates = self.overloads_for_unary(e.op, &expr.loc);
 
         self.tyck_op_expr(expr, expected, e.op, &args, candidates)
     }
@@ -2140,7 +2145,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         expected: Option<TyId>,
     ) {
         let args = vec![self.tyck_expr(e.lhs, None), self.tyck_expr(e.rhs, None)];
-        let candidates = self.overloads_for_binary(e.op);
+        let candidates = self.overloads_for_binary(e.op, &expr.loc);
 
         self.tyck_op_expr(expr, expected, e.op, &args, candidates)
     }

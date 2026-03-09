@@ -2,14 +2,15 @@
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::fmt::{self, Display, Write};
 use std::sync::LazyLock;
 use std::{iter, mem};
 
-use bit_set::BitSet;
 use slotmap::{SecondaryMap, SlotMap, SparseSecondaryMap, new_key_type};
 
 use crate::ast::{self, Variance};
-use crate::diag::DiagCtx;
+use crate::diag::{Diag, DiagCtx, Label};
+use crate::loc::Loc;
 use crate::sema::def::DefId;
 use crate::sema::ty::{BuiltinTyCtor, ConstructedTy, Ty, TyId};
 use crate::sema::tyck::{Pass, TyCk};
@@ -69,6 +70,15 @@ impl SubtypeBoundKind {
         match self {
             Self::Lower => (bound_ty_id, ty_id),
             Self::Upper => (ty_id, bound_ty_id),
+        }
+    }
+}
+
+impl Display for SubtypeBoundKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SubtypeBoundKind::Lower => f.write_str("lower"),
+            SubtypeBoundKind::Upper => f.write_str("upper"),
         }
     }
 }
@@ -267,13 +277,153 @@ impl ConstrSet {
         Ok(())
     }
 
+    fn constr_loc<'a>(&'a self, sema: &'a Sema<'_>, constr_id: ConstrId) -> &'a Loc {
+        match self.constrs[constr_id].provenance {
+            ConstrProvenance::Constr(constr_id) => self.constr_loc(sema, constr_id),
+            ConstrProvenance::Expr(expr_id) => &sema.libsl.exprs[expr_id].loc,
+            ConstrProvenance::Access(access_id) => &sema.libsl.accesses[access_id].loc,
+            ConstrProvenance::Fn(def_id) => &sema.name_res.defs[def_id].loc,
+            ConstrProvenance::UnOp(_, ref loc) => loc,
+            ConstrProvenance::BinOp(_, ref loc) => loc,
+            ConstrProvenance::SubBound { idx } => self.var_loc(sema, idx),
+            ConstrProvenance::EqBound { idx } => self.var_loc(sema, idx),
+            ConstrProvenance::Solution { idx, .. } => self.var_loc(sema, idx),
+        }
+    }
+
+    fn var_loc<'a>(&'a self, sema: &'a Sema<'_>, idx: usize) -> &'a Loc {
+        match sema.tyck.var_provenances[idx] {
+            VarProvenance::Var(def_id) => &sema.name_res.defs[def_id].loc,
+            VarProvenance::Element { of } => &sema.libsl.exprs[of].loc,
+            VarProvenance::Generic(_, ref loc) => loc,
+        }
+    }
+
+    fn display_var(&self, sema: &Sema<'_>, idx: usize) -> impl Display {
+        fmt::from_fn(move |f| match sema.tyck.var_provenances[idx] {
+            VarProvenance::Var(def_id) => {
+                write!(f, "type of variable `{}`", sema.name_res.defs[def_id].name)
+            }
+
+            VarProvenance::Element { .. } => {
+                write!(f, "element type")
+            }
+
+            VarProvenance::Generic(ty_id, ..) => {
+                let param = &sema.tyck.ty_params[sema.tyck.tys[ty_id].as_param().unwrap()];
+
+                write!(f, "type argument `{}`", &param.name)
+            }
+        })
+    }
+
+    fn add_constr_notes(&self, sema: &Sema<'_>, d: &mut Diag, constr_id: ConstrId) {
+        match self.constrs[constr_id].provenance {
+            ConstrProvenance::Constr(constr_id) => {
+                let constr = &self.constrs[constr_id];
+
+                d.notes.push(match constr.kind {
+                    ConstrKind::Eq(l, r) => format!(
+                        "required for `{}` = `{}`",
+                        sema.format_ty(l),
+                        sema.format_ty(r),
+                    ),
+
+                    ConstrKind::Sub(l, r) => format!(
+                        "required for `{}` <: `{}`",
+                        sema.format_ty(l),
+                        sema.format_ty(r),
+                    ),
+
+                    ConstrKind::Coerce(l, r) => format!(
+                        "required for `{}` to be compatible with `{}`",
+                        sema.format_ty(l),
+                        sema.format_ty(r),
+                    ),
+                });
+
+                self.add_constr_notes(sema, d, constr_id);
+            }
+
+            ConstrProvenance::Expr(_) => {
+                // already has a label.
+            }
+
+            ConstrProvenance::Access(_) => {
+                // already has a label.
+            }
+
+            ConstrProvenance::Fn(def_id) => {
+                d.notes.push(format!(
+                    "required due to function signature: {}",
+                    sema.format_def_signature(def_id),
+                ));
+            }
+
+            ConstrProvenance::UnOp(..) => {
+                // already has a label.
+            }
+
+            ConstrProvenance::BinOp(..) => {
+                // already has a label.
+            }
+
+            ConstrProvenance::SubBound { idx } => {
+                d.notes.push(format!(
+                    "required due to subtyping bounds on {}",
+                    self.display_var(sema, idx)
+                ));
+            }
+
+            ConstrProvenance::EqBound { idx } => {
+                d.notes.push(format!(
+                    "required due to equality bounds on {}",
+                    self.display_var(sema, idx)
+                ));
+            }
+
+            ConstrProvenance::Solution { idx, kind } => {
+                d.notes.push(format!(
+                    "inferred from {kind} bounds on {}",
+                    self.display_var(sema, idx)
+                ));
+            }
+        }
+    }
+
     fn report_constr_violation(
         &mut self,
         sema: &mut Sema<'_>,
         diag: &mut impl DiagCtx,
         constr_id: ConstrId,
     ) {
-        todo!()
+        let loc = self.constr_loc(sema, constr_id);
+        let mut d = Diag::err()
+            .at(loc.clone())
+            .with_msg(match self.constrs[constr_id].kind {
+                ConstrKind::Eq(l, r) => format!(
+                    "type mismatch: `{}` is not equal to `{}`",
+                    sema.format_ty(l),
+                    sema.format_ty(r),
+                ),
+
+                ConstrKind::Sub(l, r) => format!(
+                    "type mismatch: `{}` is not a subtype of `{}`",
+                    sema.format_ty(l),
+                    sema.format_ty(r),
+                ),
+
+                ConstrKind::Coerce(l, r) => format!(
+                    "type mismatch: `{}` is not compatible with `{}`",
+                    sema.format_ty(l),
+                    sema.format_ty(r),
+                ),
+            })
+            .with_label(Label::primary(loc.clone()))
+            .build();
+
+        self.add_constr_notes(sema, &mut d, constr_id);
+        diag.emit(d);
     }
 
     fn report_inconsistent_bounds(
@@ -284,11 +434,29 @@ impl ConstrSet {
         kind: SubtypeBoundKind,
         bounds: Vec<TyId>,
     ) {
-        todo!()
-    }
+        let loc = self.var_loc(sema, idx);
+        let mut d = Diag::err()
+            .at(loc.clone())
+            .with_msg(format!(
+                "no common {} found for {}",
+                match kind {
+                    SubtypeBoundKind::Lower => "supertype",
+                    SubtypeBoundKind::Upper => "subtype",
+                },
+                self.display_var(sema, idx),
+            ))
+            .with_label(Label::primary(loc.clone()))
+            .build();
 
-    fn report_ambiguous_var(&mut self, sema: &mut Sema<'_>, diag: &mut impl DiagCtx, idx: usize) {
-        todo!()
+        let mut note = format!("required to conform to all of its {kind} bounds:");
+
+        for bound in bounds {
+            let _ = write!(note, "\n  - {}", sema.format_ty(bound));
+        }
+
+        d.notes.push(note);
+
+        diag.emit(d);
     }
 
     fn normalize(&mut self, sema: &mut Sema<'_>, ty_id: TyId, force: bool) -> TyId {
@@ -442,7 +610,7 @@ impl ConstrSet {
                 sema,
                 diag,
                 r,
-                VarBound::Upper(lhs),
+                VarBound::Lower(lhs),
                 VarBoundProvenance::Constr(constr_id),
             ),
 
@@ -996,10 +1164,10 @@ pub enum ConstrProvenance {
     Fn(DefId),
 
     /// Comes from a unary operator's typing requirements.
-    UnOp(ast::UnOp),
+    UnOp(ast::UnOp, Loc),
 
     /// Comes from a binary operator's typing requirements.
-    BinOp(ast::BinOp),
+    BinOp(ast::BinOp, Loc),
 
     /// Ensures a bound consistency.
     SubBound { idx: usize },
@@ -1070,7 +1238,7 @@ pub enum VarProvenance {
     Element { of: ExprId },
 
     /// A generic instantiation.
-    Generic(TyId),
+    Generic(TyId, Loc),
 }
 
 #[derive(Debug, Clone)]
@@ -1102,10 +1270,6 @@ pub struct VarConstr {
 
     /// An equality bound, if any.
     pub eq: Option<(TyId, VarBoundProvenance)>,
-
-    /// Indices of variables whose bounds mention this variable.
-    // TODO
-    used_by: BitSet,
 
     unprocessed: Vec<(VarBound, VarBoundProvenance)>,
     status: Status,

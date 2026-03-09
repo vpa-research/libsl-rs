@@ -300,7 +300,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 return Err(());
             }
 
-            let ty_param_map = self.make_fresh_vars_for_ty_params(&sig.generics);
+            let ty_param_map = self.make_fresh_vars_for_ty_params(&sig.generics, &Loc::Synthetic);
 
             for (&param, &arg) in iter::zip(&sig.generics, ty_args) {
                 constr.add(
@@ -339,11 +339,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         .is_ok()
     }
 
-    fn is_lhs_more_specific(
-        &mut self,
-        lhs: &impl FnSigProvider,
-        rhs: &impl FnSigProvider,
-    ) -> bool {
+    fn is_lhs_more_specific(&mut self, lhs: &impl FnSigProvider, rhs: &impl FnSigProvider) -> bool {
         if lhs.fn_sig(self.sema).params.len() != rhs.fn_sig(self.sema).params.len() {
             return false;
         }

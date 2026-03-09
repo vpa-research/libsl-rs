@@ -1578,6 +1578,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 }
 
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
+    fn tyck_decl_fully(&mut self, decl_id: DeclId) {
+        self.early_tyck_decl(decl_id);
+        self.tyck_decl(decl_id);
+        self.tyck_decl_body(decl_id);
+    }
+
     fn tyck_decl_semantic_ty_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclSemanticTy) {
         unimplemented!()
     }
@@ -1715,9 +1721,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_stmt_decl(&mut self, stmt: &'ast ast::Stmt, decl_id: DeclId) {
-        self.early_tyck_decl(decl_id);
-        self.tyck_decl(decl_id);
-        self.tyck_decl_body(decl_id);
+        self.tyck_decl_fully(decl_id);
     }
 
     fn tyck_stmt_if(&mut self, stmt: &'ast ast::Stmt, s: &'ast ast::StmtIf) {
@@ -1758,7 +1762,43 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_pred(&mut self, pred_id: PredId) {
-        todo!()
+        let pred = &self.sema.libsl.preds[pred_id];
+
+        match &pred.kind {
+            ast::PredKind::Dummy => unreachable!(),
+            ast::PredKind::Block(p) => self.tyck_pred_block(pred, p),
+            ast::PredKind::Named(p) => self.tyck_pred_named(pred, p),
+            &ast::PredKind::Decl(decl_id) => self.tyck_pred_decl(pred, decl_id),
+            ast::PredKind::If(p) => self.tyck_pred_if(pred, p),
+            &ast::PredKind::Expr(expr_id) => self.tyck_pred_expr(pred, expr_id),
+        }
+    }
+
+    fn tyck_pred_block(&mut self, pred: &'ast ast::Pred, p: &'ast ast::PredBlock) {
+        for &pred_id in &p.preds {
+            self.tyck_pred(pred_id);
+        }
+    }
+
+    fn tyck_pred_named(&mut self, pred: &'ast ast::Pred, p: &'ast ast::PredNamed) {
+        self.tyck_pred(p.pred);
+    }
+
+    fn tyck_pred_decl(&mut self, pred: &'ast ast::Pred, decl_id: DeclId) {
+        self.tyck_decl_fully(decl_id);
+    }
+
+    fn tyck_pred_if(&mut self, pred: &'ast ast::Pred, p: &'ast ast::PredIf) {
+        self.tyck_expr(p.cond, Some(self.sema.tyck.builtin.bool));
+        self.tyck_pred(p.then_branch);
+
+        if let Some(else_branch) = p.else_branch {
+            self.tyck_pred(else_branch);
+        }
+    }
+
+    fn tyck_pred_expr(&mut self, pred: &'ast ast::Pred, expr_id: ExprId) {
+        self.tyck_expr(expr_id, Some(self.sema.tyck.builtin.bool));
     }
 
     fn tyck_expr_primitive_lit(

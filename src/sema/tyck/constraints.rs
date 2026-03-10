@@ -1003,18 +1003,6 @@ impl ConstrSet {
 
         entry.insert(provenance.clone());
 
-        // check for antisymmetry.
-        if var.subtype_bounds(kind.opposite()).contains_key(ty_id) {
-            return self.incorporate_eq(
-                sema,
-                diag,
-                idx,
-                ty_id,
-                VarBoundProvenance::Antisymmetry,
-                true,
-            );
-        }
-
         // ensure the new bound is consistent with the opposite bounds.
         let bounds = var
             .subtype_bounds(kind.opposite())
@@ -1083,7 +1071,7 @@ impl ConstrSet {
         provenance: VarBoundProvenance,
         apply_symmetry: bool,
     ) -> Result {
-        let ty_id = self.repr(ty_id);
+        let mut ty_id = self.repr(ty_id);
         self.update_bounds(idx);
 
         let var_ty_id = sema.tyck.add_ty(Ty::Var(idx));
@@ -1093,10 +1081,14 @@ impl ConstrSet {
             return Ok(());
         }
 
+        let var = self.bounds.var(idx);
+        let prev_eq = var.eq.as_ref().map(|&(eq, _)| eq);
+        let was_free = prev_eq.is_some_and(|eq| self.is_free(&sema.tyck, eq));
+
         let var = self.bounds.var_mut(idx);
 
         // the type must equal an existing eq bound (transitivity).
-        if let Some((eq, _)) = var.eq {
+        if let Some(eq) = prev_eq {
             self.add(
                 sema,
                 diag,
@@ -1105,6 +1097,8 @@ impl ConstrSet {
                     kind: ConstrKind::Eq(eq, ty_id),
                 },
             )?;
+
+            ty_id = self.repr(ty_id);
         } else {
             var.eq = Some((ty_id, provenance.clone()));
         }
@@ -1139,6 +1133,60 @@ impl ConstrSet {
         // if the type is a variable, apply symmetry.
         if apply_symmetry && let Ty::Var(v) = sema.tyck.tys[ty_id] {
             return self.incorporate_eq(sema, diag, v, var_ty_id, provenance, false);
+        }
+
+        if self.is_free(&sema.tyck, ty_id) {
+            // not a proper type: update the .used_by sets.
+            self.update_used_by(sema, idx, prev_eq, ty_id);
+        } else if was_free {
+            // the variable is now solved.
+            self.on_var_solved(sema, diag, idx, ty_id)?;
+        }
+
+        Ok(())
+    }
+
+    fn update_used_by(&mut self, sema: &Sema<'_>, idx: usize, prev_eq: Option<TyId>, ty_id: TyId) {
+        // clear previous uses.
+        if let Some(prev_eq) = prev_eq {
+            for &used_ty_id in &sema.tyck.var_occurrences[prev_eq] {
+                let used = sema.tyck.tys[used_ty_id].as_var().unwrap();
+                self.bounds.var_mut(used).used_by.remove(idx);
+            }
+        }
+
+        // add new uses.
+        for &used_ty_id in &sema.tyck.var_occurrences[ty_id] {
+            let used = sema.tyck.tys[used_ty_id].as_var().unwrap();
+            self.bounds.var_mut(used).used_by.insert(idx);
+        }
+    }
+
+    fn on_var_solved(
+        &mut self,
+        sema: &mut Sema<'_>,
+        diag: &mut impl DiagCtx,
+        idx: usize,
+        ty_id: TyId,
+    ) -> Result {
+        let var_ty_id = sema.tyck.add_ty(Ty::Var(idx));
+        let mut map = SparseSecondaryMap::new();
+        map.insert(var_ty_id, ty_id);
+
+        for user in &mem::take(&mut self.bounds.var_mut(idx).used_by) {
+            let user_ty_id = sema.tyck.add_ty(Ty::Var(user));
+            let eq = self.bounds.var(user).eq.as_ref().unwrap().0;
+            let eq = sema.tyck.subst(eq, &map);
+
+            // re-check the equality bound, possibly triggering a cascade.
+            self.add(
+                sema,
+                diag,
+                Constr {
+                    provenance: ConstrProvenance::EqBound { idx: user },
+                    kind: ConstrKind::Eq(user_ty_id, eq),
+                },
+            )?;
         }
 
         // update dependent deferred constraints.
@@ -1405,9 +1453,6 @@ pub enum VarProvenance {
 pub enum VarBoundProvenance {
     /// Arising from to a constraint reduction.
     Constr(ConstrId),
-
-    /// Arising from the antisymmetry of subtyping.
-    Antisymmetry,
 }
 
 // Invariants:
@@ -1433,6 +1478,9 @@ pub struct VarConstr {
 
     unprocessed: Vec<(VarBound, VarBoundProvenance)>,
     status: Status,
+
+    // indices of variables whose equality bounds mention this variable.
+    used_by: BitSet,
 }
 
 impl VarConstr {

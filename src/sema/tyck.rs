@@ -12,7 +12,9 @@ use crate::loc::Loc;
 use crate::sema::def::{
     DefAction, DefAnnotation, DefAutomaton, DefFunction, DefId, DefKind, FunctionKind,
 };
-use crate::sema::ty::{BuiltinTyCtor, ConstructedTy, FloatCtor, IntCtor, IntWidth, Ty, TyId};
+use crate::sema::ty::{
+    BuiltinTyCtor, ConstructedTy, FloatCtor, IntCtor, IntWidth, Ty, TyId, TyUnion,
+};
 use crate::sema::tyck::constraints::{ConstrProvenance, ConstrSet, VarProvenance};
 use crate::sema::tyck::operators::{Op, OpFnSigProvider, OpOverload, OpOverloadDiagProvider};
 use crate::sema::tyck::overload::Receiver;
@@ -129,6 +131,12 @@ fn occurring_vars(var_occurrences: &SecondaryMap<TyId, Vec<TyId>>, ty: &Ty) -> V
         Ty::Var(_) => {}
 
         Ty::Null => {}
+
+        Ty::Union(t) => {
+            for &elem in &t.elems {
+                occurrences.extend(&var_occurrences[elem]);
+            }
+        }
     }
 
     occurrences
@@ -153,6 +161,16 @@ fn add_preds(preds: &mut SecondaryMap<TyId, Vec<TyId>>, ty: &Ty, ty_id: TyId) {
         Ty::Var(_) => {}
 
         Ty::Null => {}
+
+        Ty::Union(t) => {
+            for &elem in &t.elems {
+                let p = preds.entry(elem).unwrap().or_default();
+
+                if !p.contains(&ty_id) {
+                    p.push(ty_id);
+                }
+            }
+        }
     }
 }
 
@@ -171,6 +189,27 @@ impl TyCk {
 
     pub fn add_ctor_ty(&mut self, ctor: DefId, args: Vec<TyId>) -> TyId {
         self.add_ty(Ty::Ctor(ConstructedTy { ctor, args }))
+    }
+
+    pub fn ty_union(&mut self, tys: &[TyId]) -> TyId {
+        let mut elems = vec![];
+
+        for &ty_id in tys {
+            if let Ty::Union(t) = &self.tys[ty_id] {
+                elems.extend_from_slice(&t.elems);
+            }
+        }
+
+        elems.sort();
+        elems.dedup();
+
+        assert!(!elems.is_empty());
+
+        if elems.len() == 1 {
+            elems[0]
+        } else {
+            self.add_ty(Ty::Union(TyUnion { elems }))
+        }
     }
 
     pub fn subst(&mut self, ty_id: TyId, map: &SparseSecondaryMap<TyId, TyId>) -> TyId {
@@ -195,6 +234,16 @@ impl TyCk {
 
             Ty::Var(_) => return ty_id,
             Ty::Null => return ty_id,
+
+            Ty::Union(t) => {
+                let mut elems = t.elems.clone();
+
+                for elem in &mut elems {
+                    *elem = self.subst(*elem, map);
+                }
+
+                return self.ty_union(&elems);
+            }
         };
 
         self.add_ty(ty)
@@ -275,6 +324,9 @@ impl TyCk {
                     })
             }
 
+            // type unions are not related by subtyping.
+            (Ty::Union(_), _) | (_, Ty::Union(_)) => false,
+
             (Ty::Ctor(_) | Ty::Param(_) | Ty::Null, _) => false,
         }
     }
@@ -326,7 +378,9 @@ impl TyCk {
                 self.add_ctor_ty(ctor, args)
             }
 
-            (Ty::Error | Ty::Ctor(_) | Ty::Param(_) | Ty::Var(_) | Ty::Null, _) => self.builtin.any,
+            (Ty::Error | Ty::Ctor(_) | Ty::Param(_) | Ty::Var(_) | Ty::Null | Ty::Union(_), _) => {
+                self.builtin.any
+            }
         }
     }
 
@@ -379,7 +433,9 @@ impl TyCk {
                 Some(self.add_ctor_ty(ctor, args))
             }
 
-            (Ty::Error | Ty::Ctor(_) | Ty::Param(_) | Ty::Var(_) | Ty::Null, _) => None,
+            (Ty::Error | Ty::Ctor(_) | Ty::Param(_) | Ty::Var(_) | Ty::Null | Ty::Union(_), _) => {
+                None
+            }
         }
     }
 }
@@ -428,6 +484,20 @@ impl Sema<'_> {
                 Ty::Var(n) => write!(f, "?T{n}"),
 
                 Ty::Null => write!(f, "null"),
+
+                Ty::Union(t) => {
+                    write!(f, "(")?;
+
+                    for (idx, &ty_id) in t.elems.iter().enumerate() {
+                        if idx > 0 {
+                            write!(f, " | ")?;
+                        }
+
+                        write!(f, "{}", self.format_ty(ty_id))?;
+                    }
+
+                    write!(f, ")")
+                }
             }
         })
     }
@@ -1328,7 +1398,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_ty_expr_union(&mut self, ty_expr: &'ast ast::TyExpr, t: &'ast ast::TyExprUnion) {
-        unimplemented!()
+        let elems = &[self.tyck_ty_expr(t.lhs), self.tyck_ty_expr(t.rhs)];
+        let ty_id = self.sema.tyck.ty_union(elems);
+        self.sema.tyck.ty_exprs.insert(ty_expr.id, ty_id);
     }
 
     fn tyck_ret_ty_expr(&mut self, ret_ty_expr: Option<TyExprId>) -> TyId {

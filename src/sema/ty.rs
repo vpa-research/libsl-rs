@@ -32,6 +32,10 @@ pub enum Ty {
 
     /// The null type.
     Null,
+
+    /// A type union.
+    Union(TyUnion),
+
     // TODO: literal types.
 }
 
@@ -57,6 +61,13 @@ impl Ty {
     pub fn as_var(&self) -> Option<usize> {
         match *self {
             Self::Var(n) => Some(n),
+            _ => None,
+        }
+    }
+
+    pub fn as_union(&self) -> Option<&TyUnion> {
+        match self {
+            Self::Union(t) => Some(t),
             _ => None,
         }
     }
@@ -210,4 +221,15 @@ pub struct ConstructedTy {
 
     /// The type arguments.
     pub args: Vec<TyId>,
+}
+
+/// A union of types.
+///
+/// Invariants:
+/// - The elements of a type union are never themselves unions — i.e., they are flattened out.
+/// - The elements are sorted naturally.
+/// - The union contains no duplicates.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TyUnion {
+    pub elems: Vec<TyId>,
 }

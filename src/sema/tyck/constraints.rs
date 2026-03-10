@@ -6,6 +6,7 @@ use std::fmt::{self, Display, Write};
 use std::sync::LazyLock;
 use std::{iter, mem};
 
+use bit_set::BitSet;
 use slotmap::{SecondaryMap, SlotMap, SparseSecondaryMap, new_key_type};
 
 use crate::ast::{self, Variance};
@@ -114,6 +115,12 @@ impl TyUnionFind {
     }
 }
 
+#[derive(Debug, Clone)]
+struct DeferredConstr {
+    vars: BitSet,
+    constr_id: ConstrId,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ConstrSet {
     constrs: SlotMap<ConstrId, Constr>,
@@ -129,7 +136,15 @@ pub struct ConstrSet {
     // does not contain duplicates.
     preds: SecondaryMap<TyId, Vec<TyId>>,
 
+    // tracks the last known type so that new types are added to .uf/.preds.
     last_registered_ty_idx: usize,
+
+    // constraints involving type variables that cannot be reduced and must be checked after the
+    // fact once all occurring variables are instantiated.
+    deferred: Vec<DeferredConstr>,
+
+    // maps variables to deferred constraints dependent on them.
+    dependent_deferred: HashMap<usize, BitSet>,
 }
 
 impl ConstrSet {
@@ -169,7 +184,26 @@ impl ConstrSet {
         lhs_ty_id
     }
 
-    fn are_congruent(&self, sema: &Sema<'_>, lhs_ty_id: TyId, rhs_ty_id: TyId) -> bool {
+    fn normalize_ty_union(&mut self, sema: &mut Sema<'_>, ty_id: TyId) -> TyId {
+        if let Ty::Union(t) = &sema.tyck.tys[ty_id] {
+            let mut elems = t.elems.clone();
+
+            for elem in &mut elems {
+                *elem = self.repr(*elem);
+            }
+
+            let result = sema.tyck.ty_union(&elems);
+            self.merge(sema, ty_id, result);
+
+            result
+        } else {
+            ty_id
+        }
+    }
+
+    fn are_congruent(&mut self, sema: &mut Sema<'_>, lhs_ty_id: TyId, rhs_ty_id: TyId) -> bool {
+        let lhs_ty_id = self.normalize_ty_union(sema, lhs_ty_id);
+        let rhs_ty_id = self.normalize_ty_union(sema, rhs_ty_id);
         let lhs = &sema.tyck.tys[lhs_ty_id];
         let rhs = &sema.tyck.tys[rhs_ty_id];
 
@@ -187,16 +221,20 @@ impl ConstrSet {
 
             (Ty::Null, Ty::Null) => true,
 
-            (Ty::Error | Ty::Param(_) | Ty::Ctor(_) | Ty::Var(_) | Ty::Null, _) => false,
+            (Ty::Union(l), Ty::Union(r)) => l == r,
+
+            (Ty::Error | Ty::Param(_) | Ty::Ctor(_) | Ty::Var(_) | Ty::Null | Ty::Union(_), _) => {
+                false
+            }
         }
     }
 
-    pub fn merge(&mut self, sema: &mut Sema<'_>, lhs_ty_id: TyId, rhs_ty_id: TyId) {
+    pub fn merge(&mut self, sema: &mut Sema<'_>, lhs_ty_id: TyId, rhs_ty_id: TyId) -> TyId {
         let lhs_ty_id = self.normalize(sema, lhs_ty_id, true);
         let rhs_ty_id = self.normalize(sema, rhs_ty_id, true);
         let lhs_preds = self.preds(sema, lhs_ty_id).to_vec();
         let rhs_preds = self.preds(sema, rhs_ty_id).to_vec();
-        self.union(sema, lhs_ty_id, rhs_ty_id);
+        let result = self.union(sema, lhs_ty_id, rhs_ty_id);
 
         for &l in &lhs_preds {
             for &r in &rhs_preds {
@@ -209,6 +247,8 @@ impl ConstrSet {
                 }
             }
         }
+
+        result
     }
 
     fn preds<'a>(&'a self, sema: &'a Sema<'_>, ty_id: TyId) -> &'a [TyId] {
@@ -467,29 +507,91 @@ impl ConstrSet {
         let ty_id = self.repr(ty_id);
         let ty = &sema.tyck.tys[ty_id];
 
-        let normalized = match ty {
-            Ty::Error => Ty::Error,
+        let normalized_ty_id = 'normalized_ty_id: {
+            let normalized = match ty {
+                Ty::Error => Ty::Error,
 
-            &Ty::Param(n) => Ty::Param(n),
+                &Ty::Param(n) => Ty::Param(n),
 
-            Ty::Ctor(t) => Ty::Ctor(ConstructedTy {
-                ctor: t.ctor,
-                args: t
-                    .args
-                    .clone()
-                    .into_iter()
-                    .map(|arg| self.normalize(sema, arg, false))
-                    .collect(),
-            }),
+                Ty::Ctor(t) => Ty::Ctor(ConstructedTy {
+                    ctor: t.ctor,
+                    args: t
+                        .args
+                        .clone()
+                        .into_iter()
+                        .map(|arg| self.normalize(sema, arg, false))
+                        .collect(),
+                }),
 
-            &Ty::Var(idx) => Ty::Var(idx),
+                &Ty::Var(idx) => Ty::Var(idx),
 
-            Ty::Null => Ty::Null,
+                Ty::Null => Ty::Null,
+
+                Ty::Union(t) => {
+                    let mut elems = t.elems.clone();
+
+                    for elem in &mut elems {
+                        *elem = self.normalize(sema, *elem, false);
+                    }
+
+                    break 'normalized_ty_id sema.tyck.ty_union(&elems);
+                }
+            };
+
+            sema.tyck.add_ty(normalized)
         };
 
-        let normalized_ty_id = sema.tyck.add_ty(normalized);
+        self.merge(sema, ty_id, normalized_ty_id)
+    }
 
-        self.union(sema, ty_id, normalized_ty_id)
+    fn is_free_union(&self, tyck: &TyCk, ty_id: TyId) -> bool {
+        tyck.tys[ty_id].as_union().is_some() && self.is_free(tyck, ty_id)
+    }
+
+    fn defer_constr(&mut self, sema: &mut Sema<'_>, constr_id: ConstrId) {
+        let vars: BitSet = match self.constrs[constr_id].kind {
+            ConstrKind::Eq(lhs, rhs) | ConstrKind::Sub(lhs, rhs) | ConstrKind::Coerce(lhs, rhs) => {
+                let lhs_vars = &sema.tyck.var_occurrences[lhs];
+                let rhs_vars = &sema.tyck.var_occurrences[rhs];
+
+                iter::chain(lhs_vars, rhs_vars)
+                    .map(|&ty_id| sema.tyck.tys[ty_id].as_var().unwrap())
+                    .filter(|&idx| !self.is_solved(&sema.tyck, idx))
+                    .collect()
+            }
+        };
+
+        assert!(!vars.is_empty());
+
+        let deferred_idx = self.deferred.len();
+
+        for idx in &vars {
+            self.dependent_deferred
+                .entry(idx)
+                .or_default()
+                .insert(deferred_idx);
+        }
+
+        self.deferred.push(DeferredConstr { vars, constr_id });
+    }
+
+    fn remove_deferred_dependent_var(
+        &mut self,
+        sema: &mut Sema<'_>,
+        diag: &mut impl DiagCtx,
+        deferred_idx: usize,
+        var_idx: usize,
+    ) -> Result {
+        let deferred = &mut self.deferred[deferred_idx];
+        deferred.vars.remove(var_idx);
+
+        if deferred.vars.is_empty() {
+            let constr_id = deferred.constr_id;
+
+            return self.reduce(sema, diag, constr_id);
+        }
+
+        Ok(())
     }
 
     fn reduce(
@@ -517,6 +619,12 @@ impl ConstrSet {
     ) -> Result {
         let lhs = self.repr(lhs);
         let rhs = self.repr(rhs);
+
+        if self.is_free_union(&sema.tyck, lhs) || self.is_free_union(&sema.tyck, rhs) {
+            self.defer_constr(sema, constr_id);
+
+            return Ok(());
+        }
 
         self.merge(sema, lhs, rhs);
 
@@ -570,7 +678,10 @@ impl ConstrSet {
 
             (Ty::Null, Ty::Null) => Ok(()),
 
-            (Ty::Param(_) | Ty::Ctor(_) | Ty::Null, _) => {
+            // the unions are proper types.
+            (Ty::Union(l), Ty::Union(r)) if l == r => Ok(()),
+
+            (Ty::Param(_) | Ty::Ctor(_) | Ty::Null | Ty::Union(_), _) => {
                 self.report_constr_violation(sema, diag, constr_id);
 
                 Err(())
@@ -594,6 +705,12 @@ impl ConstrSet {
         }
 
         if lhs == sema.tyck.builtin.nothing {
+            return Ok(());
+        }
+
+        if self.is_free_union(&sema.tyck, lhs) || self.is_free_union(&sema.tyck, rhs) {
+            self.defer_constr(sema, constr_id);
+
             return Ok(());
         }
 
@@ -671,7 +788,7 @@ impl ConstrSet {
 
             (Ty::Null, Ty::Null) => Ok(()),
 
-            (Ty::Param(_) | Ty::Ctor(_) | Ty::Null, _) => {
+            (Ty::Param(_) | Ty::Ctor(_) | Ty::Null | Ty::Union(_), _) => {
                 self.report_constr_violation(sema, diag, constr_id);
 
                 Err(())
@@ -687,8 +804,17 @@ impl ConstrSet {
         lhs: TyId,
         rhs: TyId,
     ) -> Result {
+        let lhs = self.normalize_ty_union(sema, lhs);
+        let rhs = self.normalize_ty_union(sema, rhs);
+
         let l = &sema.tyck.tys[lhs];
         let r = &sema.tyck.tys[rhs];
+
+        if self.is_free_union(&sema.tyck, lhs) || self.is_free_union(&sema.tyck, rhs) {
+            self.defer_constr(sema, constr_id);
+
+            return Ok(());
+        }
 
         #[allow(clippy::single_match)]
         match (l, r) {
@@ -715,6 +841,33 @@ impl ConstrSet {
 
                         _ => {}
                     }
+                }
+            }
+
+            (Ty::Union(l), Ty::Union(r)) => {
+                // check that l.elems ⊆ r.elems. use the fact that elems are sorted.
+                let mut r = &r.elems[..];
+
+                if l.elems
+                    .iter()
+                    .all(|&elem| match r.iter().position(|&r| elem == r) {
+                        Some(idx) => {
+                            r = &r[idx + 1..];
+
+                            true
+                        }
+
+                        None => false,
+                    })
+                {
+                    return Ok(());
+                }
+            }
+
+            (_, Ty::Union(r)) => {
+                // l is not a union: check for membership.
+                if r.elems.contains(&lhs) {
+                    return Ok(());
                 }
             }
 
@@ -986,6 +1139,13 @@ impl ConstrSet {
         // if the type is a variable, apply symmetry.
         if apply_symmetry && let Ty::Var(v) = sema.tyck.tys[ty_id] {
             return self.incorporate_eq(sema, diag, v, var_ty_id, provenance, false);
+        }
+
+        // update dependent deferred constraints.
+        if let Some(deferred) = self.dependent_deferred.remove(&idx) {
+            for deferred_idx in &deferred {
+                self.remove_deferred_dependent_var(sema, diag, deferred_idx, idx)?;
+            }
         }
 
         Ok(())

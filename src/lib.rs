@@ -99,9 +99,6 @@ new_key_type! {
     /// A [statement][ast::Stmt] identifier.
     pub struct StmtId;
 
-    /// An [access][ast::QualifiedAccess] identifier.
-    pub struct AccessId;
-
     /// A [predicate][ast::Pred] identifier.
     pub struct PredId;
 }
@@ -127,9 +124,6 @@ pub struct LibSl {
 
     /// Statement AST nodes.
     pub stmts: SlotMap<StmtId, ast::Stmt>,
-
-    /// Access AST nodes.
-    pub accesses: SlotMap<AccessId, ast::Access>,
 
     /// Predicate AST nodes.
     pub preds: SlotMap<PredId, ast::Pred>,

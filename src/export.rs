@@ -1855,11 +1855,7 @@ make_display_struct!(StmtAssignDisplay { s } for ast::StmtAssign);
 
 impl Display for StmtAssignDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{} ",
-            self.libsl.accesses[self.s.lhs].display(self.libsl),
-        )?;
+        write!(f, "{} ", self.libsl.exprs[self.s.lhs].display(self.libsl),)?;
 
         if let Some(in_place_op) = self.s.in_place_op {
             write!(f, "{in_place_op}")?;
@@ -1906,11 +1902,13 @@ make_display_struct!(
         ast::ExprKind::PrimitiveLit(e) => e.precedence(),
         ast::ExprKind::ArrayLit(e) => e.precedence(),
         ast::ExprKind::SetLit(e) => e.precedence(),
-        ast::ExprKind::Access(e) => e.precedence(),
-        ast::ExprKind::Prev(e) => e.precedence(),
         ast::ExprKind::ProcCall(e) => e.precedence(),
         ast::ExprKind::ActionCall(e) => e.precedence(),
         ast::ExprKind::Instantiate(e) => e.precedence(),
+        ast::ExprKind::Name(e) => e.precedence(),
+        ast::ExprKind::Prev(e) => e.precedence(),
+        ast::ExprKind::Field(e) => e.precedence(),
+        ast::ExprKind::Index(e) => e.precedence(),
         ast::ExprKind::HasConcept(e) => e.precedence(),
         ast::ExprKind::Cast(e) => e.precedence(),
         ast::ExprKind::TyCompare(e) => e.precedence(),
@@ -1928,13 +1926,13 @@ impl Display for ExprDisplay<'_> {
             }
             ast::ExprKind::ArrayLit(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
             ast::ExprKind::SetLit(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
-            ast::ExprKind::Access(e) => {
-                write!(f, "{}", e.display_prec(self.libsl, self.prec))
-            }
-            ast::ExprKind::Prev(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
             ast::ExprKind::ProcCall(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
             ast::ExprKind::ActionCall(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
             ast::ExprKind::Instantiate(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
+            ast::ExprKind::Name(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
+            ast::ExprKind::Prev(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
+            ast::ExprKind::Field(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
+            ast::ExprKind::Index(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
             ast::ExprKind::HasConcept(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
             ast::ExprKind::Cast(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
             ast::ExprKind::TyCompare(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
@@ -2004,40 +2002,6 @@ impl Display for ExprSetLitDisplay<'_> {
 }
 
 make_display_struct!(
-    ExprAccessDisplay { e } for ast::ExprAccess
-    where precedence: ExprPrec = ExprPrec::Atomic,
-);
-
-impl Display for ExprAccessDisplay<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        display_parens(f, self.e.precedence(), self.prec, |f| {
-            write!(
-                f,
-                "{}",
-                self.libsl.accesses[self.e.access].display(self.libsl),
-            )
-        })
-    }
-}
-
-make_display_struct!(
-    ExprPrevDisplay { e } for ast::ExprPrev
-    where precedence: ExprPrec = ExprPrec::Atomic,
-);
-
-impl Display for ExprPrevDisplay<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        display_parens(f, self.e.precedence(), self.prec, |f| {
-            write!(
-                f,
-                "{}'",
-                self.libsl.accesses[self.e.access].display(self.libsl),
-            )
-        })
-    }
-}
-
-make_display_struct!(
     ExprProcCallDisplay { e } for ast::ExprProcCall
     where precedence: ExprPrec = ExprPrec::Atomic,
 );
@@ -2045,11 +2009,15 @@ make_display_struct!(
 impl Display for ExprProcCallDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         display_parens(f, self.e.precedence(), self.prec, |f| {
-            write!(
-                f,
-                "{}",
-                self.libsl.accesses[self.e.callee].display(self.libsl)
-            )?;
+            if let Some(recv) = self.e.recv {
+                write!(
+                    f,
+                    "{}.",
+                    self.libsl.exprs[recv].display_prec(self.libsl, self.e.precedence()),
+                )?;
+            }
+
+            write!(f, "{}", self.e.name)?;
 
             if let Some(generics) = &self.e.generics {
                 write!(f, "<")?;
@@ -2171,6 +2139,72 @@ impl Display for ExprInstantiateDisplay<'_> {
 }
 
 make_display_struct!(
+    ExprNameDisplay { e } for ast::ExprName
+    where precedence: ExprPrec = ExprPrec::Atomic,
+);
+
+impl Display for ExprNameDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        display_parens(f, self.e.precedence(), self.prec, |f| {
+            write!(f, "{}", self.e.name)
+        })
+    }
+}
+
+make_display_struct!(
+    ExprPrevDisplay { e } for ast::ExprPrev
+    where precedence: ExprPrec = ExprPrec::Atomic,
+);
+
+impl Display for ExprPrevDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        display_parens(f, self.e.precedence(), self.prec, |f| {
+            write!(
+                f,
+                "{}'",
+                self.libsl.exprs[self.e.base].display_prec(self.libsl, self.e.precedence()),
+            )
+        })
+    }
+}
+
+make_display_struct!(
+    ExprFieldDisplay { e } for ast::ExprField
+    where precedence: ExprPrec = ExprPrec::Atomic
+);
+
+impl Display for ExprFieldDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        display_parens(f, self.e.precedence(), self.prec, |f| {
+            write!(
+                f,
+                "{lhs}.{field}",
+                lhs = self.libsl.exprs[self.e.base].display_prec(self.libsl, self.e.precedence()),
+                field = self.e.field,
+            )
+        })
+    }
+}
+
+make_display_struct!(
+    ExprIndexDisplay { e } for ast::ExprIndex
+    where precedence: ExprPrec = ExprPrec::Atomic
+);
+
+impl Display for ExprIndexDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        display_parens(f, self.e.precedence(), self.prec, |f| {
+            write!(
+                f,
+                "{lhs}[{index}]",
+                lhs = self.libsl.exprs[self.e.base].display_prec(self.libsl, self.e.precedence()),
+                index = self.libsl.exprs[self.e.index].display(self.libsl),
+            )
+        })
+    }
+}
+
+make_display_struct!(
     ExprHasConceptDisplay { e } for ast::ExprHasConcept
     where precedence: ExprPrec = ExprPrec::Cast,
 );
@@ -2181,7 +2215,8 @@ impl Display for ExprHasConceptDisplay<'_> {
             write!(
                 f,
                 "{lhs} {negate}has {concept}",
-                lhs = self.libsl.accesses[self.e.scrutinee].display(self.libsl),
+                lhs = self.libsl.exprs[self.e.scrutinee]
+                    .display_prec(self.libsl, self.e.precedence()),
                 negate = if self.e.negate { "!" } else { "" },
                 concept = self.e.concept,
             )
@@ -2441,85 +2476,6 @@ impl Display for ast::FloatLit {
             ast::FloatLit::F32(v) => write!(f, "{}f", v),
             ast::FloatLit::F64(v) => write!(f, "{}", v),
         }
-    }
-}
-
-make_display_struct!(AccessDisplay { a } for ast::Access);
-
-impl Display for AccessDisplay<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.a.kind {
-            ast::AccessKind::Dummy => Ok(()),
-            ast::AccessKind::Name(a) => write!(f, "{}", a.display(self.libsl)),
-            ast::AccessKind::Field(a) => write!(f, "{}", a.display(self.libsl)),
-            ast::AccessKind::Index(a) => write!(f, "{}", a.display(self.libsl)),
-            ast::AccessKind::AutomatonField(a) => write!(f, "{}", a.display(self.libsl)),
-        }
-    }
-}
-
-make_display_struct!(AccessNameDisplay { a } for ast::AccessName);
-
-impl Display for AccessNameDisplay<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.a.name)
-    }
-}
-
-make_display_struct!(AccessFieldDisplay { a } for ast::AccessField);
-
-impl Display for AccessFieldDisplay<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{base}.{field}",
-            base = self.libsl.accesses[self.a.base].display(self.libsl),
-            field = self.a.field,
-        )
-    }
-}
-
-make_display_struct!(AccessIndexDisplay { a } for ast::AccessIndex);
-
-impl Display for AccessIndexDisplay<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{base}[{index}]",
-            base = self.libsl.accesses[self.a.base].display(self.libsl),
-            index = self.libsl.exprs[self.a.index].display(self.libsl),
-        )
-    }
-}
-
-make_display_struct!(AccessAutomatonFieldDisplay { a } for ast::AccessAutomatonField);
-
-impl Display for AccessAutomatonFieldDisplay<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.a.automaton_name)?;
-
-        if let Some(generics) = &self.a.generics {
-            write!(f, "<")?;
-
-            for (idx, ty_arg) in generics.iter().enumerate() {
-                if idx > 0 {
-                    write!(f, ", ")?;
-                }
-
-                write!(f, "{}", ty_arg.display(self.libsl))?;
-            }
-
-            write!(f, ">")?;
-        }
-
-        write!(
-            f,
-            "({base}).{field}",
-            base = self.libsl.accesses[self.a.base].display(self.libsl),
-            field = self.a.field,
-        )?;
-
-        Ok(())
     }
 }
 

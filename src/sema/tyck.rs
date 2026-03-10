@@ -19,7 +19,7 @@ use crate::sema::tyck::constraints::{ConstrProvenance, ConstrSet, VarProvenance}
 use crate::sema::tyck::operators::{Op, OpFnSigProvider, OpOverload, OpOverloadDiagProvider};
 use crate::sema::tyck::overload::Receiver;
 use crate::sema::{Result, Sema};
-use crate::{AccessId, DeclId, ExprId, PredId, StmtId, TyExprId, ast};
+use crate::{DeclId, ExprId, PredId, StmtId, TyExprId, ast};
 
 use self::constraints::SubtypeBoundKind;
 
@@ -87,7 +87,6 @@ pub struct TyCk {
     ty_dedup: HashMap<Ty, TyId>,
     pub builtin: BuiltinTys,
     pub exprs: SecondaryMap<ExprId, TyId>,
-    pub accesses: SecondaryMap<AccessId, TyId>,
     pub ty_exprs: SecondaryMap<TyExprId, TyId>,
 
     // maps variables and generics to their types.
@@ -1526,11 +1525,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             ast::ExprKind::PrimitiveLit(e) => self.tyck_expr_primitive_lit(expr, e, expected),
             ast::ExprKind::ArrayLit(e) => self.tyck_expr_array_lit(expr, e, expected),
             ast::ExprKind::SetLit(e) => self.tyck_expr_set_lit(expr, e, expected),
-            ast::ExprKind::Access(e) => self.tyck_expr_access(expr, e, expected),
-            ast::ExprKind::Prev(e) => self.tyck_expr_prev(expr, e, expected),
             ast::ExprKind::ProcCall(e) => self.tyck_expr_proc_call(expr, e, expected),
             ast::ExprKind::ActionCall(e) => self.tyck_expr_action_call(expr, e, expected),
             ast::ExprKind::Instantiate(e) => self.tyck_expr_instantiate(expr, e, expected),
+            ast::ExprKind::Name(e) => self.tyck_expr_name(expr, e, expected),
+            ast::ExprKind::Prev(e) => self.tyck_expr_prev(expr, e, expected),
+            ast::ExprKind::Field(e) => self.tyck_expr_field(expr, e, expected),
+            ast::ExprKind::Index(e) => self.tyck_expr_index(expr, e, expected),
             ast::ExprKind::HasConcept(e) => self.tyck_expr_has_concept(expr, e, expected),
             ast::ExprKind::Cast(e) => self.tyck_expr_cast(expr, e, expected),
             ast::ExprKind::TyCompare(e) => self.tyck_expr_ty_compare(expr, e, expected),
@@ -1539,13 +1540,6 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
 
         self.sema.tyck.exprs[expr_id]
-    }
-
-    fn tyck_access(&mut self, access_id: AccessId, expected: Option<TyId>) -> TyId {
-        let access = &self.sema.libsl.accesses[access_id];
-        todo!();
-
-        self.sema.tyck.accesses[access_id]
     }
 
     fn check_ty(
@@ -1926,35 +1920,27 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
-    fn tyck_expr_access(
-        &mut self,
-        expr: &'ast ast::Expr,
-        e: &'ast ast::ExprAccess,
-        expected: Option<TyId>,
-    ) {
-        let ty_id = self.tyck_access(e.access, expected);
-
-        self.sema.tyck.exprs.insert(expr.id, ty_id);
-    }
-
-    fn tyck_expr_prev(
-        &mut self,
-        expr: &'ast ast::Expr,
-        e: &'ast ast::ExprPrev,
-        expected: Option<TyId>,
-    ) {
-        // TODO: ensure well-formedness.
-        let ty_id = self.tyck_access(e.access, expected);
-
-        self.sema.tyck.exprs.insert(expr.id, ty_id);
-    }
-
     fn tyck_expr_proc_call(
         &mut self,
         expr: &'ast ast::Expr,
         e: &'ast ast::ExprProcCall,
         expected: Option<TyId>,
     ) {
+        let recv = e
+            .recv
+            .map(|expr_id| {
+                let ty_id = self.tyck_expr(expr_id, None);
+                let vars = self.sema.tyck.var_occurrences[ty_id]
+                    .iter()
+                    .map(|&ty_id| self.sema.tyck.tys[ty_id].as_var().unwrap())
+                    .collect();
+
+                self.constrs
+                    .solve(self.sema, self.diag, vars)
+                    .map(|()| self.repr(ty_id))
+            })
+            .transpose();
+
         let ty_args = e
             .generics
             .as_deref()
@@ -1970,7 +1956,23 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .map(|arg| self.tyck_expr(arg, None))
             .collect::<Vec<_>>();
 
-        let Ok((recv, def_id)) = self.resolve_callee(e.callee, &args, &ty_args) else {
+        let Ok(recv) = recv else {
+            self.sema
+                .tyck
+                .exprs
+                .insert(expr.id, self.sema.tyck.builtin.error);
+
+            return;
+        };
+
+        let Ok((recv, def_id)) = self.resolve_callee(
+            &expr.loc,
+            expr.id,
+            recv,
+            &e.name.to_string(),
+            &args,
+            &ty_args,
+        ) else {
             self.sema
                 .tyck
                 .exprs
@@ -2221,6 +2223,45 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         let ty_id = self.sema.tyck.add_ctor_ty(automaton_def_id, ty_args);
         let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), expected, ty_id);
         self.sema.tyck.exprs.insert(expr.id, ty_id);
+    }
+
+    fn tyck_expr_name(
+        &mut self,
+        expr: &'ast ast::Expr,
+        e: &'ast ast::ExprName,
+        expected: Option<TyId>,
+    ) {
+        todo!()
+    }
+
+    fn tyck_expr_prev(
+        &mut self,
+        expr: &'ast ast::Expr,
+        e: &'ast ast::ExprPrev,
+        expected: Option<TyId>,
+    ) {
+        // TODO: ensure well-formedness.
+        let ty_id = self.tyck_expr(e.base, expected);
+
+        self.sema.tyck.exprs.insert(expr.id, ty_id);
+    }
+
+    fn tyck_expr_field(
+        &mut self,
+        expr: &'ast ast::Expr,
+        e: &'ast ast::ExprField,
+        expected: Option<TyId>,
+    ) {
+        todo!()
+    }
+
+    fn tyck_expr_index(
+        &mut self,
+        expr: &'ast ast::Expr,
+        e: &'ast ast::ExprIndex,
+        expected: Option<TyId>,
+    ) {
+        todo!()
     }
 
     fn tyck_expr_has_concept(

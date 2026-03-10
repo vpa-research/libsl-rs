@@ -2,7 +2,6 @@
 
 use std::ops::ControlFlow;
 
-use crate::AccessId;
 use crate::DeclId;
 use crate::ExprId;
 use crate::LibSl;
@@ -37,11 +36,6 @@ pub trait Visitor<'ast> {
     /// Called for every walked [statement][ast::Stmt].
     fn visit_stmt(&mut self, stmt: &'ast ast::Stmt) -> ControlFlow<()> {
         stmt.walk(self)
-    }
-
-    /// Called for every walked [access expression][ast::Access].
-    fn visit_access(&mut self, access: &'ast ast::Access) -> ControlFlow<()> {
-        access.walk(self)
     }
 
     /// Called for every walked [predicate expression][ast::Pred].
@@ -94,15 +88,6 @@ impl Walkable for ast::Stmt {
     }
 }
 
-impl Walkable for ast::Access {
-    /// Walks the substructure of an [access expression][ast::Access].
-    ///
-    /// It **does not** call [`Visitor::visit_access`] for the provided `access`.
-    fn walk<'ast, V: Visitor<'ast> + ?Sized>(&'ast self, visitor: &mut V) -> ControlFlow<()> {
-        self.kind.walk(visitor)
-    }
-}
-
 impl Walkable for ast::Pred {
     /// Walks the substructure of a [predicate expression][ast::Pred].
     ///
@@ -133,12 +118,6 @@ impl Walkable for ExprId {
 impl Walkable for StmtId {
     fn walk<'ast, V: Visitor<'ast> + ?Sized>(&'ast self, visitor: &mut V) -> ControlFlow<()> {
         visitor.libsl().stmts[*self].walk(visitor)
-    }
-}
-
-impl Walkable for AccessId {
-    fn walk<'ast, V: Visitor<'ast> + ?Sized>(&'ast self, visitor: &mut V) -> ControlFlow<()> {
-        visitor.libsl().accesses[*self].walk(visitor)
     }
 }
 

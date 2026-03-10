@@ -12,7 +12,7 @@ use crate::sema::ty::TyId;
 use crate::sema::tyck::Pass;
 use crate::sema::tyck::constraints::{Constr, ConstrKind, ConstrProvenance};
 use crate::sema::{Result, Sema};
-use crate::{AccessId, WithLibSl, ast};
+use crate::{ExprId, WithLibSl};
 
 use super::FnSig;
 
@@ -150,46 +150,28 @@ impl SelectionCriteria {
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     pub(super) fn resolve_callee(
         &mut self,
-        callee_access_id: AccessId,
+        loc: &Loc,
+        expr_id: ExprId,
+        recv: Option<TyId>,
+        name: &str,
         args: &[TyId],
         ty_args: &[TyId],
     ) -> Result<(Receiver, DefId)> {
-        let callee = &self.sema.libsl.accesses[callee_access_id];
-
-        match &callee.kind {
-            ast::AccessKind::Dummy => unreachable!(),
-            ast::AccessKind::Name(a) => self.resolve_plain_name_callee(callee, a, args, ty_args),
-            ast::AccessKind::Field(a) => self.resolve_method_callee(callee, a, args, ty_args),
-
-            ast::AccessKind::Index(_) => {
-                self.tyck_access(callee_access_id, None);
-                self.diag.emit(
-                    Diag::err()
-                        .at(callee.loc.clone())
-                        .with_msg("cannot call the result of an index expression")
-                        .with_label(Label::primary(callee.loc.clone()))
-                        .build(),
-                );
-                self.result = Err(());
-
-                Err(())
-            }
-
-            ast::AccessKind::AutomatonField(a) => {
-                self.resolve_automaton_method_callee(callee, a, args, ty_args)
-            }
+        match recv {
+            None => self.resolve_plain_name_callee(loc, expr_id, name, args, ty_args),
+            Some(recv) => unimplemented!(),
         }
     }
 
     fn resolve_plain_name_callee(
         &mut self,
-        access: &'ast ast::Access,
-        a: &'ast ast::AccessName,
+        loc: &Loc,
+        expr_id: ExprId,
+        name: &str,
         args: &[TyId],
         ty_args: &[TyId],
     ) -> Result<(Receiver, DefId)> {
-        let name = a.name.to_string();
-        let mut next_scope_id = Some(self.sema.name_res.access_scopes[access.id]);
+        let mut next_scope_id = Some(self.sema.name_res.expr_scopes[expr_id]);
 
         let mut candidates = vec![];
         let recv = Receiver::None;
@@ -206,7 +188,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 }
 
                 ScopeKind::Prelude | ScopeKind::Import(_) | ScopeKind::File(_) => {
-                    if let Some(overloads) = scope.functions.get(&name) {
+                    if let Some(overloads) = scope.functions.get(name) {
                         candidates.extend(overloads.clone().into_iter().filter_map(|def_id| {
                             let provider = DefFnSigProvider(def_id);
 
@@ -223,7 +205,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 ScopeKind::Struct(_struct_def_id) => {
                     // TODO: inheritance?
 
-                    if let Some(overloads) = scope.functions.get(&name) {
+                    if let Some(overloads) = scope.functions.get(name) {
                         candidates.extend(overloads.clone().into_iter().filter_map(|def_id| {
                             let provider = DefFnSigProvider(def_id);
 
@@ -240,7 +222,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 ScopeKind::Automaton(_automaton_def_id) => {
                     // TODO: concepts?
 
-                    if let Some(overloads) = scope.functions.get(&name) {
+                    if let Some(overloads) = scope.functions.get(name) {
                         candidates.extend(overloads.clone().into_iter().filter_map(|def_id| {
                             let provider = DefFnSigProvider(def_id);
 
@@ -257,32 +239,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
 
         let diag_provider = CallOverloadDiagProvider {
-            loc: &a.name.loc,
+            loc: loc,
             name: &name,
         };
 
         self.select_overload(&candidates, &diag_provider)
             .map(|candidate| (recv, candidate.0))
-    }
-
-    fn resolve_method_callee(
-        &mut self,
-        access: &'ast ast::Access,
-        a: &'ast ast::AccessField,
-        args: &[TyId],
-        ty_args: &[TyId],
-    ) -> Result<(Receiver, DefId)> {
-        todo!()
-    }
-
-    fn resolve_automaton_method_callee(
-        &mut self,
-        access: &'ast ast::Access,
-        a: &'ast ast::AccessAutomatonField,
-        args: &[TyId],
-        ty_args: &[TyId],
-    ) -> Result<(Receiver, DefId)> {
-        unimplemented!()
     }
 
     pub fn is_function_applicable(

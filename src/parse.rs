@@ -17,13 +17,12 @@ use antlr_rust::{InputStream, Parser};
 
 use crate::grammar::lexer::LibSLLexer;
 use crate::grammar::parser::{
-    AccessAutomatonFieldContext, AccessAutomatonFieldContextAttrs, AccessContextAll,
-    AccessFieldContext, AccessIndexContext, AccessNameContext, ActionCallExprContextAll,
-    ActionDeclContextAll, ActionParamContextAll, AddBinOpContextAll, AnnotationArgContextAll,
-    AnnotationContextAll, AnnotationDeclContextAll, AnnotationParamContextAll,
-    ArrayLitExprContextAll, AssignOpContextAll, AssignStmtContextAll, AssignsContractContextAll,
-    AtomicExprAccessContext, AtomicExprAccessContextAttrs, AtomicExprArrayLitContextAttrs,
-    AtomicExprContextAll, AtomicExprPrimitiveLitContext, AtomicExprSetLitContextAttrs,
+    ActionCallExprContextAll, ActionDeclContextAll, ActionParamContextAll, AddBinOpContextAll,
+    AnnotationArgContextAll, AnnotationContextAll, AnnotationDeclContextAll,
+    AnnotationParamContextAll, ArrayLitExprContextAll, AssignOpContextAll, AssignStmtContextAll,
+    AssigneeContextAll, AssigneeFieldContext, AssigneeIndexContext, AssigneeNameContext,
+    AssignsContractContextAll, AtomicExprArrayLitContextAttrs, AtomicExprContextAll,
+    AtomicExprNameContext, AtomicExprPrimitiveLitContext, AtomicExprSetLitContextAttrs,
     AtomicExprSignedNumLitContext, AtomicExprSignedNumLitContextAttrs, AutomatonDeclContextAll,
     AutomatonDefDeclConstructorContextAttrs, AutomatonDefDeclContextAll,
     AutomatonDefDeclDestructorContextAttrs, AutomatonDefDeclFunctionContextAttrs,
@@ -36,48 +35,49 @@ use crate::grammar::parser::{
     ContractPredicateExprContextAttrs, ContractPredicateIfContextAttrs,
     ContractRequiresContextAttrs, DestructorDeclContextAll, DestructorDeclContextAttrs,
     EnsuresContractContextAll, EnumDeclContextAll, EnumDeclVariantContextAll,
-    EnumSemanticTypeValueContextAll, ExprAccessContext, ExprAccessContextAttrs,
-    ExprActionCallContextAttrs, ExprAdditiveContext, ExprAndContext, ExprArrayLitContextAttrs,
-    ExprBitAndContext, ExprBitOrContext, ExprBitXorContext, ExprCastContext, ExprContextAll,
-    ExprHasConceptContext, ExprInstantiationContextAttrs, ExprMultiplicativeContext, ExprOrContext,
-    ExprPredicateBlockContextAttrs, ExprPredicateContextAll, ExprPredicateExprContextAttrs,
-    ExprPrevContext, ExprPrimitiveLitContext, ExprPrimitiveLitContextAttrs,
-    ExprProcCallContextAttrs, ExprRelationalContext, ExprSetLitContextAttrs, ExprShiftContext,
-    ExprTypeComparisonContext, ExprUnaryContext, FileContextAll, FileContextAttrs,
-    FullNameContextAll, FunctionBodyContextAll, FunctionDeclContextAll,
-    FunctionDefBracedContextAttrs, FunctionDefContextAll, FunctionModifierContextAll,
-    FunctionParamContextAll, FunctionSignatureContextAll, GenericContextAll, GenericsContextAll,
-    GlobalDeclActionContextAttrs, GlobalDeclAnnotationContextAttrs,
-    GlobalDeclAutomatonContextAttrs, GlobalDeclContextAll, GlobalDeclEnumContextAttrs,
-    GlobalDeclFunctionContextAttrs, GlobalDeclImportContextAttrs, GlobalDeclIncludeContextAttrs,
-    GlobalDeclProcContextAttrs, GlobalDeclSemanticTypeSectionContextAttrs,
-    GlobalDeclStructContextAttrs, GlobalDeclTypeAliasContextAttrs, GlobalDeclVariableContextAttrs,
-    HeaderContextAll, IdentContextAll, IfPredicateContextAll, IfStmtContextAll,
-    ImportDeclContextAll, ImportDeclContextAttrs, IncludeDeclContextAll, IncludeDeclContextAttrs,
+    EnumSemanticTypeValueContextAll, ExprActionCallContextAttrs, ExprAdditiveContext,
+    ExprAndContext, ExprArrayLitContextAttrs, ExprBitAndContext, ExprBitOrContext,
+    ExprBitXorContext, ExprCastContext, ExprContextAll, ExprFieldContext, ExprHasConceptContext,
+    ExprIndexContext, ExprInstantiationContextAttrs, ExprMultiplicativeContext, ExprNameContext,
+    ExprOrContext, ExprPredicateBlockContextAttrs, ExprPredicateContextAll,
+    ExprPredicateExprContextAttrs, ExprPrevContext, ExprPrimitiveLitContext,
+    ExprPrimitiveLitContextAttrs, ExprProcCallQualifiedContext, ExprProcCallUnqualifiedContext,
+    ExprRelationalContext, ExprSetLitContextAttrs, ExprShiftContext, ExprTypeComparisonContext,
+    ExprUnaryContext, FileContextAll, FileContextAttrs, FullNameContextAll, FunctionBodyContextAll,
+    FunctionDeclContextAll, FunctionDefBracedContextAttrs, FunctionDefContextAll,
+    FunctionModifierContextAll, FunctionParamContextAll, FunctionSignatureContextAll,
+    GenericContextAll, GenericsContextAll, GlobalDeclActionContextAttrs,
+    GlobalDeclAnnotationContextAttrs, GlobalDeclAutomatonContextAttrs, GlobalDeclContextAll,
+    GlobalDeclEnumContextAttrs, GlobalDeclFunctionContextAttrs, GlobalDeclImportContextAttrs,
+    GlobalDeclIncludeContextAttrs, GlobalDeclProcContextAttrs,
+    GlobalDeclSemanticTypeSectionContextAttrs, GlobalDeclStructContextAttrs,
+    GlobalDeclTypeAliasContextAttrs, GlobalDeclVariableContextAttrs, HeaderContextAll,
+    IdentContextAll, IfPredicateContextAll, IfStmtContextAll, ImportDeclContextAll,
+    ImportDeclContextAttrs, IncludeDeclContextAll, IncludeDeclContextAttrs,
     InstantiationExprContextAll, LibSLParser, LibSLParserContextType, MulBinOpContextAll,
     NameTypeExprContextAll, PathBareContextAttrs, PathContextAll, PathStringLitContextAttrs,
     PointerTypeExprContextAll, PredicateBlockContextAttrs, PredicateContextAll,
     PredicateExprContextAttrs, PredicateIfContextAttrs, PredicateNamedContext,
     PredicateNamedContextAttrs, PredicateVariableDeclContextAttrs, PrimitiveLitCharContextAttrs,
     PrimitiveLitContextAll, PrimitiveLitFloatContextAttrs, PrimitiveLitIntContextAttrs,
-    PrimitiveLitStringLitContextAttrs, ProcCallExprContextAll, ProcDeclContextAll,
-    ProcModifierContextAll, QualifiedTypeNameContextAll, RelOpContextAll,
-    RequiresContractContextAll, SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs,
-    SemanticTypeDefContextAll, SetLitExprContextAll, ShiftByContextAll, ShiftDeclContextAll,
-    ShiftSourceStateContextAll, ShiftSourceStateShorthandContextAttrs, SignContextAll,
-    SignedIntLitContextAll, SignedIntLitContextAttrs, SignedNumLitContextAll,
-    SignedNumLitFloatContextAttrs, SignedNumLitIntContextAttrs, StateDeclContextAll,
-    StateKindContextAll, StmtAssignContextAttrs, StmtCancelContextAttrs, StmtContextAll,
-    StmtExprContext, StmtIfContextAttrs, StmtVariableDeclContext, StmtVariableDeclContextAttrs,
-    StructDeclContextAll, StructDefDeclContextAll, StructDefDeclFunctionContextAttrs,
-    StructDefDeclVariableContextAttrs, TypeAliasDeclContextAll, TypeArgContextAll,
-    TypeArgSpecContextAll, TypeArgTypeExprContextAttrs, TypeConstraintContextAll,
-    TypeExprContextAll, TypeExprIntersectionContext, TypeExprNameContextAttrs,
-    TypeExprPointerContextAttrs, TypeExprPrimitiveLitContext, TypeExprUnionContext, UnOpContextAll,
-    VariableDeclContextAll, VariableKindContextAll, VarianceSpecContextAll, WhereClauseContextAll,
+    PrimitiveLitStringLitContextAttrs, ProcDeclContextAll, ProcModifierContextAll,
+    QualifiedTypeNameContextAll, RelOpContextAll, RequiresContractContextAll,
+    SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs, SemanticTypeDefContextAll,
+    SetLitExprContextAll, ShiftByContextAll, ShiftDeclContextAll, ShiftSourceStateContextAll,
+    ShiftSourceStateShorthandContextAttrs, SignContextAll, SignedIntLitContextAll,
+    SignedIntLitContextAttrs, SignedNumLitContextAll, SignedNumLitFloatContextAttrs,
+    SignedNumLitIntContextAttrs, StateDeclContextAll, StateKindContextAll, StmtAssignContextAttrs,
+    StmtCancelContextAttrs, StmtContextAll, StmtExprContext, StmtIfContextAttrs,
+    StmtVariableDeclContext, StmtVariableDeclContextAttrs, StructDeclContextAll,
+    StructDefDeclContextAll, StructDefDeclFunctionContextAttrs, StructDefDeclVariableContextAttrs,
+    TypeAliasDeclContextAll, TypeArgContextAll, TypeArgSpecContextAll, TypeArgTypeExprContextAttrs,
+    TypeConstraintContextAll, TypeExprContextAll, TypeExprIntersectionContext,
+    TypeExprNameContextAttrs, TypeExprPointerContextAttrs, TypeExprPrimitiveLitContext,
+    TypeExprUnionContext, UnOpContextAll, VariableDeclContextAll, VariableKindContextAll,
+    VarianceSpecContextAll, WhereClauseContextAll,
 };
 use crate::loc::{Loc, Span};
-use crate::{AccessId, DeclId, ExprId, FileId, LibSl, PredId, StmtId, TyExprId, ast, grammar};
+use crate::{DeclId, ExprId, FileId, LibSl, PredId, StmtId, TyExprId, ast, grammar};
 
 type Result<T, E = ParseError> = std::result::Result<T, E>;
 
@@ -1903,7 +1903,7 @@ impl<'a> AstConstructor<'a> {
 
     fn process_assign_stmt(&mut self, ctx: &AssignStmtContextAll<'_>) -> Result<StmtId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
-        let lhs = self.process_access(ctx.lhs.as_ref().unwrap())?;
+        let lhs = self.process_assignee(ctx.lhs.as_ref().unwrap())?;
 
         let in_place_op = match &**ctx.op.as_ref().unwrap() {
             AssignOpContextAll::OpAssignContext(_) => None,
@@ -1931,6 +1931,50 @@ impl<'a> AstConstructor<'a> {
                 rhs,
             }
             .into(),
+        }))
+    }
+
+    fn process_assignee(&mut self, ctx: &AssigneeContextAll<'_>) -> Result<ExprId> {
+        match ctx {
+            AssigneeContextAll::AssigneeNameContext(ctx) => self.process_assignee_name(ctx),
+            AssigneeContextAll::AssigneeFieldContext(ctx) => self.process_assignee_field(ctx),
+            AssigneeContextAll::AssigneeIndexContext(ctx) => self.process_assignee_index(ctx),
+            AssigneeContextAll::Error(_) => unreachable!(),
+        }
+    }
+
+    fn process_assignee_name(&mut self, ctx: &AssigneeNameContext<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let name = self.process_name(ctx.name.as_ref().unwrap());
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprName { name }.into(),
+        }))
+    }
+
+    fn process_assignee_field(&mut self, ctx: &AssigneeFieldContext<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let base = self.process_expr(ctx.base.as_ref().unwrap())?;
+        let field = self.process_name(ctx.field.as_ref().unwrap());
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprField { base, field }.into(),
+        }))
+    }
+
+    fn process_assignee_index(&mut self, ctx: &AssigneeIndexContext<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let base = self.process_expr(ctx.base.as_ref().unwrap())?;
+        let index = self.process_expr(ctx.index.as_ref().unwrap())?;
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprIndex { base, index }.into(),
         }))
     }
 
@@ -1977,9 +2021,7 @@ impl<'a> AstConstructor<'a> {
                 self.process_set_lit_expr(&ctx.setLitExpr().unwrap())
             }
 
-            AtomicExprContextAll::AtomicExprAccessContext(ctx) => {
-                self.process_atomic_expr_access(ctx)
-            }
+            AtomicExprContextAll::AtomicExprNameContext(ctx) => self.process_atomic_expr_name(ctx),
 
             AtomicExprContextAll::Error(_) => unreachable!(),
         }
@@ -2031,14 +2073,14 @@ impl<'a> AstConstructor<'a> {
         }))
     }
 
-    fn process_atomic_expr_access(&mut self, ctx: &AtomicExprAccessContext<'_>) -> Result<ExprId> {
+    fn process_atomic_expr_name(&mut self, ctx: &AtomicExprNameContext<'_>) -> Result<ExprId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
-        let access = self.process_access(&ctx.access().unwrap())?;
+        let name = self.process_name(ctx.name.as_ref().unwrap());
 
         Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
             id,
             loc,
-            kind: ast::ExprAccess { access }.into(),
+            kind: ast::ExprName { name }.into(),
         }))
     }
 
@@ -2056,10 +2098,8 @@ impl<'a> AstConstructor<'a> {
                 self.process_set_lit_expr(&ctx.setLitExpr().unwrap())
             }
 
-            ExprContextAll::ExprPrevContext(ctx) => self.process_expr_prev(ctx),
-
-            ExprContextAll::ExprProcCallContext(ctx) => {
-                self.process_proc_call_expr(&ctx.procCallExpr().unwrap())
+            ExprContextAll::ExprProcCallUnqualifiedContext(ctx) => {
+                self.process_expr_proc_call_unqualified(ctx)
             }
 
             ExprContextAll::ExprActionCallContext(ctx) => {
@@ -2070,7 +2110,17 @@ impl<'a> AstConstructor<'a> {
                 self.process_instantiation_expr(&ctx.instantiationExpr().unwrap())
             }
 
-            ExprContextAll::ExprAccessContext(ctx) => self.process_expr_access(ctx),
+            ExprContextAll::ExprNameContext(ctx) => self.process_expr_name(ctx),
+
+            ExprContextAll::ExprPrevContext(ctx) => self.process_expr_prev(ctx),
+
+            ExprContextAll::ExprProcCallQualifiedContext(ctx) => {
+                self.process_expr_proc_call_qualified(ctx)
+            }
+
+            ExprContextAll::ExprFieldContext(ctx) => self.process_expr_field(ctx),
+
+            ExprContextAll::ExprIndexContext(ctx) => self.process_expr_index(ctx),
 
             ExprContextAll::ExprUnaryContext(ctx) => self.process_expr_unary(ctx),
 
@@ -2306,20 +2356,12 @@ impl<'a> AstConstructor<'a> {
         }))
     }
 
-    fn process_expr_prev(&mut self, ctx: &ExprPrevContext<'_>) -> Result<ExprId> {
+    fn process_expr_proc_call_unqualified(
+        &mut self,
+        ctx: &ExprProcCallUnqualifiedContext<'_>,
+    ) -> Result<ExprId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
-        let access = self.process_access(ctx.base.as_ref().unwrap())?;
-
-        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
-            id,
-            loc,
-            kind: ast::ExprPrev { access }.into(),
-        }))
-    }
-
-    fn process_proc_call_expr(&mut self, ctx: &ProcCallExprContextAll<'_>) -> Result<ExprId> {
-        let loc = self.get_loc(&ctx.start(), &ctx.stop());
-        let callee = self.process_access(ctx.callee.as_ref().unwrap())?;
+        let name = self.process_name(ctx.name.as_ref().unwrap());
 
         let generics = ctx
             .typeArgs
@@ -2343,7 +2385,8 @@ impl<'a> AstConstructor<'a> {
             id,
             loc,
             kind: ast::ExprProcCall {
-                callee,
+                recv: None,
+                name,
                 generics,
                 args,
             }
@@ -2446,14 +2489,88 @@ impl<'a> AstConstructor<'a> {
         })
     }
 
-    fn process_expr_access(&mut self, ctx: &ExprAccessContext<'_>) -> Result<ExprId> {
+    fn process_expr_name(&mut self, ctx: &ExprNameContext<'_>) -> Result<ExprId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
-        let access = self.process_access(&ctx.access().unwrap())?;
+        let name = self.process_name(ctx.name.as_ref().unwrap());
 
         Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
             id,
             loc,
-            kind: ast::ExprAccess { access }.into(),
+            kind: ast::ExprName { name }.into(),
+        }))
+    }
+
+    fn process_expr_prev(&mut self, ctx: &ExprPrevContext<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let base = self.process_expr(ctx.base.as_ref().unwrap())?;
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprPrev { base }.into(),
+        }))
+    }
+
+    fn process_expr_proc_call_qualified(
+        &mut self,
+        ctx: &ExprProcCallQualifiedContext<'_>,
+    ) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let recv = self.process_expr(ctx.base.as_ref().unwrap())?;
+        let name = self.process_name(ctx.name.as_ref().unwrap());
+
+        let generics = ctx
+            .typeArgs
+            .as_ref()
+            .map(|ctx| self.process_type_arg_spec(ctx))
+            .transpose()?;
+
+        let args = ctx
+            .args
+            .as_ref()
+            .map(|ctx| {
+                ctx.exprs
+                    .iter()
+                    .map(|ctx| self.process_expr(ctx))
+                    .collect::<Result<_>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprProcCall {
+                recv: Some(recv),
+                name,
+                generics,
+                args,
+            }
+            .into(),
+        }))
+    }
+
+    fn process_expr_field(&mut self, ctx: &ExprFieldContext<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let base = self.process_expr(ctx.base.as_ref().unwrap())?;
+        let field = self.process_name(ctx.field.as_ref().unwrap());
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprField { base, field }.into(),
+        }))
+    }
+
+    fn process_expr_index(&mut self, ctx: &ExprIndexContext<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let base = self.process_expr(ctx.base.as_ref().unwrap())?;
+        let index = self.process_expr(ctx.index.as_ref().unwrap())?;
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprIndex { base, index }.into(),
         }))
     }
 
@@ -2503,7 +2620,7 @@ impl<'a> AstConstructor<'a> {
 
     fn process_expr_has_concept(&mut self, ctx: &ExprHasConceptContext<'_>) -> Result<ExprId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
-        let scrutinee = self.process_access(ctx.lhs.as_ref().unwrap())?;
+        let scrutinee = self.process_expr(ctx.lhs.as_ref().unwrap())?;
         let concept = self.process_name(ctx.concept.as_ref().unwrap());
 
         Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
@@ -2717,86 +2834,6 @@ impl<'a> AstConstructor<'a> {
                 lhs,
                 op: ast::BinOp::Or,
                 rhs,
-            }
-            .into(),
-        }))
-    }
-
-    fn process_access(&mut self, ctx: &AccessContextAll<'_>) -> Result<AccessId> {
-        match ctx {
-            AccessContextAll::AccessNameContext(ctx) => Ok(self.process_access_name(ctx)),
-
-            AccessContextAll::AccessFieldContext(ctx) => self.process_access_field(ctx),
-
-            AccessContextAll::AccessIndexContext(ctx) => self.process_access_index(ctx),
-
-            AccessContextAll::AccessAutomatonFieldContext(ctx) => {
-                self.process_access_automaton_field(ctx)
-            }
-
-            AccessContextAll::Error(_) => unreachable!(),
-        }
-    }
-
-    fn process_access_name(&mut self, ctx: &AccessNameContext<'_>) -> AccessId {
-        let loc = self.get_loc(&ctx.start(), &ctx.stop());
-        let name = self.process_name(ctx.name.as_ref().unwrap());
-
-        self.libsl.accesses.insert_with_key(|id| ast::Access {
-            id,
-            loc,
-            kind: ast::AccessName { name }.into(),
-        })
-    }
-
-    fn process_access_field(&mut self, ctx: &AccessFieldContext<'_>) -> Result<AccessId> {
-        let loc = self.get_loc(&ctx.start(), &ctx.stop());
-        let base = self.process_access(ctx.base.as_ref().unwrap())?;
-        let field = self.process_name(ctx.field.as_ref().unwrap());
-
-        Ok(self.libsl.accesses.insert_with_key(|id| ast::Access {
-            id,
-            loc,
-            kind: ast::AccessField { base, field }.into(),
-        }))
-    }
-
-    fn process_access_index(&mut self, ctx: &AccessIndexContext<'_>) -> Result<AccessId> {
-        let loc = self.get_loc(&ctx.start(), &ctx.stop());
-        let base = self.process_access(ctx.base.as_ref().unwrap())?;
-        let index = self.process_expr(ctx.index.as_ref().unwrap())?;
-
-        Ok(self.libsl.accesses.insert_with_key(|id| ast::Access {
-            id,
-            loc,
-            kind: ast::AccessIndex { base, index }.into(),
-        }))
-    }
-
-    fn process_access_automaton_field(
-        &mut self,
-        ctx: &AccessAutomatonFieldContext<'_>,
-    ) -> Result<AccessId> {
-        let loc = self.get_loc(&ctx.start(), &ctx.stop());
-        let automaton_name = self.process_name(ctx.name.as_ref().unwrap());
-
-        let generics = ctx
-            .typeArgs
-            .as_ref()
-            .map(|ctx| self.process_type_arg_spec(ctx))
-            .transpose()?;
-
-        let base = self.process_access(&ctx.access().unwrap())?;
-        let field = self.process_name(ctx.field.as_ref().unwrap());
-
-        Ok(self.libsl.accesses.insert_with_key(|id| ast::Access {
-            id,
-            loc,
-            kind: ast::AccessAutomatonField {
-                automaton_name,
-                generics,
-                base,
-                field,
             }
             .into(),
         }))

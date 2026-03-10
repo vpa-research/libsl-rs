@@ -5,7 +5,7 @@
 use libsl_derive::Walkable;
 
 use crate::loc::Loc;
-use crate::{AccessId, DeclId, ExprId, PredId, StmtId, TyExprId, WithLibSl};
+use crate::{DeclId, ExprId, PredId, StmtId, TyExprId, WithLibSl};
 
 /// A single LibSL file.
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
@@ -156,7 +156,7 @@ impl DeclKind {
     pub fn as_include(&self) -> Option<&DeclInclude> {
         match self {
             Self::Include(d) => Some(d),
-            _ => None
+            _ => None,
         }
     }
 
@@ -204,7 +204,7 @@ impl DeclKind {
     pub fn as_action(&self) -> Option<&DeclAction> {
         match self {
             Self::Action(d) => Some(d),
-        _ => None,
+            _ => None,
         }
     }
 
@@ -1487,8 +1487,11 @@ impl WithLibSl for StmtIf {}
 #[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct StmtAssign {
-    /// The place this statement assigns to.
-    pub lhs: AccessId,
+    /// The place this statement assigns to. Either of:
+    /// - [`ExprName`]
+    /// - [`ExprField`]
+    /// - [`ExprIndex`]
+    pub lhs: ExprId,
 
     /// An optional in-place update operator.
     #[cfg_attr(feature = "serde", no_wrap)]
@@ -1584,12 +1587,6 @@ pub enum ExprKind {
     /// A set literal expression.
     SetLit(ExprSetLit),
 
-    /// A variable/element access expression.
-    Access(ExprAccess),
-
-    /// A previous-state value expression.
-    Prev(ExprPrev),
-
     /// A procedure call expression.
     ProcCall(ExprProcCall),
 
@@ -1598,6 +1595,18 @@ pub enum ExprKind {
 
     /// An automaton instantiation expression.
     Instantiate(ExprInstantiate),
+
+    /// A name expression.
+    Name(ExprName),
+
+    /// A previous-state value expression.
+    Prev(ExprPrev),
+
+    /// A field access expression.
+    Field(ExprField),
+
+    /// An index access expression.
+    Index(ExprIndex),
 
     /// A `has`-concept expression.
     HasConcept(ExprHasConcept),
@@ -1633,18 +1642,6 @@ impl From<ExprSetLit> for ExprKind {
     }
 }
 
-impl From<ExprAccess> for ExprKind {
-    fn from(expr: ExprAccess) -> Self {
-        Self::Access(expr)
-    }
-}
-
-impl From<ExprPrev> for ExprKind {
-    fn from(expr: ExprPrev) -> Self {
-        Self::Prev(expr)
-    }
-}
-
 impl From<ExprProcCall> for ExprKind {
     fn from(expr: ExprProcCall) -> Self {
         Self::ProcCall(expr)
@@ -1660,6 +1657,30 @@ impl From<ExprActionCall> for ExprKind {
 impl From<ExprInstantiate> for ExprKind {
     fn from(expr: ExprInstantiate) -> Self {
         Self::Instantiate(expr)
+    }
+}
+
+impl From<ExprName> for ExprKind {
+    fn from(expr: ExprName) -> Self {
+        Self::Name(expr)
+    }
+}
+
+impl From<ExprPrev> for ExprKind {
+    fn from(expr: ExprPrev) -> Self {
+        Self::Prev(expr)
+    }
+}
+
+impl From<ExprField> for ExprKind {
+    fn from(expr: ExprField) -> Self {
+        Self::Field(expr)
+    }
+}
+
+impl From<ExprIndex> for ExprKind {
+    fn from(expr: ExprIndex) -> Self {
+        Self::Index(expr)
     }
 }
 
@@ -1724,32 +1745,16 @@ pub struct ExprSetLit {
     pub elems: Vec<ExprId>,
 }
 
-/// A variable/element access expression.
-#[derive(Walkable, Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-pub struct ExprAccess {
-    /// The variable/element accessed by this expression.
-    pub access: AccessId,
-}
-
-impl WithLibSl for ExprAccess {}
-
-/// A previous-state value expression.
-#[derive(Walkable, Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-pub struct ExprPrev {
-    /// The variable/element referred to by this expression.
-    pub access: AccessId,
-}
-
-impl WithLibSl for ExprPrev {}
-
 /// A procedure call expression.
 #[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct ExprProcCall {
+    /// The receiver expression.
+    pub recv: Option<ExprId>,
+
     /// The procedure called in this expression.
-    pub callee: AccessId,
+    #[no_walk]
+    pub name: Name,
 
     /// A list of type arguments for the callee.
     pub generics: Option<Vec<TyArg>>,
@@ -1794,6 +1799,52 @@ pub struct ExprInstantiate {
 
 impl WithLibSl for ExprInstantiate {}
 
+/// A name expression.
+#[derive(Walkable, Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
+pub struct ExprName {
+    /// The variable name.
+    #[no_walk]
+    pub name: Name,
+}
+
+impl WithLibSl for ExprName {}
+
+/// A previous-state value expression.
+#[derive(Walkable, Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
+pub struct ExprPrev {
+    /// The variable/element referred to by this expression.
+    pub base: ExprId,
+}
+
+impl WithLibSl for ExprPrev {}
+
+/// A field access expression.
+#[derive(Walkable, Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
+pub struct ExprField {
+    /// The base part of the expression (preceding the dot).
+    pub base: ExprId,
+
+    /// The name of the field.
+    #[no_walk]
+    pub field: Name,
+}
+
+impl WithLibSl for ExprField {}
+
+/// An index access expression,
+#[derive(Walkable, Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
+pub struct ExprIndex {
+    /// The base part of the expression (preceding the brackets).
+    pub base: ExprId,
+
+    /// The index expression.
+    pub index: ExprId,
+}
+
 /// An argument for an automaton instantiation expression.
 #[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
@@ -1821,8 +1872,8 @@ impl WithLibSl for ConstructorArg {}
 #[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct ExprHasConcept {
-    /// An entity this expression tests for.
-    pub scrutinee: AccessId,
+    /// An expression being tested.
+    pub scrutinee: ExprId,
 
     /// Whether to invert the expectation (testing that the scrutinee does *not* have the concept).
     #[no_walk]
@@ -2132,132 +2183,3 @@ pub enum FloatLit {
 }
 
 impl WithLibSl for FloatLit {}
-
-/// A variable/element access.
-#[derive(Debug, Default, Clone)]
-pub struct Access {
-    /// A unique identifier for this access, usable as a (secondary) slotmap key.
-    ///
-    /// This allwos to assicated additional information with the access as well as refer
-    /// to it without violating borrowing rules.
-    pub id: AccessId,
-
-    /// The access's location in the source text.
-    pub loc: Loc,
-
-    /// What kind of access this is.
-    ///
-    /// The variants hold data specific to each access kind.
-    pub kind: AccessKind,
-}
-
-impl WithLibSl for Access {}
-
-/// An enumeration of all possible access kinds.
-#[derive(Walkable, Debug, Default, Clone)]
-#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-pub enum AccessKind {
-    /// A dummy access, the default value of `AccessKind`.
-    ///
-    /// Allows using `mem::take` to take ownership of the value.
-    #[default]
-    Dummy,
-
-    /// A plain identifier.
-    Name(#[no_walk] AccessName),
-
-    /// A field of an outer entity.
-    Field(AccessField),
-
-    /// An indexed element of an outer entity: the `[42]` in `foo[42]`.
-    Index(AccessIndex),
-
-    /// A field of an automaton corresponding to an entity.
-    AutomatonField(AccessAutomatonField),
-}
-
-impl From<AccessName> for AccessKind {
-    fn from(access: AccessName) -> Self {
-        Self::Name(access)
-    }
-}
-
-impl From<AccessField> for AccessKind {
-    fn from(access: AccessField) -> Self {
-        Self::Field(access)
-    }
-}
-
-impl From<AccessIndex> for AccessKind {
-    fn from(access: AccessIndex) -> Self {
-        Self::Index(access)
-    }
-}
-
-impl From<AccessAutomatonField> for AccessKind {
-    fn from(access: AccessAutomatonField) -> Self {
-        Self::AutomatonField(access)
-    }
-}
-
-impl WithLibSl for AccessKind {}
-
-/// An access referring to a plain identifier, such as `foo`.
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-pub struct AccessName {
-    /// The name this access refers to.
-    pub name: Name,
-}
-
-impl WithLibSl for AccessName {}
-
-/// An access referring to a field (or, when used as a callee, a method) of a base entity,
-/// such as `foo.bar`.
-#[derive(Walkable, Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-pub struct AccessField {
-    /// The base part of the access (preceding the dot).
-    pub base: AccessId,
-
-    /// The field this access refers to.
-    #[no_walk]
-    pub field: Name,
-}
-
-impl WithLibSl for AccessField {}
-
-/// An access referring to an element of an indexed collection, such as `foo[42]`.
-#[derive(Walkable, Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-pub struct AccessIndex {
-    /// The base part of the access (preceding the brackets).
-    pub base: AccessId,
-
-    /// An index of the element this access refers to.
-    pub index: ExprId,
-}
-
-impl WithLibSl for AccessIndex {}
-
-/// An access referring a field (or, when used as a callee, a method) of an automaton corresponding
-/// to a base entity, such as `Automaton(foo).bar`.
-#[derive(Walkable, Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-pub struct AccessAutomatonField {
-    /// The name of an automaton to cast the base entity to.
-    #[no_walk]
-    pub automaton_name: Name,
-
-    /// Type arguments for the automaton's type parameters.
-    pub generics: Option<Vec<TyArg>>,
-
-    /// The base entity being cast to an automaton.
-    pub base: AccessId,
-
-    /// The field this access refers to.
-    #[no_walk]
-    pub field: Name,
-}
-
-impl WithLibSl for AccessAutomatonField {}

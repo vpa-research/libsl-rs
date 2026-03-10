@@ -16,7 +16,7 @@ use crate::sema::def::DefId;
 use crate::sema::ty::{BuiltinTyCtor, ConstructedTy, Ty, TyId};
 use crate::sema::tyck::{Pass, TyCk};
 use crate::sema::{Result, Sema};
-use crate::{AccessId, ExprId};
+use crate::ExprId;
 
 new_key_type! {
     pub struct ConstrId;
@@ -321,7 +321,6 @@ impl ConstrSet {
         match self.constrs[constr_id].provenance {
             ConstrProvenance::Constr(constr_id) => self.constr_loc(sema, constr_id),
             ConstrProvenance::Expr(expr_id) => &sema.libsl.exprs[expr_id].loc,
-            ConstrProvenance::Access(access_id) => &sema.libsl.accesses[access_id].loc,
             ConstrProvenance::Fn(def_id) => &sema.name_res.defs[def_id].loc,
             ConstrProvenance::UnOp(_, ref loc) => loc,
             ConstrProvenance::BinOp(_, ref loc) => loc,
@@ -386,10 +385,6 @@ impl ConstrSet {
             }
 
             ConstrProvenance::Expr(_) => {
-                // already has a label.
-            }
-
-            ConstrProvenance::Access(_) => {
                 // already has a label.
             }
 
@@ -1364,9 +1359,6 @@ pub enum ConstrProvenance {
 
     /// Comes from an expression's typing requirements.
     Expr(ExprId),
-
-    /// Comes from an access's typing requirements.
-    Access(AccessId),
 
     /// Comes from a function signature.
     Fn(DefId),

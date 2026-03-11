@@ -10,8 +10,9 @@ use crate::ast::Variance;
 use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
 use crate::sema::def::{
-    DefAction, DefAnnotation, DefAutomaton, DefFunction, DefId, DefKind, FunctionKind,
+    DefAction, DefAnnotation, DefAutomaton, DefFunction, DefId, DefKind, DefVariable, FunctionKind,
 };
+use crate::sema::resolve::{Ns, ScopeId, ScopeKind};
 use crate::sema::ty::{
     BuiltinTyCtor, ConstructedTy, FloatCtor, IntCtor, IntWidth, Ty, TyId, TyUnion,
 };
@@ -81,6 +82,25 @@ pub struct TyParam {
     pub name: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct ResolvedName {
+    pub kind: ResolvedNameKind,
+    pub def_id: DefId,
+}
+
+#[derive(Debug, Clone)]
+pub enum ResolvedNameKind {
+    Var,
+    ImplicitField,
+}
+
+#[derive(Debug, Clone)]
+pub enum AssignmentKind {
+    Var(DefId),
+    Field { implicit: bool, def_id: DefId },
+    Index,
+}
+
 #[derive(Debug, Default)]
 pub struct TyCk {
     pub tys: SlotMap<TyId, Ty>,
@@ -96,6 +116,16 @@ pub struct TyCk {
     pub param_variances: SparseSecondaryMap<DefId, Vec<Variance>>,
     pub ty_params: Vec<TyParam>,
     pub operators: SparseSecondaryMap<ExprId, OpOverload>,
+    pub assignments: SparseSecondaryMap<StmtId, AssignmentKind>,
+
+    // maps procedure call expressions to their resolved call targets.
+    pub call_targets: SparseSecondaryMap<ExprId, (Receiver, DefId)>,
+
+    // maps name expressions to resolved entities.
+    pub name_exprs: SparseSecondaryMap<ExprId, ResolvedName>,
+
+    // maps field expressions to resolved fields.
+    pub field_exprs: SparseSecondaryMap<ExprId, DefId>,
 
     // applicable to enums and automata.
     pub underlying_tys: SparseSecondaryMap<DefId, TyId>,
@@ -1641,6 +1671,81 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .with_label(Label::primary(loc))
             .build()
     }
+
+    fn resolve_expr_name(
+        &mut self,
+        mut scope_id: ScopeId,
+        name: &ast::Name,
+    ) -> Result<ResolvedName> {
+        let loc = &name.loc;
+        let name = name.to_string();
+
+        loop {
+            let scope = &self.sema.name_res.scopes[scope_id];
+
+            let kind = match scope.kind {
+                ScopeKind::Automaton(_) | ScopeKind::Struct(_) => ResolvedNameKind::ImplicitField,
+                _ => ResolvedNameKind::Var,
+            };
+
+            if let Some(def_id) = self
+                .sema
+                .name_res
+                .try_resolve_local(scope_id, Ns::Var, &name)
+            {
+                return Ok(ResolvedName { kind, def_id });
+            }
+
+            match scope.parent {
+                Some(parent_scope_id) => scope_id = parent_scope_id,
+
+                None => {
+                    self.result = Err(());
+                    self.diag
+                        .emit(NameRes::make_unresolved_name_error(&name, loc.clone()));
+
+                    return Err(());
+                }
+            }
+        }
+    }
+
+    fn check_assignable(&mut self, stmt: &'ast ast::Stmt, lhs: ExprId) {
+        let assignment = &self.sema.tyck.assignments[stmt.id];
+
+        match *assignment {
+            AssignmentKind::Var(def_id) | AssignmentKind::Field { def_id, .. } => {
+                let def = self.sema.name_res.def::<DefVariable>(def_id);
+
+                if !def.mutable {
+                    let loc = &self.sema.libsl.exprs[lhs].loc;
+                    let var_loc = self.sema.name_res.defs[def_id].loc.clone();
+                    let var_kind = if matches!(assignment, AssignmentKind::Var(_)) {
+                        "variable"
+                    } else {
+                        "field"
+                    };
+
+                    self.result = Err(());
+                    self.diag.emit(
+                        Diag::err()
+                            .at(loc.clone())
+                            .with_msg(format!("cannot assign to immutable {var_kind}"))
+                            .with_label(Label::primary(loc.clone()))
+                            .with_label(
+                                Label::secondary(var_loc)
+                                    .with_msg(format!("{var_kind} defined here")),
+                            )
+                            .build(),
+                    );
+                }
+            }
+
+            AssignmentKind::Index => {
+                // always assignable.
+            }
+        }
+    }
 }
 
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
@@ -1799,7 +1904,35 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_stmt_assign(&mut self, stmt: &'ast ast::Stmt, s: &'ast ast::StmtAssign) {
-        todo!()
+        let lhs = self.tyck_expr(s.lhs, None);
+        self.tyck_expr(s.rhs, Some(lhs));
+
+        let kind = match &self.sema.libsl.exprs[s.lhs].kind {
+            ast::ExprKind::Name(_) => {
+                let res = &self.sema.tyck.name_exprs[s.lhs];
+
+                match res.kind {
+                    ResolvedNameKind::Var => AssignmentKind::Var(res.def_id),
+
+                    ResolvedNameKind::ImplicitField => AssignmentKind::Field {
+                        implicit: true,
+                        def_id: res.def_id,
+                    },
+                }
+            }
+
+            ast::ExprKind::Field(_) => AssignmentKind::Field {
+                implicit: false,
+                def_id: self.sema.tyck.field_exprs[s.lhs],
+            },
+
+            ast::ExprKind::Index(_) => AssignmentKind::Index,
+
+            _ => unreachable!(),
+        };
+
+        self.sema.tyck.assignments.insert(stmt.id, kind);
+        self.check_assignable(stmt, s.lhs);
     }
 
     fn tyck_stmt_cancel(&mut self, stmt: &'ast ast::Stmt, s: &'ast ast::StmtCancel) {
@@ -2231,7 +2364,23 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         e: &'ast ast::ExprName,
         expected: Option<TyId>,
     ) {
-        todo!()
+        let scope_id = self.sema.name_res.expr_scopes[expr.id];
+
+        let Ok(res) = self.resolve_expr_name(scope_id, &e.name) else {
+            self.sema
+                .tyck
+                .exprs
+                .insert(expr.id, self.sema.tyck.builtin.error);
+
+            return;
+        };
+
+        let def_id = res.def_id;
+        self.sema.tyck.name_exprs.insert(expr.id, res);
+
+        let ty_id = self.sema.tyck.def_tys[def_id];
+        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), expected, ty_id);
+        self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
     fn tyck_expr_prev(

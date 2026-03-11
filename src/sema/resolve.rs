@@ -242,7 +242,7 @@ impl NameRes {
         scope.defs.get(&key).copied()
     }
 
-    fn make_unresolved_name_error(name: &str, loc: Loc) -> Diag {
+    pub(crate) fn make_unresolved_name_error(name: &str, loc: Loc) -> Diag {
         Diag::err()
             .at(loc.clone())
             .with_msg(format!("the name `{name}` is not defined"))
@@ -504,6 +504,22 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn def_mut<T: DefKindProject>(&mut self, def_id: DefId) -> &mut T {
         self.sema.name_res.def_mut(def_id)
+    }
+
+    fn resolve(&mut self, scope_id: ScopeId, ns: Ns, name: &str, loc: &Loc) -> Result<DefId> {
+        match self
+            .sema
+            .name_res
+            .resolve(self.diag, scope_id, ns, name, loc)
+        {
+            Ok(def_id) => Ok(def_id),
+
+            Err(()) => {
+                self.result = Err(());
+
+                return Err(());
+            }
+        }
     }
 }
 
@@ -1896,11 +1912,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     ) {
         let ty_name = ty_expr.ty_name.to_string();
 
-        if let Ok(ctor_def_id) =
-            self.sema
-                .name_res
-                .resolve(self.diag, scope_id, Ns::Ty, &ty_name, &ty_expr.ty_name.loc)
-        {
+        if let Ok(ctor_def_id) = self.resolve(scope_id, Ns::Ty, &ty_name, &ty_expr.ty_name.loc) {
             self.sema
                 .name_res
                 .ty_expr_names
@@ -2058,13 +2070,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         expr_id: ExprId,
         expr: &'ast ast::ExprActionCall,
     ) {
-        if let Ok(def_id) = self.sema.name_res.resolve(
-            self.diag,
-            scope_id,
-            Ns::Action,
-            &expr.name.to_string(),
-            &expr.name.loc,
-        ) {
+        if let Ok(def_id) =
+            self.resolve(scope_id, Ns::Action, &expr.name.to_string(), &expr.name.loc)
+        {
             self.sema.name_res.expr_action_calls.insert(expr_id, def_id);
         }
 
@@ -2086,10 +2094,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         expr: &'ast ast::ExprInstantiate,
     ) {
         let automaton = self
-            .sema
-            .name_res
             .resolve(
-                self.diag,
                 scope_id,
                 Ns::Automaton,
                 &expr.name.to_string(),
@@ -2111,9 +2116,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     .and_then(|automaton| {
                         let scope_id = self.sema.name_res.def_member_scopes[automaton];
 
-                        self.sema
-                            .name_res
-                            .resolve(self.diag, scope_id, Ns::State, &name.to_string(), &name.loc)
+                        self.resolve(scope_id, Ns::State, &name.to_string(), &name.loc)
                             .ok()
                     })
                     .unwrap_or_default(),
@@ -2123,9 +2126,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         .and_then(|automaton| {
                             let scope_id = self.sema.name_res.def_member_scopes[automaton];
 
-                            self.sema
-                                .name_res
-                                .resolve(self.diag, scope_id, Ns::Var, &name.to_string(), &name.loc)
+                            self.resolve(scope_id, Ns::Var, &name.to_string(), &name.loc)
                                 .ok()
                                 .and_then(|def_id| {
                                     let def = self.def::<DefAutomaton>(automaton);
@@ -2165,16 +2166,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .insert(expr_id, InstantiationExprInfo { automaton, args });
     }
 
-    fn process_expr_name(&mut self, scope_id: ScopeId, expr_id: ExprId, expr: &'ast ast::ExprName) {
-        if let Ok(def_id) = self.sema.name_res.resolve(
-            self.diag,
-            scope_id,
-            Ns::Var,
-            &expr.name.to_string(),
-            &expr.name.loc,
-        ) {
-            self.sema.name_res.expr_names.insert(expr_id, def_id);
-        }
+    fn process_expr_name(
+        &mut self,
+        _scope_id: ScopeId,
+        _expr_id: ExprId,
+        _expr: &'ast ast::ExprName,
+    ) {
+        // resolved during tyck.
     }
 
     fn process_expr_prev(
@@ -2215,8 +2213,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     ) {
         self.process_expr(scope_id, expr.scrutinee);
 
-        if let Ok(def_id) = self.sema.name_res.resolve(
-            self.diag,
+        if let Ok(def_id) = self.resolve(
             scope_id,
             Ns::Automaton,
             &expr.concept.to_string(),

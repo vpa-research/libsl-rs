@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::fmt::{self, Display, Write};
-use std::iter;
+use std::{iter, mem};
 
 use slotmap::{SecondaryMap, SlotMap, SparseSecondaryMap};
 
@@ -609,6 +609,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.early_tyck_decls();
         self.tyck_decls();
         self.tyck_decl_bodies();
+        self.replace_with_reprs();
 
         self.result
     }
@@ -931,6 +932,30 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 )
             })
             .collect::<SparseSecondaryMap<_, _>>()
+    }
+
+    fn replace_with_reprs(&mut self) {
+        let mut exprs = mem::take(&mut self.sema.tyck.exprs);
+        let mut ty_exprs = mem::take(&mut self.sema.tyck.ty_exprs);
+        let mut def_tys = mem::take(&mut self.sema.tyck.def_tys);
+        let mut call_targets = mem::take(&mut self.sema.tyck.call_targets);
+
+        let ty_ids = exprs
+            .values_mut()
+            .chain(ty_exprs.values_mut())
+            .chain(def_tys.values_mut())
+            .chain(call_targets.values_mut().flat_map(|(recv, _)| match recv {
+                Receiver::None => None,
+            }));
+
+        for ty_id in ty_ids {
+            *ty_id = self.repr(*ty_id);
+        }
+
+        self.sema.tyck.exprs = exprs;
+        self.sema.tyck.ty_exprs = ty_exprs;
+        self.sema.tyck.def_tys = def_tys;
+        self.sema.tyck.call_targets = call_targets;
     }
 }
 
@@ -1849,6 +1874,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_function_body(&mut self, body: &'ast ast::FunctionBody) {
+        let first_var_idx = self.sema.tyck.var_provenances.len();
+
         for contract in &body.contracts {
             self.tyck_contract(contract);
         }
@@ -1856,6 +1883,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         for &stmt_id in &body.stmts {
             self.tyck_stmt(stmt_id);
         }
+
+        let vars = (first_var_idx..self.sema.tyck.var_provenances.len()).collect::<Vec<_>>();
+        self.result = self
+            .result
+            .and(self.constrs.solve(self.sema, self.diag, vars));
     }
 
     fn tyck_contract(&mut self, contract: &'ast ast::Contract) {

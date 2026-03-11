@@ -2553,7 +2553,16 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         e: &'ast ast::ExprIndex,
         expected: Option<TyId>,
     ) {
-        todo!()
+        let elem_ty = self.fresh_var(VarProvenance::Element { of: expr.id });
+        let array_ty = self
+            .sema
+            .tyck
+            .add_ctor_ty(self.sema.name_res.prelude_defs.array, vec![elem_ty]);
+        self.tyck_expr(e.base, Some(array_ty));
+        self.tyck_expr(e.index, Some(self.sema.tyck.builtin.int32));
+
+        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), expected, elem_ty);
+        self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
     fn tyck_expr_has_concept(

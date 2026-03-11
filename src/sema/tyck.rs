@@ -829,6 +829,17 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.constrs.repr(ty_id)
     }
 
+    fn solve_ty(&mut self, ty_id: TyId) -> Result<TyId> {
+        let vars = self.sema.tyck.var_occurrences[ty_id]
+            .iter()
+            .map(|&ty_id| self.sema.tyck.tys[ty_id].as_var().unwrap())
+            .collect();
+        let result = self.constrs.solve(self.sema, self.diag, vars);
+        self.result = self.result.and(result);
+
+        result.map(|()| self.repr(ty_id))
+    }
+
     fn fn_sig(&self, def_id: DefId) -> &FnSig {
         &self.sema.tyck.sigs[def_id]
     }
@@ -1697,6 +1708,22 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .build()
     }
 
+    fn make_wrong_field_base_ty_err(&self, loc: Loc, base_expr: ExprId, base_ty: TyId) -> Diag {
+        let base_loc = self.sema.libsl.exprs[base_expr].loc.clone();
+
+        Diag::err()
+            .at(loc)
+            .with_msg(format_args!(
+                "cannot access a field of `{}`",
+                self.sema.format_ty(base_ty),
+            ))
+            .with_label(Label::primary(base_loc).with_msg(format_args!(
+                "this expression has type `{}`",
+                self.sema.format_ty(base_ty),
+            )))
+            .build()
+    }
+
     fn resolve_expr_name(
         &mut self,
         mut scope_id: ScopeId,
@@ -1770,6 +1797,18 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 // always assignable.
             }
         }
+    }
+
+    fn ty_param_map_from_args(
+        &self,
+        generics: &[DefId],
+        args: &[TyId],
+    ) -> SparseSecondaryMap<TyId, TyId> {
+        generics
+            .iter()
+            .map(|&def_id| self.sema.tyck.def_tys[def_id])
+            .zip(args.iter().copied())
+            .collect()
     }
 }
 
@@ -1914,7 +1953,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         let stmt = &self.sema.libsl.stmts[stmt_id];
 
         match &stmt.kind {
-            ast::StmtKind::Dummy => todo!(),
+            ast::StmtKind::Dummy => unreachable!(),
             ast::StmtKind::Decl(decl_id) => self.tyck_stmt_decl(stmt, *decl_id),
             ast::StmtKind::If(s) => self.tyck_stmt_if(stmt, s),
             ast::StmtKind::Assign(s) => self.tyck_stmt_assign(stmt, s),
@@ -2095,14 +2134,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .recv
             .map(|expr_id| {
                 let ty_id = self.tyck_expr(expr_id, None);
-                let vars = self.sema.tyck.var_occurrences[ty_id]
-                    .iter()
-                    .map(|&ty_id| self.sema.tyck.tys[ty_id].as_var().unwrap())
-                    .collect();
 
-                self.constrs
-                    .solve(self.sema, self.diag, vars)
-                    .map(|()| self.repr(ty_id))
+                self.solve_ty(ty_id)
             })
             .transpose();
 
@@ -2433,7 +2466,85 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         e: &'ast ast::ExprField,
         expected: Option<TyId>,
     ) {
-        todo!()
+        self.sema
+            .tyck
+            .exprs
+            .insert(expr.id, self.sema.tyck.builtin.error);
+
+        let base = self.tyck_expr(e.base, None);
+        let Ok(base) = self.solve_ty(base) else {
+            return;
+        };
+
+        let (scope_id, param_map) = match &self.sema.tyck.tys[base] {
+            Ty::Error => return,
+
+            Ty::Ctor(t) => match &self.sema.name_res.defs[t.ctor].kind {
+                DefKind::Dummy => unreachable!(),
+                DefKind::Import(_) => unreachable!(),
+
+                DefKind::Struct(def) => (
+                    self.sema.name_res.def_member_scopes[t.ctor],
+                    self.ty_param_map_from_args(&def.generics, &t.args),
+                ),
+
+                DefKind::Automaton(def) => (
+                    self.sema.name_res.def_member_scopes[t.ctor],
+                    self.ty_param_map_from_args(&def.generics, &t.args),
+                ),
+
+                _ => {
+                    self.result = Err(());
+                    self.diag.emit(self.make_wrong_field_base_ty_err(
+                        expr.loc.clone(),
+                        e.base,
+                        base,
+                    ));
+
+                    return;
+                }
+            },
+
+            Ty::Var(_) => unreachable!(),
+
+            Ty::Param(_) | Ty::Null | Ty::Union(_) => {
+                self.result = Err(());
+                self.diag
+                    .emit(self.make_wrong_field_base_ty_err(expr.loc.clone(), e.base, base));
+
+                return;
+            }
+        };
+
+        let field = e.field.to_string();
+
+        let Some(def_id) = self.sema.name_res.try_resolve(scope_id, Ns::Var, &field) else {
+            self.result = Err(());
+            self.diag.emit(
+                Diag::err()
+                    .at(e.field.loc.clone())
+                    .with_msg(format_args!(
+                        "type `{}` has no field named `{field}`",
+                        self.sema.format_ty(base),
+                    ))
+                    .with_label(
+                        Label::primary(self.sema.libsl.exprs[e.base].loc.clone()).with_msg(
+                            format_args!(
+                                "this expression has type `{}`",
+                                self.sema.format_ty(base),
+                            ),
+                        ),
+                    )
+                    .build(),
+            );
+
+            return;
+        };
+
+        let ty_id = self.sema.tyck.def_tys[def_id];
+        let ty_id = self.sema.tyck.subst(ty_id, &param_map);
+        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), expected, ty_id);
+        self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
     fn tyck_expr_index(

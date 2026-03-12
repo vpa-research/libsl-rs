@@ -8,7 +8,7 @@ use crate::diag::{Diag, DiagCtx, DummyDiagCtx, Label};
 use crate::loc::Loc;
 use crate::sema::def::DefId;
 use crate::sema::resolve::ScopeKind;
-use crate::sema::ty::TyId;
+use crate::sema::ty::{Ty, TyId};
 use crate::sema::tyck::Pass;
 use crate::sema::tyck::constraints::{Constr, ConstrKind, ConstrProvenance};
 use crate::sema::{Result, Sema};
@@ -26,6 +26,8 @@ pub struct OverloadResult {
 #[derive(Debug, Clone)]
 pub enum Receiver {
     None,
+    Implicit(TyId),
+    Explicit(TyId),
 }
 
 pub trait FnSigProvider {
@@ -152,14 +154,43 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         &mut self,
         loc: &Loc,
         expr_id: ExprId,
-        recv: Option<TyId>,
+        recv: &Receiver,
         name: &str,
         args: &[TyId],
         ty_args: &[TyId],
-    ) -> Result<(Receiver, DefId)> {
+    ) -> Result<DefId> {
         match recv {
-            None => self.resolve_plain_name_callee(loc, expr_id, name, args, ty_args),
-            Some(recv) => unimplemented!(),
+            Receiver::None | Receiver::Implicit(_) => {
+                self.resolve_plain_name_callee(loc, expr_id, recv, name, args, ty_args)
+            }
+
+            Receiver::Explicit(ty_id) => {
+                self.resolve_explicit_recv_callee(loc, name, *ty_id, args, ty_args)
+            }
+        }
+    }
+
+    fn find_method_candidates(
+        &mut self,
+        candidates: &mut Vec<DefFnSigProvider>,
+        def_id: DefId,
+        name: &str,
+        recv: &Receiver,
+        args: &[TyId],
+        ty_args: &[TyId],
+    ) {
+        let member_scope_id = self.sema.name_res.def_member_scopes[def_id];
+
+        if let Some(overloads) = self.sema.name_res.scopes[member_scope_id]
+            .functions
+            .get(name)
+        {
+            candidates.extend(overloads.clone().into_iter().filter_map(|def_id| {
+                let provider = DefFnSigProvider(def_id);
+
+                self.is_function_applicable(&provider, recv, args, ty_args)
+                    .then_some(provider)
+            }));
         }
     }
 
@@ -167,14 +198,14 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         &mut self,
         loc: &Loc,
         expr_id: ExprId,
+        recv: &Receiver,
         name: &str,
         args: &[TyId],
         ty_args: &[TyId],
-    ) -> Result<(Receiver, DefId)> {
+    ) -> Result<DefId> {
         let mut next_scope_id = Some(self.sema.name_res.expr_scopes[expr_id]);
 
         let mut candidates = vec![];
-        let recv = Receiver::None;
 
         while let Some(scope_id) = next_scope_id {
             let scope = &self.sema.name_res.scopes[scope_id];
@@ -192,7 +223,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         candidates.extend(overloads.clone().into_iter().filter_map(|def_id| {
                             let provider = DefFnSigProvider(def_id);
 
-                            self.is_function_applicable(&provider, &recv, args, ty_args)
+                            self.is_function_applicable(&provider, recv, args, ty_args)
                                 .then_some(provider)
                         }));
                     }
@@ -202,34 +233,19 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     // enumerated semantic types do not define functions.
                 }
 
-                ScopeKind::Struct(_struct_def_id) => {
-                    // TODO: inheritance?
-
-                    if let Some(overloads) = scope.functions.get(name) {
-                        candidates.extend(overloads.clone().into_iter().filter_map(|def_id| {
-                            let provider = DefFnSigProvider(def_id);
-
-                            self.is_function_applicable(&provider, &recv, args, ty_args)
-                                .then_some(provider)
-                        }));
-                    }
+                ScopeKind::Struct(def_id) | ScopeKind::Automaton(def_id) => {
+                    self.find_method_candidates(
+                        &mut candidates,
+                        *def_id,
+                        name,
+                        recv,
+                        args,
+                        ty_args,
+                    );
                 }
 
                 ScopeKind::Enum(_) => {
                     // enums never define functions.
-                }
-
-                ScopeKind::Automaton(_automaton_def_id) => {
-                    // TODO: concepts?
-
-                    if let Some(overloads) = scope.functions.get(name) {
-                        candidates.extend(overloads.clone().into_iter().filter_map(|def_id| {
-                            let provider = DefFnSigProvider(def_id);
-
-                            self.is_function_applicable(&provider, &recv, args, ty_args)
-                                .then_some(provider)
-                        }));
-                    }
                 }
             }
 
@@ -238,13 +254,40 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             }
         }
 
-        let diag_provider = CallOverloadDiagProvider {
-            loc: loc,
-            name: &name,
-        };
+        let diag_provider = CallOverloadDiagProvider { loc, name };
 
         self.select_overload(&candidates, &diag_provider)
-            .map(|candidate| (recv, candidate.0))
+            .map(|candidate| candidate.0)
+    }
+
+    fn resolve_explicit_recv_callee(
+        &mut self,
+        loc: &Loc,
+        name: &str,
+        recv_ty_id: TyId,
+        args: &[TyId],
+        ty_args: &[TyId],
+    ) -> Result<DefId> {
+        let recv = Receiver::Explicit(recv_ty_id);
+        let mut candidates = vec![];
+
+        match &self.sema.tyck.tys[recv_ty_id] {
+            Ty::Error => unreachable!(),
+
+            Ty::Ctor(t) => {
+                self.find_method_candidates(&mut candidates, t.ctor, name, &recv, args, ty_args);
+            }
+
+            Ty::Param(_) => todo!(),
+            Ty::Var(_) => todo!(),
+            Ty::Null => todo!(),
+            Ty::Union(_) => todo!(),
+        }
+
+        let diag_provider = CallOverloadDiagProvider { loc, name };
+
+        self.select_overload(&candidates, &diag_provider)
+            .map(|candidate| candidate.0)
     }
 
     pub fn is_function_applicable(
@@ -275,12 +318,25 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 )?;
             }
 
-            match recv {
-                Receiver::None => {
-                    if sig.recv.is_some() {
-                        return Err(());
-                    }
+            match (recv, sig.recv) {
+                (Receiver::None, None) => {}
+
+                (Receiver::Implicit(_), None) => {}
+
+                (Receiver::Implicit(ty_id) | Receiver::Explicit(ty_id), Some(recv)) => {
+                    let expected = self.make_recv_ty(&Loc::Synthetic, recv);
+
+                    constr.add(
+                        self.sema,
+                        &mut DummyDiagCtx,
+                        Constr {
+                            kind: ConstrKind::Sub(*ty_id, expected),
+                            provenance: candidate.applicability_constr_provenance(),
+                        },
+                    )?;
                 }
+
+                _ => return Err(()),
             }
 
             for (&param, &arg) in iter::zip(&sig.params, args) {

@@ -957,6 +957,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .chain(def_tys.values_mut())
             .chain(call_targets.values_mut().flat_map(|(recv, _)| match recv {
                 Receiver::None => None,
+                Receiver::Implicit(ty_id) | Receiver::Explicit(ty_id) => Some(ty_id),
             }));
 
         for ty_id in ty_ids {
@@ -1633,12 +1634,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 match variance {
                     Some(ast::Variance::Invariant) | None => ty_id,
 
-                    Some(ast::Variance::Covariant) => todo!(),
-                    Some(ast::Variance::Contravariant) => todo!(),
+                    Some(ast::Variance::Covariant) => unimplemented!(),
+                    Some(ast::Variance::Contravariant) => unimplemented!(),
                 }
             }
 
-            ast::TyArg::Wildcard(_) => todo!(),
+            ast::TyArg::Wildcard(_) => unimplemented!(),
         }
     }
 
@@ -1809,6 +1810,97 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .map(|&def_id| self.sema.tyck.def_tys[def_id])
             .zip(args.iter().copied())
             .collect()
+    }
+
+    fn find_implicit_recv(&mut self, mut scope_id: ScopeId) -> Option<TyId> {
+        loop {
+            let scope = &self.sema.name_res.scopes[scope_id];
+
+            match scope.kind {
+                ScopeKind::Dummy => unreachable!(),
+
+                ScopeKind::Struct(def_id) => {
+                    let ty_args = self
+                        .sema
+                        .name_res
+                        .def::<DefStruct>(def_id)
+                        .generics
+                        .iter()
+                        .map(|&def_id| self.sema.tyck.def_tys[def_id])
+                        .collect();
+
+                    return Some(self.sema.tyck.add_ctor_ty(def_id, ty_args));
+                }
+
+                ScopeKind::Automaton(def_id) => {
+                    let ty_args = self
+                        .sema
+                        .name_res
+                        .def::<DefStruct>(def_id)
+                        .generics
+                        .iter()
+                        .map(|&def_id| self.sema.tyck.def_tys[def_id])
+                        .collect();
+
+                    return Some(self.sema.tyck.add_ctor_ty(def_id, ty_args));
+                }
+
+                ScopeKind::Prelude
+                | ScopeKind::Import(..)
+                | ScopeKind::File(..)
+                | ScopeKind::SemanticTyEnum(..)
+                | ScopeKind::Params(..)
+                | ScopeKind::Enum(..)
+                | ScopeKind::Block { .. } => {}
+            }
+
+            scope_id = scope.parent?;
+        }
+    }
+
+    fn make_recv_ty(&mut self, loc: &Loc, def_id: DefId) -> TyId {
+        let generics = match &self.sema.name_res.defs[def_id].kind {
+            DefKind::Dummy => unreachable!(),
+            DefKind::Import(_) => unreachable!(),
+            DefKind::TyAlias(_) => unreachable!(),
+
+            DefKind::Struct(def) => self
+                .sema
+                .name_res
+                .def::<DefStruct>(def_id)
+                .generics
+                .iter()
+                .map(|&def_id| self.sema.tyck.def_tys[def_id])
+                .collect::<Vec<_>>(),
+
+            DefKind::Automaton(def) => self
+                .sema
+                .name_res
+                .def::<DefStruct>(def_id)
+                .generics
+                .iter()
+                .map(|&def_id| self.sema.tyck.def_tys[def_id])
+                .collect::<Vec<_>>(),
+
+            DefKind::BuiltinCtor(_)
+            | DefKind::SemanticTy(_)
+            | DefKind::SemanticTyEnumValue { .. }
+            | DefKind::Enum(_)
+            | DefKind::EnumVariant { .. }
+            | DefKind::Annotation(_)
+            | DefKind::Action(_)
+            | DefKind::Function(_)
+            | DefKind::Variable(_)
+            | DefKind::State(_)
+            | DefKind::TyVariable(_)
+            | DefKind::Param { .. }
+            | DefKind::Pred(_) => unreachable!(),
+        };
+
+        let param_map = self.make_fresh_vars_for_ty_params(&generics, loc);
+        let ty_args = generics.into_iter().map(|ty_id| param_map[ty_id]).collect();
+
+        self.sema.tyck.add_ctor_ty(def_id, ty_args)
     }
 }
 
@@ -2130,6 +2222,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         e: &'ast ast::ExprProcCall,
         expected: Option<TyId>,
     ) {
+        self.sema
+            .tyck
+            .exprs
+            .insert(expr.id, self.sema.tyck.builtin.error);
+
         let recv = e
             .recv
             .map(|expr_id| {
@@ -2155,27 +2252,29 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .collect::<Vec<_>>();
 
         let Ok(recv) = recv else {
-            self.sema
-                .tyck
-                .exprs
-                .insert(expr.id, self.sema.tyck.builtin.error);
-
             return;
         };
 
-        let Ok((recv, def_id)) = self.resolve_callee(
+        if recv == Some(self.sema.tyck.builtin.error) {
+            return;
+        }
+
+        let recv = match recv {
+            Some(recv) => Receiver::Implicit(recv),
+            None => match self.find_implicit_recv(self.sema.name_res.expr_scopes[expr.id]) {
+                Some(recv) => Receiver::Implicit(recv),
+                None => Receiver::None,
+            },
+        };
+
+        let Ok(def_id) = self.resolve_callee(
             &expr.loc,
             expr.id,
-            recv,
+            &recv,
             &e.name.to_string(),
             &args,
             &ty_args,
         ) else {
-            self.sema
-                .tyck
-                .exprs
-                .insert(expr.id, self.sema.tyck.builtin.error);
-
             return;
         };
 
@@ -2189,9 +2288,18 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             let _ = self.constr_eq(arg, ty_param_map[param], ConstrProvenance::Expr(expr.id));
         }
 
-        match sig.recv {
-            Some(_) => todo!(),
-            None => {}
+        match (recv, sig.recv) {
+            (Receiver::None, None) => {}
+
+            (Receiver::Implicit(_), None) => {}
+
+            (Receiver::Implicit(ty_id) | Receiver::Explicit(ty_id), Some(recv)) => {
+                let expected = self.make_recv_ty(&Loc::Synthetic, recv);
+
+                let _ = self.constr_sub(ty_id, expected, ConstrProvenance::Expr(expr.id));
+            }
+
+            _ => unreachable!(),
         }
 
         for (&param, &arg) in iter::zip(&sig.params, &args) {
@@ -2571,7 +2679,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         e: &'ast ast::ExprHasConcept,
         expected: Option<TyId>,
     ) {
-        todo!()
+        unimplemented!()
     }
 
     fn tyck_expr_cast(

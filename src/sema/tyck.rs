@@ -1006,11 +1006,15 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn early_tyck_decl_semantic_ty(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclSemanticTy) {
+    fn early_tyck_decl_semantic_ty(
+        &mut self,
+        _decl: &'ast ast::Decl,
+        _d: &'ast ast::DeclSemanticTy,
+    ) {
         unimplemented!()
     }
 
-    fn early_tyck_decl_ty_alias(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclTyAlias) {
+    fn early_tyck_decl_ty_alias(&mut self, _decl: &'ast ast::Decl, _d: &'ast ast::DeclTyAlias) {
         unimplemented!()
     }
 
@@ -1036,7 +1040,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         );
     }
 
-    fn early_tyck_decl_annotation(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAnnotation) {
+    fn early_tyck_decl_annotation(
+        &mut self,
+        _decl: &'ast ast::Decl,
+        _d: &'ast ast::DeclAnnotation,
+    ) {
         // do nothing.
     }
 
@@ -1063,27 +1071,31 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.register_parametrized_entity(def_id, |def: &DefFunction| &def.generics, &d.generics);
     }
 
-    fn early_tyck_decl_variable(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclVariable) {
+    fn early_tyck_decl_variable(&mut self, _decl: &'ast ast::Decl, _d: &'ast ast::DeclVariable) {
         // do nothing.
     }
 
-    fn early_tyck_decl_state(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclState) {
+    fn early_tyck_decl_state(&mut self, _decl: &'ast ast::Decl, _d: &'ast ast::DeclState) {
         // do nothing.
     }
 
-    fn early_tyck_decl_shift(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclShift) {
+    fn early_tyck_decl_shift(&mut self, _decl: &'ast ast::Decl, _d: &'ast ast::DeclShift) {
         // do nothing.
     }
 
     fn early_tyck_decl_constructor(
         &mut self,
-        decl: &'ast ast::Decl,
-        d: &'ast ast::DeclConstructor,
+        _decl: &'ast ast::Decl,
+        _d: &'ast ast::DeclConstructor,
     ) {
         // do nothing.
     }
 
-    fn early_tyck_decl_destructor(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclDestructor) {
+    fn early_tyck_decl_destructor(
+        &mut self,
+        _decl: &'ast ast::Decl,
+        _d: &'ast ast::DeclDestructor,
+    ) {
         // do nothing.
     }
 
@@ -1153,15 +1165,15 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn tyck_decl_semantic_ty(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclSemanticTy) {
+    fn tyck_decl_semantic_ty(&mut self, _decl: &'ast ast::Decl, _d: &'ast ast::DeclSemanticTy) {
         unimplemented!()
     }
 
-    fn tyck_decl_ty_alias(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclTyAlias) {
+    fn tyck_decl_ty_alias(&mut self, _decl: &'ast ast::Decl, _d: &'ast ast::DeclTyAlias) {
         unimplemented!()
     }
 
-    fn tyck_decl_struct(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclStruct) {
+    fn tyck_decl_struct(&mut self, _decl: &'ast ast::Decl, d: &'ast ast::DeclStruct) {
         for &decl_id in &d.decls {
             self.tyck_decl(decl_id);
         }
@@ -1291,11 +1303,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.sema.tyck.def_tys.insert(def_id, ty_id);
     }
 
-    fn tyck_decl_state(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclState) {
+    fn tyck_decl_state(&mut self, _decl: &'ast ast::Decl, _d: &'ast ast::DeclState) {
         // do nothing.
     }
 
-    fn tyck_decl_shift(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclShift) {
+    fn tyck_decl_shift(&mut self, _decl: &'ast ast::Decl, _d: &'ast ast::DeclShift) {
         // do nothing.
     }
 
@@ -1407,10 +1419,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn tyck_ty_expr_name_alias(
         &mut self,
-        ty_expr: &'ast ast::TyExpr,
-        t: &'ast ast::TyExprName,
-        ty_args: Vec<TyId>,
-        def_id: DefId,
+        _ty_expr: &'ast ast::TyExpr,
+        _t: &'ast ast::TyExprName,
+        _ty_args: Vec<TyId>,
+        _def_id: DefId,
     ) {
         unimplemented!()
     }
@@ -1457,8 +1469,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn tyck_ty_expr_intersection(
         &mut self,
-        ty_expr: &'ast ast::TyExpr,
-        t: &'ast ast::TyExprIntersection,
+        _ty_expr: &'ast ast::TyExpr,
+        _t: &'ast ast::TyExprIntersection,
     ) {
         unimplemented!()
     }
@@ -1864,19 +1876,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             DefKind::Import(_) => unreachable!(),
             DefKind::TyAlias(_) => unreachable!(),
 
-            DefKind::Struct(def) => self
-                .sema
-                .name_res
-                .def::<DefStruct>(def_id)
+            DefKind::Struct(def) => def
                 .generics
                 .iter()
                 .map(|&def_id| self.sema.tyck.def_tys[def_id])
                 .collect::<Vec<_>>(),
 
-            DefKind::Automaton(def) => self
-                .sema
-                .name_res
-                .def::<DefStruct>(def_id)
+            DefKind::Automaton(def) => def
                 .generics
                 .iter()
                 .map(|&def_id| self.sema.tyck.def_tys[def_id])
@@ -1911,22 +1917,22 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.tyck_decl_body(decl_id);
     }
 
-    fn tyck_decl_semantic_ty_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclSemanticTy) {
+    fn tyck_decl_semantic_ty_body(&mut self, _decl: &'ast ast::Decl, _d: &'ast ast::DeclSemanticTy) {
         unimplemented!()
     }
 
-    fn tyck_decl_ty_alias_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclTyAlias) {
+    fn tyck_decl_ty_alias_body(&mut self, _decl: &'ast ast::Decl, _d: &'ast ast::DeclTyAlias) {
         unimplemented!()
     }
 
-    fn tyck_decl_struct_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclStruct) {
+    fn tyck_decl_struct_body(&mut self, _decl: &'ast ast::Decl, d: &'ast ast::DeclStruct) {
         // TODO: annotations.
         for &decl_id in &d.decls {
             self.tyck_decl_body(decl_id);
         }
     }
 
-    fn tyck_decl_enum_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclEnum) {
+    fn tyck_decl_enum_body(&mut self, _decl: &'ast ast::Decl, _d: &'ast ast::DeclEnum) {
         // TODO: annotations.
     }
 
@@ -1948,18 +1954,18 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn tyck_decl_action_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAction) {
+    fn tyck_decl_action_body(&mut self, _decl: &'ast ast::Decl, _d: &'ast ast::DeclAction) {
         // TODO: annotations.
     }
 
-    fn tyck_decl_automaton_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAutomaton) {
+    fn tyck_decl_automaton_body(&mut self, _decl: &'ast ast::Decl, d: &'ast ast::DeclAutomaton) {
         // TODO: annotations.
         for &decl_id in iter::chain(&d.constructor_variables, &d.decls) {
             self.tyck_decl_body(decl_id);
         }
     }
 
-    fn tyck_decl_function_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclFunction) {
+    fn tyck_decl_function_body(&mut self, _decl: &'ast ast::Decl, d: &'ast ast::DeclFunction) {
         // TODO: annotations.
         if let Some(body) = &d.body {
             self.tyck_function_body(body);
@@ -1975,29 +1981,29 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn tyck_decl_state_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclState) {
+    fn tyck_decl_state_body(&mut self, _decl: &'ast ast::Decl, _d: &'ast ast::DeclState) {
         // do nothing.
     }
 
-    fn tyck_decl_shift_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclShift) {
+    fn tyck_decl_shift_body(&mut self, _decl: &'ast ast::Decl, _d: &'ast ast::DeclShift) {
         // TODO: resolve overloads.
     }
 
-    fn tyck_decl_constructor_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclConstructor) {
+    fn tyck_decl_constructor_body(&mut self, _decl: &'ast ast::Decl, d: &'ast ast::DeclConstructor) {
         // TODO: annotations.
         if let Some(body) = &d.body {
             self.tyck_function_body(body);
         }
     }
 
-    fn tyck_decl_destructor_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclDestructor) {
+    fn tyck_decl_destructor_body(&mut self, _decl: &'ast ast::Decl, d: &'ast ast::DeclDestructor) {
         // TODO: annotations.
         if let Some(body) = &d.body {
             self.tyck_function_body(body);
         }
     }
 
-    fn tyck_decl_proc_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclProc) {
+    fn tyck_decl_proc_body(&mut self, _decl: &'ast ast::Decl, d: &'ast ast::DeclProc) {
         // TODO: annotations.
         if let Some(body) = &d.body {
             self.tyck_function_body(body);
@@ -2037,7 +2043,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.tyck_pred(contract.pred);
     }
 
-    fn tyck_contract_assigns(&mut self, contract: &'ast ast::ContractAssigns) {
+    fn tyck_contract_assigns(&mut self, _contract: &'ast ast::ContractAssigns) {
         unimplemented!()
     }
 
@@ -2054,11 +2060,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn tyck_stmt_decl(&mut self, stmt: &'ast ast::Stmt, decl_id: DeclId) {
+    fn tyck_stmt_decl(&mut self, _stmt: &'ast ast::Stmt, decl_id: DeclId) {
         self.tyck_decl_fully(decl_id);
     }
 
-    fn tyck_stmt_if(&mut self, stmt: &'ast ast::Stmt, s: &'ast ast::StmtIf) {
+    fn tyck_stmt_if(&mut self, _stmt: &'ast ast::Stmt, s: &'ast ast::StmtIf) {
         self.tyck_expr(s.cond, Some(self.sema.tyck.builtin.bool));
 
         for &stmt_id in iter::chain(&s.then_branch, &s.else_branch) {
@@ -2098,7 +2104,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.check_assignable(stmt, s.lhs);
     }
 
-    fn tyck_stmt_cancel(&mut self, stmt: &'ast ast::Stmt, s: &'ast ast::StmtCancel) {
+    fn tyck_stmt_cancel(&mut self, stmt: &'ast ast::Stmt, _s: &'ast ast::StmtCancel) {
         let enclosing_fn_def_id = self.sema.name_res.stmts[stmt.id].enclosing_fn;
         let enclosing_fn = self.sema.name_res.def::<DefFunction>(enclosing_fn_def_id);
 
@@ -2119,7 +2125,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn tyck_stmt_expr(&mut self, stmt: &'ast ast::Stmt, expr_id: ExprId) {
+    fn tyck_stmt_expr(&mut self, _stmt: &'ast ast::Stmt, expr_id: ExprId) {
         self.tyck_expr(expr_id, None);
     }
 
@@ -2136,21 +2142,21 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn tyck_pred_block(&mut self, pred: &'ast ast::Pred, p: &'ast ast::PredBlock) {
+    fn tyck_pred_block(&mut self, _pred: &'ast ast::Pred, p: &'ast ast::PredBlock) {
         for &pred_id in &p.preds {
             self.tyck_pred(pred_id);
         }
     }
 
-    fn tyck_pred_named(&mut self, pred: &'ast ast::Pred, p: &'ast ast::PredNamed) {
+    fn tyck_pred_named(&mut self, _pred: &'ast ast::Pred, p: &'ast ast::PredNamed) {
         self.tyck_pred(p.pred);
     }
 
-    fn tyck_pred_decl(&mut self, pred: &'ast ast::Pred, decl_id: DeclId) {
+    fn tyck_pred_decl(&mut self, _pred: &'ast ast::Pred, decl_id: DeclId) {
         self.tyck_decl_fully(decl_id);
     }
 
-    fn tyck_pred_if(&mut self, pred: &'ast ast::Pred, p: &'ast ast::PredIf) {
+    fn tyck_pred_if(&mut self, _pred: &'ast ast::Pred, p: &'ast ast::PredIf) {
         self.tyck_expr(p.cond, Some(self.sema.tyck.builtin.bool));
         self.tyck_pred(p.then_branch);
 
@@ -2159,7 +2165,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn tyck_pred_expr(&mut self, pred: &'ast ast::Pred, expr_id: ExprId) {
+    fn tyck_pred_expr(&mut self, _pred: &'ast ast::Pred, expr_id: ExprId) {
         self.tyck_expr(expr_id, Some(self.sema.tyck.builtin.bool));
     }
 
@@ -2675,9 +2681,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn tyck_expr_has_concept(
         &mut self,
-        expr: &'ast ast::Expr,
-        e: &'ast ast::ExprHasConcept,
-        expected: Option<TyId>,
+        _expr: &'ast ast::Expr,
+        _e: &'ast ast::ExprHasConcept,
+        _expected: Option<TyId>,
     ) {
         unimplemented!()
     }

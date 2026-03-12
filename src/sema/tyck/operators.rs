@@ -57,7 +57,7 @@ impl Op for ast::UnOp {
     const ARITY: usize = 1;
 
     fn constr_provenance(&self, loc: &Loc) -> ConstrProvenance {
-        ConstrProvenance::UnOp(self.clone(), loc.clone())
+        ConstrProvenance::UnOp(*self, loc.clone())
     }
 }
 
@@ -65,7 +65,7 @@ impl Op for ast::BinOp {
     const ARITY: usize = 2;
 
     fn constr_provenance(&self, loc: &Loc) -> ConstrProvenance {
-        ConstrProvenance::BinOp(self.clone(), loc.clone())
+        ConstrProvenance::BinOp(*self, loc.clone())
     }
 }
 
@@ -121,7 +121,7 @@ impl<O: Op> OpFnSigProvider<O> {
 }
 
 impl<O: Op> FnSigProvider for OpFnSigProvider<O> {
-    fn fn_sig<'a>(&'a self, sema: &'a Sema<'_>) -> &'a FnSig {
+    fn fn_sig<'a>(&'a self, _sema: &'a Sema<'_>) -> &'a FnSig {
         &self.sig
     }
 
@@ -145,7 +145,7 @@ impl<'a, O: Op> OpOverloadDiagProvider<'a, O> {
 }
 
 impl<O: Op> OverloadDiagProvider<OpFnSigProvider<O>> for OpOverloadDiagProvider<'_, O> {
-    fn empty_candidate_set(&self, sema: &Sema<'_>) -> Diag {
+    fn empty_candidate_set(&self, _sema: &Sema<'_>) -> Diag {
         Diag::err()
             .at(self.loc.clone())
             .with_msg(format!("no applicable overload for `{}` found", self.op))

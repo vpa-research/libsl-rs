@@ -517,7 +517,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             Err(()) => {
                 self.result = Err(());
 
-                return Err(());
+                Err(())
             }
         }
     }
@@ -615,7 +615,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn process_decl_symbol(&mut self, ctx: DeclCtx, decl_id: DeclId) {
         let decl = &self.sema.libsl.decls[decl_id];
-        let (outer_def_id, outer_scope_id) = ctx.outer(&self.sema);
+        let (outer_def_id, outer_scope_id) = ctx.outer(self.sema);
 
         match &decl.kind {
             ast::DeclKind::Dummy => unreachable!(),
@@ -1060,7 +1060,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     .get_disjoint_mut([import_scope_id, imported_scope_id])
                     .unwrap();
 
-                for (key @ &(_, ref name), &def_id) in &imported_scope.defs {
+                for (key @ (_, name), &def_id) in &imported_scope.defs {
                     let resolved_def_id =
                         NameRes::resolve_import_in(&self.sema.name_res.defs, def_id);
 

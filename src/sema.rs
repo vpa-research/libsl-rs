@@ -9,6 +9,7 @@ mod tyck;
 
 use slotmap::{SecondaryMap, SparseSecondaryMap};
 
+use crate::diag::DiagCtx;
 use crate::file::FileLoader;
 use crate::sema::resolve::NameRes;
 use crate::sema::tyck::TyCk;
@@ -55,5 +56,12 @@ impl<'ast> Sema<'ast> {
             name_res: Default::default(),
             tyck: Default::default(),
         }
+    }
+
+    pub fn analyze(&mut self, diag: &mut impl DiagCtx) -> Result {
+        self.resolve_names(diag)?;
+        self.tyck(diag)?;
+
+        Ok(())
     }
 }

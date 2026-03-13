@@ -692,7 +692,7 @@ pub struct DeclVariable {
     pub name: Name,
 
     /// The type of the variable.
-    pub ty_expr: TyExprId,
+    pub ty_expr: Option<TyExprId>,
 
     /// An optional variable initializer expression.
     pub init: Option<ExprId>,

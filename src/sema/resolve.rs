@@ -359,12 +359,6 @@ impl DeclCtx {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum AccessEntityKind {
-    Var,
-    Callee,
-}
-
 struct Pass<'ast, 's, D> {
     sema: &'s mut Sema<'ast>,
     diag: &'s mut D,
@@ -1428,7 +1422,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         // TODO: process annotations.
 
-        self.process_ty_expr(scope_id, decl.ty_expr);
+        if let Some(ty_expr_id) = decl.ty_expr {
+            self.process_ty_expr(scope_id, ty_expr_id);
+        }
 
         if let Some(expr_id) = decl.init {
             self.process_expr(scope_id, expr_id);

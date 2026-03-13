@@ -10,7 +10,8 @@ use crate::ast::Variance;
 use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
 use crate::sema::def::{
-    DefAction, DefAnnotation, DefAutomaton, DefFunction, DefId, DefKind, DefVariable, FunctionKind,
+    Def, DefAction, DefAnnotation, DefAutomaton, DefFunction, DefId, DefKind, DefVariable,
+    FunctionKind, VariableKind,
 };
 use crate::sema::resolve::{Ns, ScopeId, ScopeKind};
 use crate::sema::ty::{
@@ -1128,6 +1129,31 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 .collect(),
         );
     }
+
+    fn check_elided_variable_ty(&mut self, decl_id: DeclId) -> Result {
+        let def_id = self.sema.name_res.decl_defs[decl_id];
+        let def = self.sema.name_res.def::<DefVariable>(def_id);
+
+        let what = match def.kind {
+            VariableKind::Global => "global variable",
+            VariableKind::Local => return Ok(()),
+            VariableKind::Field { .. } => "field",
+            VariableKind::ConstructorVar { .. } => unreachable!(),
+        };
+
+        let Def { name, loc, .. } = &self.sema.name_res.defs[def_id];
+
+        self.result = Err(());
+        self.diag.emit(
+            Diag::err()
+                .at(loc.clone())
+                .with_msg(format!("{what} `{name}` must have an explicit type"))
+                .with_label(Label::primary(loc.clone()))
+                .build(),
+        );
+
+        Err(())
+    }
 }
 
 // The declaration type-checking phase: assigns types to globally visible entities, such as
@@ -1299,7 +1325,17 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn tyck_decl_variable(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclVariable) {
         let def_id = self.sema.name_res.decl_defs[decl.id];
-        let ty_id = self.tyck_ty_expr(d.ty_expr);
+
+        let ty_id = match d.ty_expr {
+            Some(ty_expr) => self.tyck_ty_expr(ty_expr),
+
+            None if self.check_elided_variable_ty(decl.id).is_ok() => {
+                self.fresh_var(VarProvenance::Var(def_id))
+            }
+
+            None => self.sema.tyck.builtin.error,
+        };
+
         self.sema.tyck.def_tys.insert(def_id, ty_id);
     }
 
@@ -1917,7 +1953,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.tyck_decl_body(decl_id);
     }
 
-    fn tyck_decl_semantic_ty_body(&mut self, _decl: &'ast ast::Decl, _d: &'ast ast::DeclSemanticTy) {
+    fn tyck_decl_semantic_ty_body(
+        &mut self,
+        _decl: &'ast ast::Decl,
+        _d: &'ast ast::DeclSemanticTy,
+    ) {
         unimplemented!()
     }
 
@@ -1989,7 +2029,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         // TODO: resolve overloads.
     }
 
-    fn tyck_decl_constructor_body(&mut self, _decl: &'ast ast::Decl, d: &'ast ast::DeclConstructor) {
+    fn tyck_decl_constructor_body(
+        &mut self,
+        _decl: &'ast ast::Decl,
+        d: &'ast ast::DeclConstructor,
+    ) {
         // TODO: annotations.
         if let Some(body) = &d.body {
             self.tyck_function_body(body);

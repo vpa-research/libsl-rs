@@ -1069,12 +1069,11 @@ impl Display for DeclVariableDisplay<'_> {
             ast::VariableKind::Val => write!(f, "val ")?,
         }
 
-        write!(
-            f,
-            "{name}: {ty_expr}",
-            name = self.d.name,
-            ty_expr = self.libsl.ty_exprs[self.d.ty_expr].display(self.libsl),
-        )?;
+        write!(f, "{}", self.d.name)?;
+
+        if let Some(ty_expr_id) = self.d.ty_expr {
+            write!(f, "{}", self.libsl.ty_exprs[ty_expr_id].display(self.libsl))?;
+        }
 
         if let Some(expr_id) = self.d.init {
             write!(f, " = {}", self.libsl.exprs[expr_id].display(self.libsl))?;

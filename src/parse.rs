@@ -941,7 +941,7 @@ impl<'a> AstConstructor<'a> {
                 annotations,
                 kind,
                 name,
-                ty_expr,
+                ty_expr: Some(ty_expr),
                 init,
             }
             .into(),
@@ -1043,7 +1043,11 @@ impl<'a> AstConstructor<'a> {
         let annotations = self.process_annotations(&ctx.annotations)?;
         let kind = self.process_variable_kind(ctx.kind.as_ref().unwrap());
         let name = self.process_name(ctx.name.as_ref().unwrap());
-        let ty_expr = self.process_type_expr(ctx.r#type.as_ref().unwrap())?;
+        let ty_expr = ctx
+            .r#type
+            .as_ref()
+            .map(|ctx| self.process_type_expr(ctx))
+            .transpose()?;
 
         let init = ctx
             .init

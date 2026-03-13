@@ -64,6 +64,17 @@ pub struct FsFileLoader {
     loaded_files: HashMap<RelativePathBuf, String>,
 }
 
+impl FsFileLoader {
+    /// Creates a new instance of [`FsFileLoader`] that searches for files relative to the
+    /// `base_dir`.
+    pub fn new(base_dir: PathBuf) -> Self {
+        Self {
+            base_dir,
+            loaded_files: Default::default(),
+        }
+    }
+}
+
 /// A [`CanonicalName`] based on the relative path.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PathCanonicalName(RelativePathBuf);

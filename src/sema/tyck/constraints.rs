@@ -1434,7 +1434,7 @@ pub enum VarProvenance {
     /// The type of a variable.
     Var(DefId),
 
-    /// The type of an aggregate element.
+    /// The type of an aggregate.
     Element { of: ExprId },
 
     /// A generic instantiation.

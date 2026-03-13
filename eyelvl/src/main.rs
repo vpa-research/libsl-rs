@@ -1,4 +1,6 @@
-use std::fmt::{self, Display, Write};
+use std::env::current_dir;
+use std::error::Error;
+use std::fmt::{self, Debug, Display, Write};
 use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -9,10 +11,15 @@ use antlr_rust::tree::{ErrorNode, ParseTreeListener, TerminalNode};
 use antlr_rust::{InputStream, Parser, TokenSource};
 use args::Command;
 use color_eyre::eyre::{Context, Result, eyre};
-use libsl::LibSl;
+use libsl::diag::{Diag, DiagCtx, Level};
+use libsl::file::{FileLoader, FsFileLoader};
 use libsl::grammar::lexer::LibSLLexer;
 use libsl::grammar::parser::{LibSLParser, LibSLParserContext, LibSLParserContextType};
 use libsl::grammar::parser_listener::LibSLParserListener;
+use libsl::loc::Loc;
+use libsl::sema::{ImportCtx, LoadError, LoadReason, Sema};
+use libsl::{FileId, LibSl};
+use relative_path::PathExt;
 use similar::{ChangeTag, TextDiff};
 use yansi::{Paint, Style};
 
@@ -142,7 +149,7 @@ impl LibSLParserListener<'_> for PrintListener {}
 
 fn print_parse_tree(path: PathBuf) -> Result<()> {
     let contents = fs::read_to_string(&path)
-        .with_context(|| format!("could not read `{}`", path.display()))?;
+        .wrap_err_with(|| format!("could not read `{}`", path.display()))?;
     let input_stream = InputStream::new(contents.as_str());
     let lexer = LibSLLexer::new(input_stream);
     let token_stream = CommonTokenStream::new(lexer);
@@ -159,7 +166,7 @@ fn print_parse_tree(path: PathBuf) -> Result<()> {
 
 fn print_tokens(path: PathBuf) -> Result<()> {
     let contents = fs::read_to_string(&path)
-        .with_context(|| format!("could not read `{}`", path.display()))?;
+        .wrap_err_with(|| format!("could not read `{}`", path.display()))?;
     let input_stream = InputStream::new(contents.as_str());
     let mut lexer = LibSLLexer::new(input_stream);
 
@@ -187,11 +194,11 @@ fn print_tokens(path: PathBuf) -> Result<()> {
 
 fn ouroboros(path: PathBuf, emit_diff: bool) -> Result<()> {
     let contents = fs::read_to_string(&path)
-        .with_context(|| format!("could not read `{}`", path.display()))?;
+        .wrap_err_with(|| format!("could not read `{}`", path.display()))?;
     let mut libsl = LibSl::new();
     let file_id = libsl
         .parse_file(path.display().to_string(), &contents)
-        .with_context(|| eyre!("could not parse `{}`", path.display()))?;
+        .wrap_err_with(|| format!("could not parse `{}`", path.display()))?;
     let file = libsl.file_by_id(file_id);
     let dump = file.display(&libsl).to_string();
 
@@ -208,14 +215,14 @@ fn ouroboros(path: PathBuf, emit_diff: bool) -> Result<()> {
 
 fn check_idempotence(path: PathBuf) -> Result<ExitCode> {
     let contents = fs::read_to_string(&path)
-        .with_context(|| format!("could not read `{}`", path.display()))?;
+        .wrap_err_with(|| format!("could not read `{}`", path.display()))?;
     let mut libsl = LibSl::new();
     let first_file_id = libsl
         .parse_file(path.display().to_string(), &contents)
-        .with_context(|| eyre!("could not parse `{}`", path.display()))?;
+        .wrap_err_with(|| format!("could not parse `{}`", path.display()))?;
     let second_file_id = libsl
         .parse_file(path.display().to_string(), &contents)
-        .context("could not parse the first dump")?;
+        .wrap_err("could not parse the first dump")?;
 
     let first_dump = libsl.file_by_id(first_file_id).display(&libsl).to_string();
     let second_dump = libsl.file_by_id(second_file_id).display(&libsl).to_string();
@@ -232,6 +239,111 @@ fn check_idempotence(path: PathBuf) -> Result<ExitCode> {
     Ok(ExitCode::FAILURE)
 }
 
+struct PlainDiagCtx<'a> {
+    libsl: &'a LibSl,
+}
+
+impl DiagCtx for PlainDiagCtx<'_> {
+    fn emit(&mut self, diag: Diag) {
+        match diag.level {
+            Level::Err => eprint!("error"),
+            Level::Warn => eprint!("warning"),
+        };
+
+        match &diag.loc {
+            None => {}
+            Some(Loc::Synthetic) => eprint!(" in <built-in>"),
+
+            Some(Loc::Span(span)) => {
+                eprint!(" in {file}", file = self.libsl.filename_by_id(span.file_id),);
+
+                if let Some(l) = span.line {
+                    eprint!(":L{l}");
+                }
+
+                if let Some(c) = span.col
+                    && span.line.is_some()
+                {
+                    eprint!(":{c}");
+                }
+            }
+        }
+
+        eprintln!(": {}", diag.msg);
+    }
+}
+
+fn add_load_error_ctx<L>(sema: &Sema<'_>, e: LoadError<L>) -> color_eyre::Report
+where
+    L: FileLoader + Debug + 'static,
+    L::Error: Error + Send + Sync + 'static,
+{
+    let (msg, mut load_reason) = match &e {
+        LoadError::Parse {
+            path, load_reason, ..
+        } => (format!("could not parse `{path}`"), load_reason.clone()),
+
+        LoadError::File {
+            path, load_reason, ..
+        } => (format!("could not load `{path}`"), load_reason.clone()),
+    };
+
+    let mut e = color_eyre::Report::new(e).wrap_err(msg);
+
+    while let LoadReason::Imported(decl_id) = load_reason {
+        let file_id = match &sema.libsl.decls[decl_id].loc {
+            Loc::Span(span) => span.file_id,
+            _ => break,
+        };
+
+        e = e.wrap_err(format!(
+            "imported from `{}`",
+            sema.libsl.filename_by_id(file_id)
+        ));
+
+        load_reason = sema.load_reasons[file_id].clone();
+    }
+
+    e
+}
+
+fn check(path: PathBuf, base_dir: Option<PathBuf>) -> Result<ExitCode> {
+    let base_dir = match base_dir {
+        Some(base_dir) => base_dir,
+
+        None => current_dir().wrap_err("could not retrieve the current directory")?,
+    };
+
+    let path = path
+        .relative_to(&base_dir)
+        .wrap_err_with(|| {
+            format!(
+                "could not convert `{}` to be relative to `{}`",
+                path.display(),
+                base_dir.display(),
+            )
+        })?
+        .to_string();
+
+    let mut libsl = LibSl::new();
+    let mut loader = FsFileLoader::new(base_dir);
+    let mut import_ctx = ImportCtx::new(&mut libsl, &mut loader);
+    let load_result = import_ctx.load(&path);
+    let mut sema = import_ctx.into_sema();
+
+    if let Err(e) = load_result {
+        return Err(add_load_error_ctx(&sema, e));
+    }
+
+    let mut diag = PlainDiagCtx { libsl: sema.libsl };
+
+    if sema.analyze(&mut diag).is_ok() {
+        Ok(ExitCode::SUCCESS)
+    } else {
+        Ok(ExitCode::FAILURE)
+    }
+}
+
 fn main() -> ExitCode {
     color_eyre::install().unwrap();
 
@@ -242,6 +354,7 @@ fn main() -> ExitCode {
         Command::Tokens { path } => print_tokens(path).map(|_| ExitCode::SUCCESS),
         Command::Ouroboros { path, diff } => ouroboros(path, diff).map(|_| ExitCode::SUCCESS),
         Command::CheckIdempotence { path } => check_idempotence(path),
+        Command::Check { path, base_dir } => check(path, base_dir),
     } {
         Ok(code) => code,
 

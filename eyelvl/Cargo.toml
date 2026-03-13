@@ -10,3 +10,4 @@ libsl = { path = ".." }
 antlr-rust = { path = "../tool/antlr4-rust-target/runtime/Rust" }
 similar = "2.7.0"
 yansi = "1.0.1"
+relative-path = "2.0.1"

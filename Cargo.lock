@@ -289,6 +289,7 @@ dependencies = [
  "clap",
  "color-eyre",
  "libsl",
+ "relative-path",
  "similar",
  "yansi",
 ]

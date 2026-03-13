@@ -45,6 +45,9 @@ pub struct ImportCtx<'ast, 'ld, L: FileLoader> {
 pub enum LoadError<L: FileLoader> {
     /// A parsing error.
     Parse {
+        /// The path to the file that caused the error.
+        path: String,
+
         /// The underlying cause.
         err: ParseError,
 
@@ -54,6 +57,9 @@ pub enum LoadError<L: FileLoader> {
 
     /// A file loading error.
     File {
+        /// The path to the file that caused the error.
+        path: String,
+
         /// The underlying cause.
         err: L::Error,
 
@@ -68,8 +74,8 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Parse { err, .. } => Display::fmt(err, f),
-            Self::File { err, .. } => Display::fmt(err, f),
+            Self::Parse { .. } => write!(f, "could not parse a file"),
+            Self::File { .. } => write!(f, "could not load a file"),
         }
     }
 }
@@ -125,6 +131,7 @@ impl<'ast, 'ld, L: FileLoader> ImportCtx<'ast, 'ld, L> {
             };
 
             let f = self.loader.load(&req.path).map_err(|err| LoadError::File {
+                path: req.path.clone(),
                 err,
                 load_reason: load_reason.clone(),
             })?;
@@ -136,6 +143,7 @@ impl<'ast, 'ld, L: FileLoader> ImportCtx<'ast, 'ld, L> {
                     .libsl
                     .parse_file(f.canonical_name.to_string(), f.contents)
                     .map_err(|err| LoadError::Parse {
+                        path: req.path.clone(),
                         err,
                         load_reason: load_reason.clone(),
                     })?;

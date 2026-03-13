@@ -11,6 +11,7 @@ use antlr_rust::tree::{ErrorNode, ParseTreeListener, TerminalNode};
 use antlr_rust::{InputStream, Parser, TokenSource};
 use args::Command;
 use color_eyre::eyre::{Context, Result, eyre};
+use libsl::LibSl;
 use libsl::diag::{Diag, DiagCtx, Level};
 use libsl::file::{FileLoader, FsFileLoader};
 use libsl::grammar::lexer::LibSLLexer;
@@ -18,7 +19,6 @@ use libsl::grammar::parser::{LibSLParser, LibSLParserContext, LibSLParserContext
 use libsl::grammar::parser_listener::LibSLParserListener;
 use libsl::loc::Loc;
 use libsl::sema::{ImportCtx, LoadError, LoadReason, Sema};
-use libsl::{FileId, LibSl};
 use relative_path::PathExt;
 use similar::{ChangeTag, TextDiff};
 use yansi::{Paint, Style};
@@ -326,7 +326,13 @@ fn check(path: PathBuf, base_dir: Option<PathBuf>) -> Result<ExitCode> {
         .to_string();
 
     let mut libsl = LibSl::new();
-    let mut loader = FsFileLoader::new(base_dir);
+    let mut loader = FsFileLoader::new(base_dir.clone()).wrap_err_with(|| {
+        format!(
+            "could not initialize a file loader with the base directory `{}`",
+            base_dir.display(),
+        )
+    })?;
+
     let mut import_ctx = ImportCtx::new(&mut libsl, &mut loader);
     let load_result = import_ctx.load(&path);
     let mut sema = import_ctx.into_sema();

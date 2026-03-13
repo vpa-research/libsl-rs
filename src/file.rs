@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::fmt::{self, Debug, Display};
 use std::hash::Hash;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::{fs, io};
 
 use relative_path::{PathExt, RelativePathBuf};
@@ -67,11 +67,11 @@ pub struct FsFileLoader {
 impl FsFileLoader {
     /// Creates a new instance of [`FsFileLoader`] that searches for files relative to the
     /// `base_dir`.
-    pub fn new(base_dir: PathBuf) -> Self {
-        Self {
-            base_dir,
+    pub fn new(base_dir: PathBuf) -> io::Result<Self> {
+        Ok(Self {
+            base_dir: base_dir.canonicalize()?,
             loaded_files: Default::default(),
-        }
+        })
     }
 }
 
@@ -95,7 +95,7 @@ impl FileLoader for FsFileLoader {
         &'a mut self,
         path: &str,
     ) -> Result<LoadedFile<'a, Self::CanonicalName>, Self::Error> {
-        let path = Path::new(path).canonicalize()?;
+        let path = self.base_dir.join(path).canonicalize()?;
         let relative_path = path.relative_to(&self.base_dir).map_err(io::Error::other)?;
 
         if self.loaded_files.contains_key(&relative_path) {

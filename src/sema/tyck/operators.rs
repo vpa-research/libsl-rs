@@ -6,7 +6,7 @@ use crate::loc::Loc;
 use crate::sema::Sema;
 use crate::sema::ty::{ConstructedTy, IntCtor, Ty, TyId};
 use crate::sema::tyck::constraints::ConstrProvenance;
-use crate::sema::tyck::overload::{FnSigProvider, OverloadDiagProvider};
+use crate::sema::tyck::overload::{ApplicabilityCriteria, FnSigProvider, OverloadDiagProvider};
 use crate::sema::tyck::{BuiltinTys, FnSig, Pass};
 
 #[derive(Debug, Clone)]
@@ -121,6 +121,16 @@ impl<O: Op> OpFnSigProvider<O> {
 }
 
 impl<O: Op> FnSigProvider for OpFnSigProvider<O> {
+    fn satisfies(&self, sema: &mut Sema<'_>, criteria: &ApplicabilityCriteria) -> bool {
+        let &ApplicabilityCriteria { proc_only } = criteria;
+
+        if proc_only {
+            return false;
+        }
+
+        true
+    }
+
     fn fn_sig<'a>(&'a self, _sema: &'a Sema<'_>) -> &'a FnSig {
         &self.sig
     }

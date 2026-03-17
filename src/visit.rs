@@ -14,33 +14,36 @@ use crate::ast;
 ///
 /// Default implementations call the `walk` method to descend recursively.
 #[allow(unused_variables)]
-pub trait Visitor<'ast> {
+pub trait Visitor<'ast, C = ()>
+where
+    C: Clone,
+{
     /// Returns a refernce to [`LibSl`] to resolve entity identifiers while walking over the AST.
     fn libsl(&self) -> &'ast LibSl;
 
     /// Called for every walked [entity declaration][ast::Decl].
-    fn visit_decl(&mut self, decl: &'ast ast::Decl) -> ControlFlow<()> {
-        decl.walk(self)
+    fn visit_decl(&mut self, ctx: C, decl: &'ast ast::Decl) -> ControlFlow<()> {
+        decl.walk(self, ctx)
     }
 
     /// Called for every walked [type expression][ast::TyExpr].
-    fn visit_ty_expr(&mut self, ty_expr: &'ast ast::TyExpr) -> ControlFlow<()> {
-        ty_expr.walk(self)
+    fn visit_ty_expr(&mut self, ctx: C, ty_expr: &'ast ast::TyExpr) -> ControlFlow<()> {
+        ty_expr.walk(self, ctx)
     }
 
     /// Called for every walked [expression][ast::Expr].
-    fn visit_expr(&mut self, expr: &'ast ast::Expr) -> ControlFlow<()> {
-        expr.walk(self)
+    fn visit_expr(&mut self, ctx: C, expr: &'ast ast::Expr) -> ControlFlow<()> {
+        expr.walk(self, ctx)
     }
 
     /// Called for every walked [statement][ast::Stmt].
-    fn visit_stmt(&mut self, stmt: &'ast ast::Stmt) -> ControlFlow<()> {
-        stmt.walk(self)
+    fn visit_stmt(&mut self, ctx: C, stmt: &'ast ast::Stmt) -> ControlFlow<()> {
+        stmt.walk(self, ctx)
     }
 
     /// Called for every walked [predicate expression][ast::Pred].
-    fn visit_pred(&mut self, pred: &'ast ast::Pred) -> ControlFlow<()> {
-        pred.walk(self)
+    fn visit_pred(&mut self, ctx: C, pred: &'ast ast::Pred) -> ControlFlow<()> {
+        pred.walk(self, ctx)
     }
 }
 
@@ -49,15 +52,22 @@ pub trait Walkable {
     /// Walks the substructure of `Self`.
     ///
     /// It **does not** call the visitor's hook method for `self`, only its descendant nodes.
-    fn walk<'ast, V: Visitor<'ast> + ?Sized>(&'ast self, visitor: &mut V) -> ControlFlow<()>;
+    fn walk<'ast, V, C>(&'ast self, visitor: &mut V, ctx: C) -> ControlFlow<()>
+    where
+        V: Visitor<'ast, C> + ?Sized,
+        C: Clone;
 }
 
 impl Walkable for ast::Decl {
     /// Walks the substructure of an [entity declaration][ast::Decl].
     ///
     /// It **does not** call [`Visitor::visit_decl`] for the provided `decl`.
-    fn walk<'ast, V: Visitor<'ast> + ?Sized>(&'ast self, visitor: &mut V) -> ControlFlow<()> {
-        self.kind.walk(visitor)
+    fn walk<'ast, V, C>(&'ast self, visitor: &mut V, ctx: C) -> ControlFlow<()>
+    where
+        V: Visitor<'ast, C> + ?Sized,
+        C: Clone,
+    {
+        self.kind.walk(visitor, ctx)
     }
 }
 
@@ -65,8 +75,12 @@ impl Walkable for ast::TyExpr {
     /// Walks the substructure of a [type expression][ast::TyExpr].
     ///
     /// It **does not** call [`Visitor::visit_ty_expr`] for the provided `ty_expr`.
-    fn walk<'ast, V: Visitor<'ast> + ?Sized>(&'ast self, visitor: &mut V) -> ControlFlow<()> {
-        self.kind.walk(visitor)
+    fn walk<'ast, V, C>(&'ast self, visitor: &mut V, ctx: C) -> ControlFlow<()>
+    where
+        V: Visitor<'ast, C> + ?Sized,
+        C: Clone,
+    {
+        self.kind.walk(visitor, ctx)
     }
 }
 
@@ -74,8 +88,12 @@ impl Walkable for ast::Expr {
     /// Walks the substructure of an [expression][ast::Expr].
     ///
     /// It **does not** call [`Visitor::visit_expr`] for the provided `expr`.
-    fn walk<'ast, V: Visitor<'ast> + ?Sized>(&'ast self, visitor: &mut V) -> ControlFlow<()> {
-        self.kind.walk(visitor)
+    fn walk<'ast, V, C>(&'ast self, visitor: &mut V, ctx: C) -> ControlFlow<()>
+    where
+        V: Visitor<'ast, C> + ?Sized,
+        C: Clone,
+    {
+        self.kind.walk(visitor, ctx)
     }
 }
 
@@ -83,8 +101,12 @@ impl Walkable for ast::Stmt {
     /// Walks the substructure of a [statement][ast::Stmt].
     ///
     /// It **does not** call [`Visitor::visit_stmt`] for the provided `stmt`.
-    fn walk<'ast, V: Visitor<'ast> + ?Sized>(&'ast self, visitor: &mut V) -> ControlFlow<()> {
-        self.kind.walk(visitor)
+    fn walk<'ast, V, C>(&'ast self, visitor: &mut V, ctx: C) -> ControlFlow<()>
+    where
+        V: Visitor<'ast, C> + ?Sized,
+        C: Clone,
+    {
+        self.kind.walk(visitor, ctx)
     }
 }
 
@@ -92,38 +114,62 @@ impl Walkable for ast::Pred {
     /// Walks the substructure of a [predicate expression][ast::Pred].
     ///
     /// It **does not** call [`Visitor::visit_pred`] for the provided `pred`.
-    fn walk<'ast, V: Visitor<'ast> + ?Sized>(&'ast self, visitor: &mut V) -> ControlFlow<()> {
-        self.kind.walk(visitor)
+    fn walk<'ast, V, C>(&'ast self, visitor: &mut V, ctx: C) -> ControlFlow<()>
+    where
+        V: Visitor<'ast, C> + ?Sized,
+        C: Clone,
+    {
+        self.kind.walk(visitor, ctx)
     }
 }
 
 impl Walkable for DeclId {
-    fn walk<'ast, V: Visitor<'ast> + ?Sized>(&'ast self, visitor: &mut V) -> ControlFlow<()> {
-        visitor.libsl().decls[*self].walk(visitor)
+    fn walk<'ast, V, C>(&'ast self, visitor: &mut V, ctx: C) -> ControlFlow<()>
+    where
+        V: Visitor<'ast, C> + ?Sized,
+        C: Clone,
+    {
+        visitor.libsl().decls[*self].walk(visitor, ctx)
     }
 }
 
 impl Walkable for TyExprId {
-    fn walk<'ast, V: Visitor<'ast> + ?Sized>(&'ast self, visitor: &mut V) -> ControlFlow<()> {
-        visitor.libsl().ty_exprs[*self].walk(visitor)
+    fn walk<'ast, V, C>(&'ast self, visitor: &mut V, ctx: C) -> ControlFlow<()>
+    where
+        V: Visitor<'ast, C> + ?Sized,
+        C: Clone,
+    {
+        visitor.libsl().ty_exprs[*self].walk(visitor, ctx)
     }
 }
 
 impl Walkable for ExprId {
-    fn walk<'ast, V: Visitor<'ast> + ?Sized>(&'ast self, visitor: &mut V) -> ControlFlow<()> {
-        visitor.libsl().exprs[*self].walk(visitor)
+    fn walk<'ast, V, C>(&'ast self, visitor: &mut V, ctx: C) -> ControlFlow<()>
+    where
+        V: Visitor<'ast, C> + ?Sized,
+        C: Clone,
+    {
+        visitor.libsl().exprs[*self].walk(visitor, ctx)
     }
 }
 
 impl Walkable for StmtId {
-    fn walk<'ast, V: Visitor<'ast> + ?Sized>(&'ast self, visitor: &mut V) -> ControlFlow<()> {
-        visitor.libsl().stmts[*self].walk(visitor)
+    fn walk<'ast, V, C>(&'ast self, visitor: &mut V, ctx: C) -> ControlFlow<()>
+    where
+        V: Visitor<'ast, C> + ?Sized,
+        C: Clone,
+    {
+        visitor.libsl().stmts[*self].walk(visitor, ctx)
     }
 }
 
 impl Walkable for PredId {
-    fn walk<'ast, V: Visitor<'ast> + ?Sized>(&'ast self, visitor: &mut V) -> ControlFlow<()> {
-        visitor.libsl().preds[*self].walk(visitor)
+    fn walk<'ast, V, C>(&'ast self, visitor: &mut V, ctx: C) -> ControlFlow<()>
+    where
+        V: Visitor<'ast, C> + ?Sized,
+        C: Clone,
+    {
+        visitor.libsl().preds[*self].walk(visitor, ctx)
     }
 }
 
@@ -131,9 +177,13 @@ impl<T> Walkable for [T]
 where
     T: Walkable,
 {
-    fn walk<'ast, V: Visitor<'ast> + ?Sized>(&'ast self, visitor: &mut V) -> ControlFlow<()> {
+    fn walk<'ast, V, C>(&'ast self, visitor: &mut V, ctx: C) -> ControlFlow<()>
+    where
+        V: Visitor<'ast, C> + ?Sized,
+        C: Clone,
+    {
         for elem in self {
-            elem.walk(visitor)?;
+            elem.walk(visitor, ctx.clone())?;
         }
 
         ControlFlow::Continue(())
@@ -144,8 +194,12 @@ impl<T> Walkable for Vec<T>
 where
     T: Walkable,
 {
-    fn walk<'ast, V: Visitor<'ast> + ?Sized>(&'ast self, visitor: &mut V) -> ControlFlow<()> {
-        <[T]>::walk(self, visitor)
+    fn walk<'ast, V, C>(&'ast self, visitor: &mut V, ctx: C) -> ControlFlow<()>
+    where
+        V: Visitor<'ast, C> + ?Sized,
+        C: Clone,
+    {
+        <[T]>::walk(self, visitor, ctx)
     }
 }
 
@@ -153,9 +207,13 @@ impl<T> Walkable for Option<T>
 where
     T: Walkable,
 {
-    fn walk<'ast, V: Visitor<'ast> + ?Sized>(&'ast self, visitor: &mut V) -> ControlFlow<()> {
+    fn walk<'ast, V, C>(&'ast self, visitor: &mut V, ctx: C) -> ControlFlow<()>
+    where
+        V: Visitor<'ast, C> + ?Sized,
+        C: Clone,
+    {
         match self {
-            Some(elem) => elem.walk(visitor),
+            Some(elem) => elem.walk(visitor, ctx),
             None => ControlFlow::Continue(()),
         }
     }

@@ -1,11 +1,11 @@
 //! Semantic analysis passes for LibSL.
 
-mod def;
-mod load;
-mod purity;
-mod resolve;
-mod ty;
-mod tyck;
+pub mod def;
+pub mod load;
+pub mod purity;
+pub mod resolve;
+pub mod ty;
+pub mod tyck;
 
 use slotmap::{SecondaryMap, SparseSecondaryMap};
 
@@ -16,7 +16,6 @@ use crate::sema::tyck::TyCk;
 use crate::{DeclId, FileId, LibSl};
 
 pub use crate::sema::load::{ImportCtx, LoadError, LoadReason};
-pub use crate::sema::purity::check_pure;
 
 /// The result of a semantic analysis pass.
 ///
@@ -69,6 +68,7 @@ impl<'ast> Sema<'ast> {
     pub fn analyze(&mut self, diag: &mut impl DiagCtx) -> Result {
         self.resolve_names(diag)?;
         self.tyck(diag)?;
+        self.check_pure(diag)?;
 
         Ok(())
     }

@@ -6,7 +6,7 @@ use std::iter;
 
 use crate::diag::{Diag, DiagCtx, DummyDiagCtx, Label};
 use crate::loc::Loc;
-use crate::sema::def::DefId;
+use crate::sema::def::{DefFunction, DefId, FunctionKind};
 use crate::sema::resolve::ScopeKind;
 use crate::sema::ty::{Ty, TyId};
 use crate::sema::tyck::constraints::{Constr, ConstrKind, ConstrProvenance};
@@ -23,13 +23,30 @@ pub enum Receiver {
     Explicit(TyId),
 }
 
+#[derive(Debug, Default, Clone)]
+pub struct ApplicabilityCriteria {
+    pub proc_only: bool,
+}
+
+impl ApplicabilityCriteria {
+    pub fn for_proc_call() -> Self {
+        Self { proc_only: true }
+    }
+}
+
 pub trait FnSigProvider {
+    fn satisfies(&self, sema: &mut Sema<'_>, criteria: &ApplicabilityCriteria) -> bool;
+
     fn fn_sig<'a>(&'a self, sema: &'a Sema<'_>) -> &'a FnSig;
 
     fn applicability_constr_provenance(&self) -> ConstrProvenance;
 }
 
 impl<T: FnSigProvider> FnSigProvider for &'_ T {
+    fn satisfies(&self, sema: &mut Sema<'_>, criteria: &ApplicabilityCriteria) -> bool {
+        (*self).satisfies(sema, criteria)
+    }
+
     fn fn_sig<'a>(&'a self, sema: &'a Sema<'_>) -> &'a FnSig {
         (*self).fn_sig(sema)
     }
@@ -42,6 +59,21 @@ impl<T: FnSigProvider> FnSigProvider for &'_ T {
 struct DefFnSigProvider(DefId);
 
 impl FnSigProvider for DefFnSigProvider {
+    fn satisfies(&self, sema: &mut Sema<'_>, criteria: &ApplicabilityCriteria) -> bool {
+        let &ApplicabilityCriteria { proc_only } = criteria;
+
+        if proc_only {
+            if !matches!(
+                sema.name_res.def::<DefFunction>(self.0).kind,
+                FunctionKind::Proc { .. }
+            ) {
+                return false;
+            }
+        }
+
+        true
+    }
+
     fn fn_sig<'a>(&'a self, sema: &'a Sema<'_>) -> &'a FnSig {
         &sema.tyck.sigs[self.0]
     }
@@ -168,6 +200,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         candidates: &mut Vec<DefFnSigProvider>,
         def_id: DefId,
         name: &str,
+        criteria: &ApplicabilityCriteria,
         recv: &Receiver,
         args: &[TyId],
         ty_args: &[TyId],
@@ -181,7 +214,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             candidates.extend(overloads.clone().into_iter().filter_map(|def_id| {
                 let provider = DefFnSigProvider(def_id);
 
-                self.is_function_applicable(&provider, recv, args, ty_args)
+                self.is_function_applicable(&provider, criteria, recv, args, ty_args)
                     .then_some(provider)
             }));
         }
@@ -196,9 +229,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         args: &[TyId],
         ty_args: &[TyId],
     ) -> Result<DefId> {
-        let mut next_scope_id = Some(self.sema.name_res.exprs[expr_id].scope_id);
-
         let mut candidates = vec![];
+        let mut next_scope_id = Some(self.sema.name_res.exprs[expr_id].scope_id);
+        let criteria = ApplicabilityCriteria::for_proc_call();
 
         while let Some(scope_id) = next_scope_id {
             let scope = &self.sema.name_res.scopes[scope_id];
@@ -216,7 +249,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         candidates.extend(overloads.clone().into_iter().filter_map(|def_id| {
                             let provider = DefFnSigProvider(def_id);
 
-                            self.is_function_applicable(&provider, recv, args, ty_args)
+                            self.is_function_applicable(&provider, &criteria, recv, args, ty_args)
                                 .then_some(provider)
                         }));
                     }
@@ -231,6 +264,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         &mut candidates,
                         *def_id,
                         name,
+                        &criteria,
                         recv,
                         args,
                         ty_args,
@@ -268,7 +302,15 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             Ty::Error => unreachable!(),
 
             Ty::Ctor(t) => {
-                self.find_method_candidates(&mut candidates, t.ctor, name, &recv, args, ty_args);
+                self.find_method_candidates(
+                    &mut candidates,
+                    t.ctor,
+                    name,
+                    &ApplicabilityCriteria::for_proc_call(),
+                    &recv,
+                    args,
+                    ty_args,
+                );
             }
 
             Ty::Param(_) => todo!(),
@@ -286,6 +328,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     pub fn is_function_applicable(
         &mut self,
         candidate: &impl FnSigProvider,
+        criteria: &ApplicabilityCriteria,
         recv: &Receiver,
         args: &[TyId],
         ty_args: &[TyId],
@@ -345,6 +388,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 )?;
             }
 
+            if !candidate.satisfies(&mut self.sema, criteria) {
+                return Err(());
+            }
+
             Ok(())
         })()
         .is_ok()
@@ -376,7 +423,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             None => Receiver::None,
         };
 
-        self.is_function_applicable(rhs, &recv, &args, &[])
+        self.is_function_applicable(rhs, &ApplicabilityCriteria::default(), &recv, &args, &[])
     }
 
     fn compare_overloads(

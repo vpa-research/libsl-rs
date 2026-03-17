@@ -48,9 +48,10 @@ pub fn derive_walkable(input: proc_macro::TokenStream) -> proc_macro::TokenStrea
 
     proc_macro::TokenStream::from(quote! {
         impl crate::visit::Walkable for #name {
-            fn walk<'ast, V>(&'ast self, visitor: &mut V) -> ::std::ops::ControlFlow<()>
+            fn walk<'ast, V, C>(&'ast self, visitor: &mut V, ctx: C) -> ::std::ops::ControlFlow<()>
             where
-                V: crate::visit::Visitor<'ast> + ?Sized,
+                V: crate::visit::Visitor<'ast, C> + ?::std::marker::Sized,
+                C: ::std::clone::Clone,
             {
                 #walkable_body
 

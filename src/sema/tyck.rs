@@ -1729,8 +1729,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         args: &[TyId],
         mut candidates: Vec<OpFnSigProvider<O>>,
     ) {
-        candidates
-            .retain(|candidate| self.is_function_applicable(candidate, &Receiver::None, args, &[]));
+        candidates.retain(|candidate| {
+            self.is_function_applicable(candidate, &Default::default(), &Receiver::None, args, &[])
+        });
 
         let Ok(overload) =
             self.select_overload(&candidates, &OpOverloadDiagProvider::new(op, &expr.loc))

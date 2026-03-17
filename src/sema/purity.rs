@@ -4,69 +4,85 @@ use std::ops::ControlFlow;
 
 use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
+use crate::sema::def::{DefFunction, FunctionKind, ParamKind};
+use crate::sema::def::{DefVariable, VariableKind};
+use crate::sema::tyck::ResolvedNameKind;
+use crate::sema::{Result, Sema};
 use crate::visit::{Visitor, Walkable};
 use crate::{LibSl, ast};
 
-/// Checks all `pure` procedures to ensure they only contain allowed operations.
-///
-/// Returns `true` if no violations are found.
-pub fn check_pure(diag: &mut impl DiagCtx, libsl: &LibSl, file: &ast::File) -> bool {
-    let mut checker = PureProcFinder {
-        diag,
-        libsl,
-        ok: true,
-    };
+#[derive(Debug, Clone, Copy)]
+enum AccessMode {
+    Read,
+    Write,
+}
 
-    for &decl_id in &file.decls {
-        let cf = checker.visit_decl(&libsl.decls[decl_id]);
-        debug_assert!(cf.is_continue());
+impl Sema<'_> {
+    /// Checks all `pure` procedures to ensure they only contain allowed operations.
+    pub fn check_pure(&mut self, diag: &mut impl DiagCtx) -> Result {
+        Pass::new(self, diag).run()
     }
-
-    checker.ok
 }
 
 fn make_err(loc: Loc, op_name: &str) -> Diag {
     Diag::err()
         .at(loc.clone())
-        .with_msg(format_args!("{op_name} cannot be used in a pure procedure"))
+        .with_msg(format_args!("{op_name} are forbidden in a pure procedure"))
         .with_label(Label::primary(loc))
         .build()
 }
 
-struct PureProcFinder<'ast, 'diag, D> {
-    diag: &'diag mut D,
-    libsl: &'ast LibSl,
-    ok: bool,
+struct Pass<'ast, 's, D> {
+    sema: &'s mut Sema<'ast>,
+    diag: &'s mut D,
+    result: Result,
 }
 
-impl<'ast, D> PureProcFinder<'ast, '_, D>
-where
-    D: DiagCtx,
-{
+impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
+    fn new(sema: &'s mut Sema<'ast>, diag: &'s mut D) -> Self {
+        Self {
+            sema,
+            diag,
+            result: Ok(()),
+        }
+    }
+
+    fn run(mut self) -> Result {
+        let _ = self.sema.libsl.files.values().try_for_each(|file| {
+            for &decl_id in &file.decls {
+                self.visit_decl((), &self.sema.libsl.decls[decl_id])?;
+            }
+
+            ControlFlow::Continue(())
+        });
+
+        self.result
+    }
+
     fn record_err(&mut self, diag: Diag) {
+        self.result = Err(());
         self.diag.emit(diag);
-        self.ok = false;
     }
 }
 
-impl<'ast, D> Visitor<'ast> for PureProcFinder<'ast, '_, D>
+impl<'ast, D> Visitor<'ast> for Pass<'ast, '_, D>
 where
     D: DiagCtx,
 {
     fn libsl(&self) -> &'ast LibSl {
-        self.libsl
+        self.sema.libsl
     }
 
-    fn visit_decl(&mut self, decl: &'ast ast::Decl) -> ControlFlow<()> {
+    fn visit_decl(&mut self, _: (), decl: &'ast ast::Decl) -> ControlFlow<()> {
         match &decl.kind {
             ast::DeclKind::Proc(decl) if decl.is_pure => {
-                let mut checker = Checker { ctx: self };
-                decl.walk(&mut checker)?;
+                let mut checker = ProcChecker { pass: self };
+                decl.walk(&mut checker, AccessMode::Read)?;
 
                 ControlFlow::Continue(())
             }
 
-            ast::DeclKind::Struct(_) | ast::DeclKind::Automaton(_) => decl.walk(self),
+            ast::DeclKind::Struct(_) | ast::DeclKind::Automaton(_) => decl.walk(self, ()),
 
             ast::DeclKind::Dummy
             | ast::DeclKind::Import(_)
@@ -87,72 +103,141 @@ where
     }
 }
 
-struct Checker<'ast, 'diag, 'ctx, D> {
-    ctx: &'ctx mut PureProcFinder<'ast, 'diag, D>,
+struct ProcChecker<'ast, 'diag, 'ctx, D> {
+    pass: &'ctx mut Pass<'ast, 'diag, D>,
 }
 
-impl<'ast, D> Visitor<'ast> for Checker<'ast, '_, '_, D>
-where
-    D: DiagCtx,
-{
-    fn libsl(&self) -> &'ast LibSl {
-        self.ctx.libsl
+impl<'ast, D: DiagCtx> ProcChecker<'ast, '_, '_, D> {
+    fn check_proc_call(&mut self, expr: &'ast ast::Expr) {
+        let (_, call_target) = self.pass.sema.tyck.call_targets[expr.id];
+
+        if let FunctionKind::Proc { pure: true, .. } =
+            self.pass.sema.name_res.def::<DefFunction>(call_target).kind
+        {
+            return;
+        }
+
+        self.pass
+            .record_err(make_err(expr.loc.clone(), "calls to non-pure procedures"));
     }
 
-    fn visit_stmt(&mut self, stmt: &'ast ast::Stmt) -> ControlFlow<()> {
+    fn check_expr_name(&mut self, expr: &'ast ast::Expr, mode: AccessMode) {
+        let res = &self.pass.sema.tyck.name_exprs[expr.id];
+
+        match res.kind {
+            ResolvedNameKind::Var => {
+                let what = match self.pass.sema.name_res.def::<DefVariable>(res.def_id).kind {
+                    VariableKind::Global => "global variables",
+
+                    // local variables can be used freely.
+                    VariableKind::Local { .. } => return,
+
+                    // same with parameters as long as it's not `this`.
+                    VariableKind::Param {
+                        kind: ParamKind::This,
+                        ..
+                    } => "`this`",
+                    VariableKind::Param { .. } => return,
+
+                    VariableKind::Field { .. } | VariableKind::ConstructorVar { .. } => "fields",
+                };
+
+                let msg = match mode {
+                    AccessMode::Read => format!("reads of {what}"),
+                    AccessMode::Write => format!("writes to {what}"),
+                };
+                self.pass.record_err(make_err(expr.loc.clone(), &msg));
+            }
+
+            ResolvedNameKind::ImplicitField => {
+                self.pass.record_err(make_err(
+                    expr.loc.clone(),
+                    match mode {
+                        AccessMode::Read => "reads of fields of `this`",
+                        AccessMode::Write => "writes to fields of `this`",
+                    },
+                ));
+            }
+        }
+    }
+}
+
+impl<'ast, D: DiagCtx> Visitor<'ast, AccessMode> for ProcChecker<'ast, '_, '_, D> {
+    fn libsl(&self) -> &'ast LibSl {
+        self.pass.libsl()
+    }
+
+    fn visit_stmt(&mut self, _: AccessMode, stmt: &'ast ast::Stmt) -> ControlFlow<()> {
         match &stmt.kind {
             ast::StmtKind::Dummy => panic!("encountered a dummy stmt"),
             ast::StmtKind::Decl(_) => {}
             ast::StmtKind::If(_) => {}
 
             // TODO: allow assignment to locals (requires name resolution).
-            ast::StmtKind::Assign(_) => {
-                self.ctx
-                    .record_err(make_err(stmt.loc.clone(), "an assignment statement"));
+            ast::StmtKind::Assign(s) => {
+                s.lhs.walk(self, AccessMode::Write)?;
+                s.rhs.walk(self, AccessMode::Read)?;
+
+                return ControlFlow::Continue(());
             }
 
             ast::StmtKind::Cancel(_) => {}
-
-            ast::StmtKind::Expr(expr_id) => expr_id.walk(self)?,
+            ast::StmtKind::Expr(_) => {}
         }
 
-        stmt.walk(self)
+        stmt.walk(self, AccessMode::Read)
     }
 
-    fn visit_expr(&mut self, expr: &'ast ast::Expr) -> ControlFlow<()> {
+    fn visit_expr(&mut self, ctx: AccessMode, expr: &'ast ast::Expr) -> ControlFlow<()> {
         match &expr.kind {
             ast::ExprKind::Dummy => panic!("encountered a dummy expr"),
             ast::ExprKind::PrimitiveLit(_) => {}
             ast::ExprKind::ArrayLit(_) => {}
             ast::ExprKind::SetLit(_) => {}
+
             ast::ExprKind::Prev(_) => {
-                self.ctx
-                    .record_err(make_err(expr.loc.clone(), "a previous-value expression"));
+                self.pass
+                    .record_err(make_err(expr.loc.clone(), "previous-value expressions"));
             }
+
             ast::ExprKind::ProcCall(_) => {
-                // TODO: allow calls to pure procedures (requires name resolution).
-                self.ctx
-                    .record_err(make_err(expr.loc.clone(), "a procedure call"));
+                self.check_proc_call(expr);
             }
+
             ast::ExprKind::ActionCall(_) => {
-                self.ctx
-                    .record_err(make_err(expr.loc.clone(), "an action call"));
+                self.pass
+                    .record_err(make_err(expr.loc.clone(), "action calls"));
             }
+
             ast::ExprKind::Instantiate(_) => {
-                self.ctx
-                    .record_err(make_err(expr.loc.clone(), "an automaton instantiation"));
+                self.pass
+                    .record_err(make_err(expr.loc.clone(), "automaton instantiations"));
             }
+
             ast::ExprKind::HasConcept(_) => {}
             ast::ExprKind::Cast(_) => {}
             ast::ExprKind::TyCompare(_) => {}
             ast::ExprKind::Unary(_) => {}
             ast::ExprKind::Binary(_) => {}
 
-            ast::ExprKind::Name(_) => todo!(),
-            ast::ExprKind::Field(_) => todo!(),
-            ast::ExprKind::Index(_) => todo!(),
+            ast::ExprKind::Name(_) => {
+                self.check_expr_name(expr, ctx);
+            }
+
+            ast::ExprKind::Field(e) => {
+                e.base.walk(self, ctx)?;
+
+                return ControlFlow::Continue(());
+            }
+
+            ast::ExprKind::Index(e) => {
+                e.base.walk(self, ctx)?;
+                e.index.walk(self, AccessMode::Read)?;
+
+                return ControlFlow::Continue(());
+            }
         }
 
-        expr.walk(self)
+        expr.walk(self, AccessMode::Read)
     }
 }

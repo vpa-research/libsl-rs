@@ -9,19 +9,12 @@ use crate::loc::Loc;
 use crate::sema::def::DefId;
 use crate::sema::resolve::ScopeKind;
 use crate::sema::ty::{Ty, TyId};
-use crate::sema::tyck::Pass;
 use crate::sema::tyck::constraints::{Constr, ConstrKind, ConstrProvenance};
+use crate::sema::tyck::{Pass, ReplaceTyArgs};
 use crate::sema::{Result, Sema};
 use crate::{ExprId, WithLibSl};
 
 use super::FnSig;
-
-#[derive(Debug, Clone)]
-pub struct OverloadResult {
-    pub param_ty_ids: Vec<TyId>,
-    pub ret_ty_id: TyId,
-    pub def_id: DefId,
-}
 
 #[derive(Debug, Clone)]
 pub enum Receiver {
@@ -203,7 +196,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         args: &[TyId],
         ty_args: &[TyId],
     ) -> Result<DefId> {
-        let mut next_scope_id = Some(self.sema.name_res.expr_scopes[expr_id]);
+        let mut next_scope_id = Some(self.sema.name_res.exprs[expr_id].scope_id);
 
         let mut candidates = vec![];
 
@@ -324,7 +317,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 (Receiver::Implicit(_), None) => {}
 
                 (Receiver::Implicit(ty_id) | Receiver::Explicit(ty_id), Some(recv)) => {
-                    let expected = self.make_recv_ty(&Loc::Synthetic, recv);
+                    let expected = self.make_recv_ty(recv, ReplaceTyArgs::Yes(&Loc::Synthetic));
 
                     constr.add(
                         self.sema,

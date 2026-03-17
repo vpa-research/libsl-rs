@@ -63,11 +63,6 @@ pub enum DefKind {
 
     TyVariable(DefTyVariable),
 
-    Param {
-        of: DefId,
-        idx: usize,
-    },
-
     Pred(DefPred),
 }
 
@@ -611,13 +606,13 @@ impl DefKindProject for DefAutomaton {
 
 #[derive(Debug, Clone)]
 pub struct DefVariable {
-    pub decl_id: DeclId,
+    pub decl_id: Option<DeclId>,
     pub kind: VariableKind,
     pub mutable: bool,
 }
 
 impl DefVariable {
-    pub fn new(decl_id: DeclId, kind: VariableKind, mutable: bool) -> Self {
+    pub fn new(decl_id: Option<DeclId>, kind: VariableKind, mutable: bool) -> Self {
         Self {
             decl_id,
             kind,
@@ -639,9 +634,17 @@ impl DefKindProject for DefVariable {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VariableKind {
     Global,
-    Local,
+    Local { of: DefId },
     Field { of: DefId },
     ConstructorVar { of: DefId },
+    Param { of: DefId, kind: ParamKind },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParamKind {
+    This,
+    Result,
+    User { idx: usize },
 }
 
 #[derive(Debug, Clone)]
@@ -653,6 +656,8 @@ pub struct DefFunction {
     pub generics: Vec<DefId>,
     pub params: Vec<DefId>,
     pub body_scope_id: ScopeId,
+    pub result_def_id: DefId,
+    pub this_def_id: Option<DefId>,
 }
 
 impl DefFunction {
@@ -665,6 +670,8 @@ impl DefFunction {
             generics: Default::default(),
             params: Default::default(),
             body_scope_id: Default::default(),
+            result_def_id: Default::default(),
+            this_def_id: Default::default(),
         }
     }
 }

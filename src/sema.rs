@@ -18,6 +18,13 @@ use crate::{DeclId, FileId, LibSl};
 pub use crate::sema::load::{ImportCtx, LoadError, LoadReason};
 pub use crate::sema::purity::check_pure;
 
+/// The result of a semantic analysis pass.
+///
+/// Usually the error information is absent from this type (set to `()`), since passes generally
+/// output errors to a [`DiagCtx`] they take, which allows both emitting several errors at once and
+/// attach more detailed information to each diagnostic.
+///
+/// When used in this way, the type acts as supercharged `bool` with the short-circuiting ability.
 pub type Result<T = (), E = ()> = std::result::Result<T, E>;
 
 /// A semantic analyzer for LibSL.
@@ -58,6 +65,7 @@ impl<'ast> Sema<'ast> {
         }
     }
 
+    /// Performs all semantic analysis passes.
     pub fn analyze(&mut self, diag: &mut impl DiagCtx) -> Result {
         self.resolve_names(diag)?;
         self.tyck(diag)?;

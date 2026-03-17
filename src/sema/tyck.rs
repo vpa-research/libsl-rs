@@ -13,7 +13,7 @@ use crate::sema::def::{
     Def, DefAction, DefAnnotation, DefAutomaton, DefFunction, DefId, DefKind, DefVariable,
     FunctionKind, VariableKind,
 };
-use crate::sema::resolve::{Ns, ScopeId, ScopeKind};
+use crate::sema::resolve::{ExprCtxKind, Ns, ScopeId, ScopeKind};
 use crate::sema::ty::{
     BuiltinTyCtor, ConstructedTy, FloatCtor, IntCtor, IntWidth, Ty, TyId, TyUnion,
 };
@@ -100,6 +100,12 @@ pub enum AssignmentKind {
     Var(DefId),
     Field { implicit: bool, def_id: DefId },
     Index,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ReplaceTyArgs<'a> {
+    Yes(&'a Loc),
+    No,
 }
 
 #[derive(Debug, Default)]
@@ -1136,9 +1142,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         let what = match def.kind {
             VariableKind::Global => "global variable",
-            VariableKind::Local => return Ok(()),
+            VariableKind::Local { .. } => return Ok(()),
             VariableKind::Field { .. } => "field",
             VariableKind::ConstructorVar { .. } => unreachable!(),
+            VariableKind::Param { .. } => unreachable!(),
         };
 
         let Def { name, loc, .. } = &self.sema.name_res.defs[def_id];
@@ -1257,6 +1264,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             def_id,
             d.params.iter().map(|param| param.ty_expr),
             |def: &DefAnnotation| &def.params,
+            None,
+            None,
         );
 
         self.register_fn_sig::<DefAnnotation>(def_id, None, |_| &[], |def| &def.params, None);
@@ -1269,6 +1278,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             def_id,
             d.params.iter().map(|param| param.ty_expr),
             |def: &DefAction| &def.params,
+            None,
+            None,
         );
 
         let ret = self.tyck_ret_ty_expr(d.ret_ty_expr);
@@ -1431,7 +1442,6 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             DefKind::TyVariable(_) => {
                 return self.tyck_ty_expr_name_ty_var(ty_expr, t, ty_args, def_id);
             }
-            DefKind::Param { .. } => unreachable!(),
             DefKind::Pred(_) => unreachable!(),
         }
 
@@ -1529,7 +1539,18 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         def_id: DefId,
         param_ty_exprs: impl Iterator<Item = TyExprId>,
         param_defs: impl FnOnce(&T) -> &[DefId],
+        result: Option<(DefId, TyId)>,
+        this_def_id: Option<DefId>,
     ) {
+        if let Some((result_def_id, ret_ty_id)) = result {
+            self.sema.tyck.def_tys.insert(result_def_id, ret_ty_id);
+        }
+
+        if let Some(this_def_id) = this_def_id {
+            let this_ty = self.function_recv(def_id, ReplaceTyArgs::No).unwrap();
+            self.sema.tyck.def_tys.insert(this_def_id, this_ty);
+        }
+
         let param_tys = param_ty_exprs
             .map(|ty_expr_id| self.tyck_ty_expr(ty_expr_id))
             .collect::<Vec<_>>();
@@ -1579,15 +1600,24 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         param_ty_exprs: impl Iterator<Item = TyExprId>,
         ret: Option<TyExprId>,
     ) {
-        let recv = match self.sema.name_res.def::<DefFunction>(def_id).kind {
+        let def = self.sema.name_res.def::<DefFunction>(def_id);
+        let recv = match def.kind {
             FunctionKind::Fun { of } => of,
             FunctionKind::Proc { of, .. } => of,
             FunctionKind::Constructor { of } => Some(of),
             FunctionKind::Destructor { of } => Some(of),
         };
 
-        self.tyck_params(def_id, param_ty_exprs, |def: &DefFunction| &def.params);
+        let result_def_id = def.result_def_id;
+        let this_def_id = def.this_def_id;
         let ret = self.tyck_ret_ty_expr(ret);
+        self.tyck_params(
+            def_id,
+            param_ty_exprs,
+            |def: &DefFunction| &def.params,
+            Some((result_def_id, ret)),
+            this_def_id,
+        );
         self.register_fn_sig::<DefFunction>(
             def_id,
             recv,
@@ -1860,53 +1890,48 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .collect()
     }
 
-    fn find_implicit_recv(&mut self, mut scope_id: ScopeId) -> Option<TyId> {
-        loop {
-            let scope = &self.sema.name_res.scopes[scope_id];
-
-            match scope.kind {
-                ScopeKind::Dummy => unreachable!(),
-
-                ScopeKind::Struct(def_id) => {
-                    let ty_args = self
-                        .sema
-                        .name_res
-                        .def::<DefStruct>(def_id)
-                        .generics
-                        .iter()
-                        .map(|&def_id| self.sema.tyck.def_tys[def_id])
-                        .collect();
-
-                    return Some(self.sema.tyck.add_ctor_ty(def_id, ty_args));
-                }
-
-                ScopeKind::Automaton(def_id) => {
-                    let ty_args = self
-                        .sema
-                        .name_res
-                        .def::<DefStruct>(def_id)
-                        .generics
-                        .iter()
-                        .map(|&def_id| self.sema.tyck.def_tys[def_id])
-                        .collect();
-
-                    return Some(self.sema.tyck.add_ctor_ty(def_id, ty_args));
-                }
-
-                ScopeKind::Prelude
-                | ScopeKind::Import(..)
-                | ScopeKind::File(..)
-                | ScopeKind::SemanticTyEnum(..)
-                | ScopeKind::Params(..)
-                | ScopeKind::Enum(..)
-                | ScopeKind::Block { .. } => {}
+    fn function_recv(&mut self, def_id: DefId, replace_ty_args: ReplaceTyArgs) -> Option<TyId> {
+        match self.sema.name_res.def::<DefFunction>(def_id).kind {
+            FunctionKind::Fun { of } | FunctionKind::Proc { of, .. } => {
+                of.map(|of| self.make_recv_ty(of, replace_ty_args))
             }
 
-            scope_id = scope.parent?;
+            FunctionKind::Constructor { of } | FunctionKind::Destructor { of } => {
+                Some(self.make_recv_ty(of, replace_ty_args))
+            }
         }
     }
 
-    fn make_recv_ty(&mut self, loc: &Loc, def_id: DefId) -> TyId {
+    fn find_implicit_recv(
+        &mut self,
+        expr_id: ExprId,
+        replace_ty_args: ReplaceTyArgs,
+    ) -> Option<TyId> {
+        match self.sema.name_res.exprs[expr_id].kind {
+            ExprCtxKind::EnumSemanticTyValue(_) => return None,
+            ExprCtxKind::AnnotationParam(_) => return None,
+
+            ExprCtxKind::VariableInit(def_id) => {
+                match self.sema.name_res.def::<DefVariable>(def_id).kind {
+                    VariableKind::Global => return None,
+
+                    VariableKind::Local { of } => self.function_recv(of, replace_ty_args),
+
+                    VariableKind::Field { of } => Some(self.make_recv_ty(of, replace_ty_args)),
+
+                    VariableKind::ConstructorVar { of } => {
+                        Some(self.make_recv_ty(of, replace_ty_args))
+                    }
+
+                    VariableKind::Param { of, .. } => self.function_recv(of, replace_ty_args),
+                }
+            }
+
+            ExprCtxKind::FunctionBody(def_id) => self.function_recv(def_id, replace_ty_args),
+        }
+    }
+
+    fn make_recv_ty(&mut self, def_id: DefId, replace_ty_args: ReplaceTyArgs) -> TyId {
         let generics = match &self.sema.name_res.defs[def_id].kind {
             DefKind::Dummy => unreachable!(),
             DefKind::Import(_) => unreachable!(),
@@ -1935,12 +1960,18 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             | DefKind::Variable(_)
             | DefKind::State(_)
             | DefKind::TyVariable(_)
-            | DefKind::Param { .. }
             | DefKind::Pred(_) => unreachable!(),
         };
 
-        let param_map = self.make_fresh_vars_for_ty_params(&generics, loc);
-        let ty_args = generics.into_iter().map(|ty_id| param_map[ty_id]).collect();
+        let ty_args = match replace_ty_args {
+            ReplaceTyArgs::Yes(loc) => {
+                let param_map = self.make_fresh_vars_for_ty_params(&generics, loc);
+
+                generics.into_iter().map(|ty_id| param_map[ty_id]).collect()
+            }
+
+            ReplaceTyArgs::No => generics,
+        };
 
         self.sema.tyck.add_ctor_ty(def_id, ty_args)
     }
@@ -2311,7 +2342,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         let recv = match recv {
             Some(recv) => Receiver::Implicit(recv),
-            None => match self.find_implicit_recv(self.sema.name_res.expr_scopes[expr.id]) {
+            None => match self.find_implicit_recv(expr.id, ReplaceTyArgs::No) {
                 Some(recv) => Receiver::Implicit(recv),
                 None => Receiver::None,
             },
@@ -2344,8 +2375,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             (Receiver::Implicit(_), None) => {}
 
             (Receiver::Implicit(ty_id) | Receiver::Explicit(ty_id), Some(recv)) => {
-                let expected = self.make_recv_ty(&Loc::Synthetic, recv);
-
+                let expected = self.make_recv_ty(recv, ReplaceTyArgs::Yes(&Loc::Synthetic));
                 let _ = self.constr_sub(ty_id, expected, ConstrProvenance::Expr(expr.id));
             }
 
@@ -2587,7 +2617,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         e: &'ast ast::ExprName,
         expected: Option<TyId>,
     ) {
-        let scope_id = self.sema.name_res.expr_scopes[expr.id];
+        let scope_id = self.sema.name_res.exprs[expr.id].scope_id;
 
         let Ok(res) = self.resolve_expr_name(scope_id, &e.name) else {
             self.sema

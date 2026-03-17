@@ -10,7 +10,7 @@ use crate::loc::Loc;
 use crate::sema::def::{
     Def, DefAction, DefAnnotation, DefAutomaton, DefEnum, DefFunction, DefId, DefImport, DefKind,
     DefKindProject, DefPred, DefSemanticTy, DefStruct, DefTyAlias, DefTyVariable, DefVariable,
-    FunctionKind, PredKind, SemanticTyValue, TyVariableKind, VariableKind,
+    FunctionKind, ParamKind, PredKind, SemanticTyValue, TyVariableKind, VariableKind,
 };
 use crate::sema::{Result, Sema};
 use crate::{DeclId, ExprId, FileId, PredId, StmtId, TyExprId, ast};
@@ -156,6 +156,20 @@ impl PreludeDefs {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ExprCtx {
+    pub scope_id: ScopeId,
+    pub kind: ExprCtxKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum ExprCtxKind {
+    EnumSemanticTyValue(DefId),
+    AnnotationParam(DefId),
+    VariableInit(DefId),
+    FunctionBody(DefId),
+}
+
 #[derive(Default, Debug, Clone)]
 pub struct StmtCtx {
     /// The [`DefId`] of the function this statement is enclosed in.
@@ -204,8 +218,8 @@ pub struct NameRes {
     /// Maps `has`-concept expressions to resolved automaton concepts.
     pub expr_has_concepts: SparseSecondaryMap<ExprId, DefId>,
 
-    /// Maps expressions to their local scopes.
-    pub expr_scopes: SecondaryMap<ExprId, ScopeId>,
+    /// Maps expressions to their context.
+    pub exprs: SecondaryMap<ExprId, ExprCtx>,
 
     /// Maps statements to their context.
     pub stmts: SecondaryMap<StmtId, StmtCtx>,
@@ -861,7 +875,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     Ns::Var,
                     decl.name.to_string(),
                     decl.name.loc.clone(),
-                    DefVariable::new(decl_id, kind, decl.kind.is_var()).into(),
+                    DefVariable::new(Some(decl_id), kind, decl.kind.is_var()).into(),
                 ) else {
                     return;
                 };
@@ -1203,8 +1217,17 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             ast::SemanticTyKind::Enumerated(values) => {
                 let member_scope_id = self.sema.name_res.def_member_scopes[def_id];
 
-                for value in values {
-                    self.process_expr(member_scope_id, value.expr);
+                for (idx, value) in values.iter().enumerate() {
+                    let value_def_id =
+                        self.sema.name_res.def::<DefSemanticTy>(def_id).values[idx].def_id;
+
+                    self.process_expr(
+                        ExprCtx {
+                            scope_id: member_scope_id,
+                            kind: ExprCtxKind::EnumSemanticTyValue(value_def_id),
+                        },
+                        value.expr,
+                    );
                 }
             }
         }
@@ -1279,7 +1302,15 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 Ns::Var,
                 param.name.to_string(),
                 param.name.loc.clone(),
-                DefKind::Param { of: def_id, idx },
+                DefVariable::new(
+                    None,
+                    VariableKind::Param {
+                        of: def_id,
+                        kind: ParamKind::User { idx },
+                    },
+                    true,
+                )
+                .into(),
             ) else {
                 continue;
             };
@@ -1291,7 +1322,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             self.process_ty_expr(param_scope_id, param.ty_expr);
 
             if let Some(expr_id) = param.default {
-                self.process_expr(param_scope_id, expr_id);
+                self.process_expr(
+                    ExprCtx {
+                        scope_id: param_scope_id,
+                        kind: ExprCtxKind::AnnotationParam(param_def_id),
+                    },
+                    expr_id,
+                );
             }
         }
     }
@@ -1313,7 +1350,15 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 Ns::Var,
                 param.name.to_string(),
                 param.name.loc.clone(),
-                DefKind::Param { of: def_id, idx },
+                DefVariable::new(
+                    None,
+                    VariableKind::Param {
+                        of: def_id,
+                        kind: ParamKind::User { idx },
+                    },
+                    true,
+                )
+                .into(),
             ) else {
                 return;
             };
@@ -1369,7 +1414,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn process_decl_function(
         &mut self,
-        _ctx: DeclCtx,
+        ctx: DeclCtx,
         decl_id: DeclId,
         decl: &'ast ast::DeclFunction,
     ) {
@@ -1383,7 +1428,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.def_mut::<DefFunction>(def_id).generics =
             self.process_generics(def_id, param_scope_id, &decl.generics);
 
-        self.process_function_params(def_id, param_scope_id, &decl.params);
+        self.process_function_params(
+            ctx.outer_def_id().is_some(),
+            def_id,
+            param_scope_id,
+            &decl.params,
+        );
 
         if let Some(ty_expr_id) = decl.ret_ty_expr {
             self.process_ty_expr(param_scope_id, ty_expr_id);
@@ -1407,18 +1457,25 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 // already registered in phase 1.
             }
 
-            DeclCtx::FuncBody { .. } => {
+            DeclCtx::FuncBody {
+                def_id: func_def_id,
+                ..
+            } => {
                 let _ = self.add_decl_def(
                     decl_id,
                     scope_id,
                     Ns::Var,
                     decl.name.to_string(),
                     decl.name.loc.clone(),
-                    DefVariable::new(decl_id, VariableKind::Local, decl.kind.is_var()).into(),
+                    DefVariable::new(
+                        Some(decl_id),
+                        VariableKind::Local { of: func_def_id },
+                        decl.kind.is_var(),
+                    )
+                    .into(),
                 );
             }
         }
-        let _def_id = self.sema.name_res.decl_defs.get(decl_id).copied();
 
         // TODO: process annotations.
 
@@ -1427,7 +1484,15 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
 
         if let Some(expr_id) = decl.init {
-            self.process_expr(scope_id, expr_id);
+            let def_id = self.sema.name_res.decl_defs[decl_id];
+
+            self.process_expr(
+                ExprCtx {
+                    scope_id,
+                    kind: ExprCtxKind::VariableInit(def_id),
+                },
+                expr_id,
+            );
         }
     }
 
@@ -1441,7 +1506,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn process_decl_constructor(
         &mut self,
-        _ctx: DeclCtx,
+        ctx: DeclCtx,
         decl_id: DeclId,
         decl: &'ast ast::DeclConstructor,
     ) {
@@ -1450,7 +1515,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         // TODO: process annotations.
 
         let param_scope_id = self.def::<DefFunction>(def_id).param_scope_id;
-        self.process_function_params(def_id, param_scope_id, &decl.params);
+        self.process_function_params(
+            ctx.outer_def_id().is_some(),
+            def_id,
+            param_scope_id,
+            &decl.params,
+        );
 
         if let Some(ty_expr_id) = decl.ret_ty_expr {
             self.process_ty_expr(param_scope_id, ty_expr_id);
@@ -1463,7 +1533,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn process_decl_destructor(
         &mut self,
-        _ctx: DeclCtx,
+        ctx: DeclCtx,
         decl_id: DeclId,
         decl: &'ast ast::DeclDestructor,
     ) {
@@ -1472,7 +1542,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         // TODO: process annotations.
 
         let param_scope_id = self.def::<DefFunction>(def_id).param_scope_id;
-        self.process_function_params(def_id, param_scope_id, &decl.params);
+        self.process_function_params(
+            ctx.outer_def_id().is_some(),
+            def_id,
+            param_scope_id,
+            &decl.params,
+        );
 
         if let Some(ty_expr_id) = decl.ret_ty_expr {
             self.process_ty_expr(param_scope_id, ty_expr_id);
@@ -1483,7 +1558,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn process_decl_proc(&mut self, _ctx: DeclCtx, decl_id: DeclId, decl: &'ast ast::DeclProc) {
+    fn process_decl_proc(&mut self, ctx: DeclCtx, decl_id: DeclId, decl: &'ast ast::DeclProc) {
         let def_id = self.sema.name_res.decl_defs[decl_id];
 
         // TODO: process annotations.
@@ -1493,7 +1568,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.def_mut::<DefFunction>(def_id).generics =
             self.process_generics(def_id, param_scope_id, &decl.generics);
 
-        self.process_function_params(def_id, param_scope_id, &decl.params);
+        self.process_function_params(
+            ctx.outer_def_id().is_some(),
+            def_id,
+            param_scope_id,
+            &decl.params,
+        );
 
         if let Some(ty_expr_id) = decl.ret_ty_expr {
             self.process_ty_expr(param_scope_id, ty_expr_id);
@@ -1506,21 +1586,70 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn process_function_params(
         &mut self,
+        define_this: bool,
         def_id: DefId,
         param_scope_id: ScopeId,
         params: &[ast::FunctionParam],
     ) {
+        self.def_mut::<DefFunction>(def_id).result_def_id = self
+            .add_def(
+                param_scope_id,
+                Ns::Var,
+                "result".into(),
+                self.sema.name_res.defs[def_id].loc.clone(),
+                DefVariable::new(
+                    None,
+                    VariableKind::Param {
+                        kind: ParamKind::Result,
+                        of: def_id,
+                    },
+                    true,
+                )
+                .into(),
+            )
+            .unwrap();
+
+        if define_this {
+            self.def_mut::<DefFunction>(def_id).this_def_id = Some(
+                self.add_def(
+                    param_scope_id,
+                    Ns::Var,
+                    "this".into(),
+                    self.sema.name_res.defs[def_id].loc.clone(),
+                    DefVariable::new(
+                        None,
+                        VariableKind::Param {
+                            kind: ParamKind::This,
+                            of: def_id,
+                        },
+                        false,
+                    )
+                    .into(),
+                )
+                .unwrap(),
+            );
+        }
+
         for (idx, param) in params.iter().enumerate() {
             // TODO: process annotations.
+            let name = param.name.to_string();
 
             let Ok(param_def_id) = self.add_def(
                 param_scope_id,
                 Ns::Var,
-                param.name.to_string(),
+                name,
                 param.name.loc.clone(),
-                DefKind::Param { of: def_id, idx },
+                DefVariable::new(
+                    None,
+                    VariableKind::Param {
+                        kind: ParamKind::User { idx },
+                        of: def_id,
+                    },
+                    true,
+                )
+                .into(),
             ) else {
-                return;
+                continue;
             };
 
             self.def_mut::<DefFunction>(def_id)
@@ -1602,13 +1731,19 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn process_contract_assigns(
         &mut self,
-        _func_def_id: DefId,
+        func_def_id: DefId,
         scope_id: ScopeId,
         contract: &'ast ast::ContractAssigns,
     ) {
         // NOTE: names are skipped because it's unclear what they mean.
 
-        self.process_expr(scope_id, contract.expr);
+        self.process_expr(
+            ExprCtx {
+                scope_id,
+                kind: ExprCtxKind::FunctionBody(func_def_id),
+            },
+            contract.expr,
+        );
     }
 
     fn process_pred(
@@ -1712,7 +1847,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         _pred_id: PredId,
         pred: &'ast ast::PredIf,
     ) {
-        self.process_expr(scope_id, pred.cond);
+        self.process_expr(
+            ExprCtx {
+                scope_id,
+                kind: ExprCtxKind::FunctionBody(func_def_id),
+            },
+            pred.cond,
+        );
 
         let then_scope_id = self.sema.name_res.scopes.insert(Scope::new(
             Some(scope_id),
@@ -1738,13 +1879,19 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn process_pred_expr(
         &mut self,
-        _func_def_id: DefId,
+        func_def_id: DefId,
         scope_id: ScopeId,
         _kind: PredKind,
         _pred_id: PredId,
         expr_id: ExprId,
     ) {
-        self.process_expr(scope_id, expr_id);
+        self.process_expr(
+            ExprCtx {
+                scope_id,
+                kind: ExprCtxKind::FunctionBody(func_def_id),
+            },
+            expr_id,
+        );
     }
 }
 
@@ -1806,7 +1953,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         _stmt_id: StmtId,
         stmt: &'ast ast::StmtIf,
     ) {
-        self.process_expr(scope_id, stmt.cond);
+        self.process_expr(
+            ExprCtx {
+                scope_id,
+                kind: ExprCtxKind::FunctionBody(func_def_id),
+            },
+            stmt.cond,
+        );
 
         let then_scope_id = self.sema.name_res.scopes.insert(Scope::new(
             Some(scope_id),
@@ -1831,13 +1984,18 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn process_stmt_assign(
         &mut self,
-        _func_def_id: DefId,
+        func_def_id: DefId,
         scope_id: ScopeId,
         _stmt_id: StmtId,
         stmt: &'ast ast::StmtAssign,
     ) {
-        self.process_expr(scope_id, stmt.lhs);
-        self.process_expr(scope_id, stmt.rhs);
+        let ctx = ExprCtx {
+            scope_id,
+            kind: ExprCtxKind::FunctionBody(func_def_id),
+        };
+
+        self.process_expr(ctx.clone(), stmt.lhs);
+        self.process_expr(ctx.clone(), stmt.rhs);
     }
 
     fn process_stmt_cancel(
@@ -1852,12 +2010,18 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn process_stmt_expr(
         &mut self,
-        _func_def_id: DefId,
+        func_def_id: DefId,
         scope_id: ScopeId,
         _stmt_id: StmtId,
         expr_id: ExprId,
     ) {
-        self.process_expr(scope_id, expr_id);
+        self.process_expr(
+            ExprCtx {
+                scope_id,
+                kind: ExprCtxKind::FunctionBody(func_def_id),
+            },
+            expr_id,
+        );
     }
 }
 
@@ -1961,56 +2125,50 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
 // Phase 3, expressions and access expressions.
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
-    fn process_expr(&mut self, scope_id: ScopeId, expr_id: ExprId) {
+    fn process_expr(&mut self, ctx: ExprCtx, expr_id: ExprId) {
         let expr = &self.sema.libsl.exprs[expr_id];
-        self.sema.name_res.expr_scopes.insert(expr_id, scope_id);
+        self.sema.name_res.exprs.insert(expr_id, ctx.clone());
 
         match &expr.kind {
             ast::ExprKind::Dummy => unreachable!(),
 
             ast::ExprKind::PrimitiveLit(expr) => {
-                self.process_expr_primitive_lit(scope_id, expr_id, expr)
+                self.process_expr_primitive_lit(ctx, expr_id, expr)
             }
 
-            ast::ExprKind::ArrayLit(expr) => self.process_expr_array_lit(scope_id, expr_id, expr),
+            ast::ExprKind::ArrayLit(expr) => self.process_expr_array_lit(ctx, expr_id, expr),
 
-            ast::ExprKind::SetLit(expr) => self.process_expr_set_lit(scope_id, expr_id, expr),
+            ast::ExprKind::SetLit(expr) => self.process_expr_set_lit(ctx, expr_id, expr),
 
-            ast::ExprKind::ProcCall(expr) => self.process_expr_proc_call(scope_id, expr_id, expr),
+            ast::ExprKind::ProcCall(expr) => self.process_expr_proc_call(ctx, expr_id, expr),
 
-            ast::ExprKind::ActionCall(expr) => {
-                self.process_expr_action_call(scope_id, expr_id, expr)
-            }
+            ast::ExprKind::ActionCall(expr) => self.process_expr_action_call(ctx, expr_id, expr),
 
-            ast::ExprKind::Instantiate(expr) => {
-                self.process_expr_instantiate(scope_id, expr_id, expr)
-            }
+            ast::ExprKind::Instantiate(expr) => self.process_expr_instantiate(ctx, expr_id, expr),
 
-            ast::ExprKind::Name(expr) => self.process_expr_name(scope_id, expr_id, expr),
+            ast::ExprKind::Name(expr) => self.process_expr_name(ctx, expr_id, expr),
 
-            ast::ExprKind::Prev(expr) => self.process_expr_prev(scope_id, expr_id, expr),
+            ast::ExprKind::Prev(expr) => self.process_expr_prev(ctx, expr_id, expr),
 
-            ast::ExprKind::Field(expr) => self.process_expr_field(scope_id, expr_id, expr),
+            ast::ExprKind::Field(expr) => self.process_expr_field(ctx, expr_id, expr),
 
-            ast::ExprKind::Index(expr) => self.process_expr_index(scope_id, expr_id, expr),
+            ast::ExprKind::Index(expr) => self.process_expr_index(ctx, expr_id, expr),
 
-            ast::ExprKind::HasConcept(expr) => {
-                self.process_expr_has_concept(scope_id, expr_id, expr)
-            }
+            ast::ExprKind::HasConcept(expr) => self.process_expr_has_concept(ctx, expr_id, expr),
 
-            ast::ExprKind::Cast(expr) => self.process_expr_cast(scope_id, expr_id, expr),
+            ast::ExprKind::Cast(expr) => self.process_expr_cast(ctx, expr_id, expr),
 
-            ast::ExprKind::TyCompare(expr) => self.process_expr_ty_compare(scope_id, expr_id, expr),
+            ast::ExprKind::TyCompare(expr) => self.process_expr_ty_compare(ctx, expr_id, expr),
 
-            ast::ExprKind::Unary(expr) => self.process_expr_unary(scope_id, expr_id, expr),
+            ast::ExprKind::Unary(expr) => self.process_expr_unary(ctx, expr_id, expr),
 
-            ast::ExprKind::Binary(expr) => self.process_expr_binary(scope_id, expr_id, expr),
+            ast::ExprKind::Binary(expr) => self.process_expr_binary(ctx, expr_id, expr),
         }
     }
 
     fn process_expr_primitive_lit(
         &mut self,
-        _scope_id: ScopeId,
+        _ctx: ExprCtx,
         _expr_id: ExprId,
         _expr: &'ast ast::ExprPrimitiveLit,
     ) {
@@ -2019,79 +2177,82 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn process_expr_array_lit(
         &mut self,
-        scope_id: ScopeId,
+        ctx: ExprCtx,
         _expr_id: ExprId,
         expr: &'ast ast::ExprArrayLit,
     ) {
         for &elem in &expr.elems {
-            self.process_expr(scope_id, elem);
+            self.process_expr(ctx.clone(), elem);
         }
     }
 
     fn process_expr_set_lit(
         &mut self,
-        scope_id: ScopeId,
+        ctx: ExprCtx,
         _expr_id: ExprId,
         expr: &'ast ast::ExprSetLit,
     ) {
         for &elem in &expr.elems {
-            self.process_expr(scope_id, elem);
+            self.process_expr(ctx.clone(), elem);
         }
     }
 
     fn process_expr_proc_call(
         &mut self,
-        scope_id: ScopeId,
+        ctx: ExprCtx,
         _expr_id: ExprId,
         expr: &'ast ast::ExprProcCall,
     ) {
         if let Some(recv) = expr.recv {
-            self.process_expr(scope_id, recv);
+            self.process_expr(ctx.clone(), recv);
         }
 
         if let Some(ty_args) = &expr.generics {
             for ty_arg in ty_args {
-                self.process_ty_arg(scope_id, ty_arg);
+                self.process_ty_arg(ctx.scope_id, ty_arg);
             }
         }
 
         for &arg in &expr.args {
-            self.process_expr(scope_id, arg);
+            self.process_expr(ctx.clone(), arg);
         }
     }
 
     fn process_expr_action_call(
         &mut self,
-        scope_id: ScopeId,
+        ctx: ExprCtx,
         expr_id: ExprId,
         expr: &'ast ast::ExprActionCall,
     ) {
-        if let Ok(def_id) =
-            self.resolve(scope_id, Ns::Action, &expr.name.to_string(), &expr.name.loc)
-        {
+        if let Ok(def_id) = self.resolve(
+            ctx.scope_id,
+            Ns::Action,
+            &expr.name.to_string(),
+            &expr.name.loc,
+        ) {
             self.sema.name_res.expr_action_calls.insert(expr_id, def_id);
         }
 
         if let Some(ty_args) = &expr.generics {
             for ty_arg in ty_args {
-                self.process_ty_arg(scope_id, ty_arg);
+                self.process_ty_arg(ctx.scope_id, ty_arg);
             }
         }
 
         for &arg in &expr.args {
-            self.process_expr(scope_id, arg);
+            self.process_expr(ctx.clone(), arg);
         }
     }
 
     fn process_expr_instantiate(
         &mut self,
-        scope_id: ScopeId,
+        ctx: ExprCtx,
         expr_id: ExprId,
         expr: &'ast ast::ExprInstantiate,
     ) {
         let automaton = self
             .resolve(
-                scope_id,
+                ctx.scope_id,
                 Ns::Automaton,
                 &expr.name.to_string(),
                 &expr.name.loc,
@@ -2100,7 +2261,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         if let Some(ty_args) = &expr.generics {
             for ty_arg in ty_args {
-                self.process_ty_arg(scope_id, ty_arg);
+                self.process_ty_arg(ctx.scope_id, ty_arg);
             }
         }
 
@@ -2147,7 +2308,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         })
                         .unwrap_or_default();
 
-                    self.process_expr(scope_id, *arg_expr_id);
+                    self.process_expr(ctx.clone(), *arg_expr_id);
 
                     def_id
                 }
@@ -2162,55 +2323,35 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .insert(expr_id, InstantiationExprInfo { automaton, args });
     }
 
-    fn process_expr_name(
-        &mut self,
-        _scope_id: ScopeId,
-        _expr_id: ExprId,
-        _expr: &'ast ast::ExprName,
-    ) {
+    fn process_expr_name(&mut self, _ctx: ExprCtx, _expr_id: ExprId, _expr: &'ast ast::ExprName) {
         // resolved during tyck.
     }
 
-    fn process_expr_prev(
-        &mut self,
-        scope_id: ScopeId,
-        _expr_id: ExprId,
-        expr: &'ast ast::ExprPrev,
-    ) {
-        self.process_expr(scope_id, expr.base);
+    fn process_expr_prev(&mut self, ctx: ExprCtx, _expr_id: ExprId, expr: &'ast ast::ExprPrev) {
+        self.process_expr(ctx.clone(), expr.base);
     }
 
-    fn process_expr_field(
-        &mut self,
-        scope_id: ScopeId,
-        _expr_id: ExprId,
-        expr: &'ast ast::ExprField,
-    ) {
-        self.process_expr(scope_id, expr.base);
+    fn process_expr_field(&mut self, ctx: ExprCtx, _expr_id: ExprId, expr: &'ast ast::ExprField) {
+        self.process_expr(ctx.clone(), expr.base);
 
         // the field is resolved during tyck.
     }
 
-    fn process_expr_index(
-        &mut self,
-        scope_id: ScopeId,
-        _expr_id: ExprId,
-        expr: &'ast ast::ExprIndex,
-    ) {
-        self.process_expr(scope_id, expr.base);
-        self.process_expr(scope_id, expr.index);
+    fn process_expr_index(&mut self, ctx: ExprCtx, _expr_id: ExprId, expr: &'ast ast::ExprIndex) {
+        self.process_expr(ctx.clone(), expr.base);
+        self.process_expr(ctx.clone(), expr.index);
     }
 
     fn process_expr_has_concept(
         &mut self,
-        scope_id: ScopeId,
+        ctx: ExprCtx,
         expr_id: ExprId,
         expr: &'ast ast::ExprHasConcept,
     ) {
-        self.process_expr(scope_id, expr.scrutinee);
+        self.process_expr(ctx.clone(), expr.scrutinee);
 
         if let Ok(def_id) = self.resolve(
-            scope_id,
+            ctx.scope_id,
             Ns::Automaton,
             &expr.concept.to_string(),
             &expr.concept.loc,
@@ -2219,42 +2360,27 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn process_expr_cast(
-        &mut self,
-        scope_id: ScopeId,
-        _expr_id: ExprId,
-        expr: &'ast ast::ExprCast,
-    ) {
-        self.process_expr(scope_id, expr.expr);
-        self.process_ty_expr(scope_id, expr.ty_expr);
+    fn process_expr_cast(&mut self, ctx: ExprCtx, _expr_id: ExprId, expr: &'ast ast::ExprCast) {
+        self.process_expr(ctx.clone(), expr.expr);
+        self.process_ty_expr(ctx.scope_id, expr.ty_expr);
     }
 
     fn process_expr_ty_compare(
         &mut self,
-        scope_id: ScopeId,
+        ctx: ExprCtx,
         _expr_id: ExprId,
         expr: &'ast ast::ExprTyCompare,
     ) {
-        self.process_expr(scope_id, expr.expr);
-        self.process_ty_expr(scope_id, expr.ty_expr);
+        self.process_expr(ctx.clone(), expr.expr);
+        self.process_ty_expr(ctx.scope_id, expr.ty_expr);
     }
 
-    fn process_expr_unary(
-        &mut self,
-        scope_id: ScopeId,
-        _expr_id: ExprId,
-        expr: &'ast ast::ExprUnary,
-    ) {
-        self.process_expr(scope_id, expr.expr);
+    fn process_expr_unary(&mut self, ctx: ExprCtx, _expr_id: ExprId, expr: &'ast ast::ExprUnary) {
+        self.process_expr(ctx.clone(), expr.expr);
     }
 
-    fn process_expr_binary(
-        &mut self,
-        scope_id: ScopeId,
-        _expr_id: ExprId,
-        expr: &'ast ast::ExprBinary,
-    ) {
-        self.process_expr(scope_id, expr.lhs);
-        self.process_expr(scope_id, expr.rhs);
+    fn process_expr_binary(&mut self, ctx: ExprCtx, _expr_id: ExprId, expr: &'ast ast::ExprBinary) {
+        self.process_expr(ctx.clone(), expr.lhs);
+        self.process_expr(ctx.clone(), expr.rhs);
     }
 }

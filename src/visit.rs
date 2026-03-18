@@ -2,6 +2,7 @@
 
 use std::ops::ControlFlow;
 
+use crate::AnnotationId;
 use crate::DeclId;
 use crate::ExprId;
 use crate::LibSl;
@@ -44,6 +45,11 @@ where
     /// Called for every walked [predicate expression][ast::Pred].
     fn visit_pred(&mut self, ctx: C, pred: &'ast ast::Pred) -> ControlFlow<()> {
         pred.walk(self, ctx)
+    }
+
+    /// Called for every walked [annotation use][ast::Annotation].
+    fn visit_annotation(&mut self, ctx: C, annotation: &'ast ast::Annotation) -> ControlFlow<()> {
+        annotation.walk(self, ctx)
     }
 }
 
@@ -123,6 +129,19 @@ impl Walkable for ast::Pred {
     }
 }
 
+impl Walkable for ast::Annotation {
+    /// Walks the substructure of an [annotation use][ast::Annotation].
+    ///
+    /// It **does not** call [`Visitor::visit_annotation`] for the provided `annotation`.
+    fn walk<'ast, V, C>(&'ast self, visitor: &mut V, ctx: C) -> ControlFlow<()>
+    where
+        V: Visitor<'ast, C> + ?Sized,
+        C: Clone,
+    {
+        self.args.walk(visitor, ctx)
+    }
+}
+
 impl Walkable for DeclId {
     fn walk<'ast, V, C>(&'ast self, visitor: &mut V, ctx: C) -> ControlFlow<()>
     where
@@ -170,6 +189,16 @@ impl Walkable for PredId {
         C: Clone,
     {
         visitor.libsl().preds[*self].walk(visitor, ctx)
+    }
+}
+
+impl Walkable for AnnotationId {
+    fn walk<'ast, V, C>(&'ast self, visitor: &mut V, ctx: C) -> ControlFlow<()>
+    where
+        V: Visitor<'ast, C> + ?Sized,
+        C: Clone,
+    {
+        visitor.libsl().annotations[*self].walk(visitor, ctx)
     }
 }
 

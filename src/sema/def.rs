@@ -8,7 +8,7 @@ use crate::ast::Variance;
 use crate::loc::Loc;
 use crate::sema::resolve::ScopeId;
 use crate::sema::ty::BuiltinTyCtor;
-use crate::{DeclId, PredId};
+use crate::{AnnotationId, DeclId, PredId};
 
 new_key_type! {
     pub struct DefId;
@@ -19,6 +19,7 @@ pub struct Def {
     pub id: DefId,
     pub loc: Loc,
     pub name: String,
+    pub scope_id: ScopeId,
     pub kind: DefKind,
 }
 
@@ -382,6 +383,7 @@ impl DefKindProject for BuiltinTyCtor {
 #[derive(Debug, Clone)]
 pub struct DefSemanticTy {
     pub decl_id: DeclId,
+    pub annotations: Vec<AnnotationId>,
     pub param_scope_id: ScopeId,
     pub generics: Vec<DefId>,
     pub values: Vec<SemanticTyValue>,
@@ -391,6 +393,7 @@ impl DefSemanticTy {
     pub fn new(decl_id: DeclId) -> Self {
         Self {
             decl_id,
+            annotations: Default::default(),
             param_scope_id: Default::default(),
             generics: Default::default(),
             values: Default::default(),
@@ -417,6 +420,7 @@ pub struct SemanticTyValue {
 #[derive(Debug, Clone)]
 pub struct DefTyAlias {
     pub decl_id: DeclId,
+    pub annotations: Vec<AnnotationId>,
     pub param_scope_id: ScopeId,
     pub generics: Vec<DefId>,
 }
@@ -425,6 +429,7 @@ impl DefTyAlias {
     pub fn new(decl_id: DeclId) -> Self {
         Self {
             decl_id,
+            annotations: Default::default(),
             param_scope_id: Default::default(),
             generics: Default::default(),
         }
@@ -444,6 +449,7 @@ impl DefKindProject for DefTyAlias {
 #[derive(Debug, Clone)]
 pub struct DefStruct {
     pub decl_id: DeclId,
+    pub annotations: Vec<AnnotationId>,
     pub param_scope_id: ScopeId,
     pub generics: Vec<DefId>,
     pub fields: Vec<DefId>,
@@ -455,6 +461,7 @@ impl DefStruct {
     pub fn new(decl_id: DeclId) -> Self {
         Self {
             decl_id,
+            annotations: Default::default(),
             param_scope_id: Default::default(),
             generics: Default::default(),
             fields: Default::default(),
@@ -477,6 +484,7 @@ impl DefKindProject for DefStruct {
 #[derive(Debug, Clone)]
 pub struct DefEnum {
     pub decl_id: DeclId,
+    pub annotations: Vec<AnnotationId>,
     pub param_scope_id: ScopeId,
     pub generics: Vec<DefId>,
     pub member_scope_id: ScopeId,
@@ -487,6 +495,7 @@ impl DefEnum {
     pub fn new(decl_id: DeclId) -> Self {
         Self {
             decl_id,
+            annotations: Default::default(),
             param_scope_id: Default::default(),
             generics: Default::default(),
             member_scope_id: Default::default(),
@@ -510,6 +519,7 @@ pub struct DefAnnotation {
     pub decl_id: DeclId,
     pub param_scope_id: ScopeId,
     pub params: Vec<DefId>,
+    pub users: Vec<AnnotationId>,
 }
 
 impl DefAnnotation {
@@ -518,6 +528,7 @@ impl DefAnnotation {
             decl_id,
             param_scope_id: Default::default(),
             params: Default::default(),
+            users: Default::default(),
         }
     }
 }
@@ -535,6 +546,7 @@ impl DefKindProject for DefAnnotation {
 #[derive(Debug, Clone)]
 pub struct DefAction {
     pub decl_id: DeclId,
+    pub annotations: Vec<AnnotationId>,
     pub param_scope_id: ScopeId,
     pub generics: Vec<DefId>,
     pub params: Vec<DefId>,
@@ -544,6 +556,7 @@ impl DefAction {
     pub fn new(decl_id: DeclId) -> Self {
         Self {
             decl_id,
+            annotations: Default::default(),
             param_scope_id: Default::default(),
             generics: Default::default(),
             params: Default::default(),
@@ -564,6 +577,7 @@ impl DefKindProject for DefAction {
 #[derive(Debug, Clone)]
 pub struct DefAutomaton {
     pub decl_id: DeclId,
+    pub annotations: Vec<AnnotationId>,
     pub is_concept: bool,
     pub param_scope_id: ScopeId,
     pub generics: Vec<DefId>,
@@ -580,6 +594,7 @@ impl DefAutomaton {
     pub fn new(decl_id: DeclId, is_concept: bool) -> Self {
         Self {
             decl_id,
+            annotations: Default::default(),
             is_concept,
             param_scope_id: Default::default(),
             generics: Default::default(),
@@ -607,6 +622,7 @@ impl DefKindProject for DefAutomaton {
 #[derive(Debug, Clone)]
 pub struct DefVariable {
     pub decl_id: Option<DeclId>,
+    pub annotations: Vec<AnnotationId>,
     pub kind: VariableKind,
     pub mutable: bool,
 }
@@ -615,6 +631,7 @@ impl DefVariable {
     pub fn new(decl_id: Option<DeclId>, kind: VariableKind, mutable: bool) -> Self {
         Self {
             decl_id,
+            annotations: Default::default(),
             kind,
             mutable,
         }
@@ -650,6 +667,7 @@ pub enum ParamKind {
 #[derive(Debug, Clone)]
 pub struct DefFunction {
     pub decl_id: DeclId,
+    pub annotations: Vec<AnnotationId>,
     pub kind: FunctionKind,
     pub is_method: bool,
     pub param_scope_id: ScopeId,
@@ -664,6 +682,7 @@ impl DefFunction {
     pub fn new(decl_id: DeclId, kind: FunctionKind, is_method: bool) -> Self {
         Self {
             decl_id,
+            annotations: Default::default(),
             kind,
             is_method,
             param_scope_id: Default::default(),

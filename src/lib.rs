@@ -101,6 +101,9 @@ new_key_type! {
 
     /// A [predicate][ast::Pred] identifier.
     pub struct PredId;
+
+    /// An [annotation use][ast::Annotation] identifier.
+    pub struct AnnotationId;
 }
 
 /// The top-level struct that stores all parsed AST nodes and allows access to them via an
@@ -127,6 +130,9 @@ pub struct LibSl {
 
     /// Predicate AST nodes.
     pub preds: SlotMap<PredId, ast::Pred>,
+
+    /// Annotation use AST nodes.
+    pub annotations: SlotMap<AnnotationId, ast::Annotation>,
 }
 
 impl LibSl {

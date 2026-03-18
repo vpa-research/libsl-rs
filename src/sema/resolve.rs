@@ -13,7 +13,7 @@ use crate::sema::def::{
     FunctionKind, ParamKind, PredKind, SemanticTyValue, TyVariableKind, VariableKind,
 };
 use crate::sema::{Result, Sema};
-use crate::{DeclId, ExprId, FileId, PredId, StmtId, TyExprId, ast};
+use crate::{AnnotationId, DeclId, ExprId, FileId, PredId, StmtId, TyExprId, ast};
 
 new_key_type! {
     pub struct ScopeId;
@@ -166,6 +166,10 @@ pub struct ExprCtx {
 pub enum ExprCtxKind {
     EnumSemanticTyValue(DefId),
     AnnotationParam(DefId),
+    AnnotationArg {
+        annotation_id: AnnotationId,
+        idx: usize,
+    },
     VariableInit(DefId),
     FunctionBody(DefId),
 }
@@ -174,6 +178,21 @@ pub enum ExprCtxKind {
 pub struct StmtCtx {
     /// The [`DefId`] of the function this statement is enclosed in.
     pub enclosing_fn: DefId,
+}
+
+#[derive(Debug, Clone)]
+pub struct AnnotationCtx {
+    /// The [`DefId`] of the annotation used.
+    pub def_id: DefId,
+
+    /// The annotated entity.
+    pub entity: AnnotatedEntity,
+}
+
+#[derive(Debug, Clone)]
+pub enum AnnotatedEntity {
+    /// A [definable entity][Def].
+    Def(DefId),
 }
 
 /// Information collected during name resolution.
@@ -223,6 +242,9 @@ pub struct NameRes {
 
     /// Maps statements to their context.
     pub stmts: SecondaryMap<StmtId, StmtCtx>,
+
+    /// Maps annotation uses to their context.
+    pub annotations: SecondaryMap<AnnotationId, DefId>,
 }
 
 impl NameRes {
@@ -437,6 +459,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 id,
                 loc: Loc::Synthetic,
                 name: name.into(),
+                scope_id: self.sema.name_res.prelude_scope_id,
                 kind: Default::default(),
             });
             prelude_scope.defs.insert((ns, name.into()), def_id);
@@ -461,6 +484,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     id,
                     loc: loc.clone(),
                     name: name.clone(),
+                    scope_id,
                     kind,
                 });
 
@@ -496,6 +520,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     id,
                     loc: loc.clone(),
                     name: name.clone(),
+                    scope_id,
                     kind,
                 });
 
@@ -1114,6 +1139,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                             id,
                             loc: import_loc.clone(),
                             name: name.clone(),
+                            scope_id: import_scope_id,
                             kind: DefKind::Import(DefImport::new_resolved(
                                 import_decl_id,
                                 def_id,
@@ -1129,7 +1155,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 }
 
-// Phase 3: walk function bodies and add local scopes.
+// Phase 3: walk definitions, adding local scopes.
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn resolve_defs(&mut self) {
         for (file_id, file) in &self.sema.libsl.files {
@@ -1167,420 +1193,39 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         result
     }
-}
 
-// Phase 3, declarations.
-impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
-    fn process_decl(&mut self, ctx: DeclCtx, decl_id: DeclId) {
-        let decl = &self.sema.libsl.decls[decl_id];
-
-        match &decl.kind {
-            ast::DeclKind::Dummy => unreachable!(),
-            ast::DeclKind::Import(_) => {}
-            ast::DeclKind::Include(_) => {}
-
-            ast::DeclKind::SemanticTy(decl) => self.process_decl_semantic_ty(ctx, decl_id, decl),
-            ast::DeclKind::TyAlias(decl) => self.process_decl_ty_alias(ctx, decl_id, decl),
-            ast::DeclKind::Struct(decl) => self.process_decl_struct(ctx, decl_id, decl),
-            ast::DeclKind::Enum(decl) => self.process_decl_enum(ctx, decl_id, decl),
-            ast::DeclKind::Annotation(decl) => self.process_decl_annotation(ctx, decl_id, decl),
-            ast::DeclKind::Action(decl) => self.process_decl_action(ctx, decl_id, decl),
-            ast::DeclKind::Automaton(decl) => self.process_decl_automaton(ctx, decl_id, decl),
-            ast::DeclKind::Function(decl) => self.process_decl_function(ctx, decl_id, decl),
-            ast::DeclKind::Variable(decl) => self.process_decl_variable(ctx, decl_id, decl),
-            ast::DeclKind::State(decl) => self.process_decl_state(ctx, decl_id, decl),
-            ast::DeclKind::Shift(decl) => self.process_decl_shift(ctx, decl_id, decl),
-            ast::DeclKind::Constructor(decl) => self.process_decl_constructor(ctx, decl_id, decl),
-            ast::DeclKind::Destructor(decl) => self.process_decl_destructor(ctx, decl_id, decl),
-            ast::DeclKind::Proc(decl) => self.process_decl_proc(ctx, decl_id, decl),
-        }
-    }
-
-    fn process_decl_semantic_ty(
+    fn process_annotations(
         &mut self,
-        _ctx: DeclCtx,
-        decl_id: DeclId,
-        decl: &'ast ast::DeclSemanticTy,
-    ) {
-        let def_id = self.sema.name_res.decl_defs[decl_id];
-        let param_scope_id = self.def::<DefSemanticTy>(def_id).param_scope_id;
+        def_id: DefId,
+        annotations: &[AnnotationId],
+    ) -> Vec<AnnotationId> {
+        let scope_id = self.sema.name_res.defs[def_id].scope_id;
 
-        // TODO: annotations.
-
-        self.def_mut::<DefSemanticTy>(def_id).generics =
-            self.process_generics(def_id, param_scope_id, &decl.ty_name.generics);
-
-        self.process_ty_expr(param_scope_id, decl.real_ty);
-
-        match &decl.kind {
-            ast::SemanticTyKind::Simple => {}
-            ast::SemanticTyKind::Enumerated(values) => {
-                let member_scope_id = self.sema.name_res.def_member_scopes[def_id];
-
-                for (idx, value) in values.iter().enumerate() {
-                    let value_def_id =
-                        self.sema.name_res.def::<DefSemanticTy>(def_id).values[idx].def_id;
-
-                    self.process_expr(
-                        ExprCtx {
-                            scope_id: member_scope_id,
-                            kind: ExprCtxKind::EnumSemanticTyValue(value_def_id),
-                        },
-                        value.expr,
-                    );
-                }
-            }
+        for &annotation_id in annotations {
+            self.process_annotation(scope_id, &self.sema.libsl.annotations[annotation_id]);
         }
+
+        annotations.to_vec()
     }
 
-    fn process_decl_ty_alias(
-        &mut self,
-        _ctx: DeclCtx,
-        decl_id: DeclId,
-        decl: &'ast ast::DeclTyAlias,
-    ) {
-        let def_id = self.sema.name_res.decl_defs[decl_id];
-        let param_scope_id = self.def::<DefTyAlias>(def_id).param_scope_id;
+    fn process_annotation(&mut self, scope_id: ScopeId, annotation: &'ast ast::Annotation) {
+        let name = annotation.name.to_string();
 
-        // TODO: annotations.
-
-        self.def_mut::<DefTyAlias>(def_id).generics =
-            self.process_generics(def_id, param_scope_id, &decl.ty_name.generics);
-
-        self.process_ty_expr(param_scope_id, decl.ty_expr);
-    }
-
-    fn process_decl_struct(&mut self, _ctx: DeclCtx, decl_id: DeclId, decl: &'ast ast::DeclStruct) {
-        let def_id = self.sema.name_res.decl_defs[decl_id];
-
-        let param_scope_id = self.def::<DefStruct>(def_id).param_scope_id;
-
-        // TODO: annotations.
-
-        self.def_mut::<DefStruct>(def_id).generics =
-            self.process_generics(def_id, param_scope_id, &decl.ty_name.generics);
-
-        if let Some(is_ty) = decl.is_ty {
-            self.process_ty_expr(param_scope_id, is_ty);
+        if let Ok(def_id) = self.resolve(scope_id, Ns::Annotation, &name, &annotation.name.loc) {
+            self.sema.name_res.annotations.insert(annotation.id, def_id);
         }
 
-        for &for_ty in &decl.for_tys {
-            self.process_ty_expr(param_scope_id, for_ty);
-        }
-
-        // TODO: type constraints.
-
-        for &member_decl_id in &decl.decls {
-            self.process_decl(DeclCtx::Struct(def_id), member_decl_id);
-        }
-    }
-
-    fn process_decl_enum(&mut self, _ctx: DeclCtx, decl_id: DeclId, decl: &'ast ast::DeclEnum) {
-        let def_id = self.sema.name_res.decl_defs[decl_id];
-
-        let param_scope_id = self.def::<DefEnum>(def_id).param_scope_id;
-
-        // TODO: annotations.
-
-        self.def_mut::<DefEnum>(def_id).generics =
-            self.process_generics(def_id, param_scope_id, &decl.ty_name.generics);
-    }
-
-    fn process_decl_annotation(
-        &mut self,
-        _ctx: DeclCtx,
-        decl_id: DeclId,
-        decl: &'ast ast::DeclAnnotation,
-    ) {
-        let def_id = self.sema.name_res.decl_defs[decl_id];
-
-        let param_scope_id = self.def::<DefAnnotation>(def_id).param_scope_id;
-
-        for (idx, param) in decl.params.iter().enumerate() {
-            let Ok(param_def_id) = self.add_def(
-                param_scope_id,
-                Ns::Var,
-                param.name.to_string(),
-                param.name.loc.clone(),
-                DefVariable::new(
-                    None,
-                    VariableKind::Param {
-                        of: def_id,
-                        kind: ParamKind::User { idx },
-                    },
-                    true,
-                )
-                .into(),
-            ) else {
-                continue;
-            };
-
-            self.def_mut::<DefAnnotation>(def_id)
-                .params
-                .push(param_def_id);
-
-            self.process_ty_expr(param_scope_id, param.ty_expr);
-
-            if let Some(expr_id) = param.default {
-                self.process_expr(
-                    ExprCtx {
-                        scope_id: param_scope_id,
-                        kind: ExprCtxKind::AnnotationParam(param_def_id),
-                    },
-                    expr_id,
-                );
-            }
-        }
-    }
-
-    fn process_decl_action(&mut self, _ctx: DeclCtx, decl_id: DeclId, decl: &'ast ast::DeclAction) {
-        let def_id = self.sema.name_res.decl_defs[decl_id];
-
-        // TODO: process annotations.
-
-        let param_scope_id = self.def::<DefAction>(def_id).param_scope_id;
-
-        self.def_mut::<DefAction>(def_id).generics =
-            self.process_generics(def_id, param_scope_id, &decl.generics);
-
-        for (idx, param) in decl.params.iter().enumerate() {
-            // TODO: process annotations.
-            let Ok(param_def_id) = self.add_def(
-                param_scope_id,
-                Ns::Var,
-                param.name.to_string(),
-                param.name.loc.clone(),
-                DefVariable::new(
-                    None,
-                    VariableKind::Param {
-                        of: def_id,
-                        kind: ParamKind::User { idx },
-                    },
-                    true,
-                )
-                .into(),
-            ) else {
-                return;
-            };
-
-            self.def_mut::<DefAction>(def_id).params.push(param_def_id);
-            self.process_ty_expr(param_scope_id, param.ty_expr);
-        }
-
-        if let Some(ty_expr_id) = decl.ret_ty_expr {
-            self.process_ty_expr(param_scope_id, ty_expr_id);
-        }
-    }
-
-    fn process_decl_automaton(
-        &mut self,
-        _ctx: DeclCtx,
-        decl_id: DeclId,
-        decl: &'ast ast::DeclAutomaton,
-    ) {
-        let def_id = self.sema.name_res.decl_defs[decl_id];
-
-        // TODO: process annotations.
-
-        let param_scope_id = self.def::<DefAutomaton>(def_id).param_scope_id;
-
-        self.def_mut::<DefAutomaton>(def_id).generics =
-            self.process_generics(def_id, param_scope_id, &decl.name.generics);
-
-        for &var_decl_id in &decl.constructor_variables {
-            self.process_decl(
-                DeclCtx::Automaton {
-                    def_id,
-                    is_constructor_var: true,
-                },
-                var_decl_id,
-            );
-        }
-
-        self.process_ty_expr(param_scope_id, decl.ty_expr);
-
-        // TODO: resolve implemented concepts?
-
-        for &member_decl_id in &decl.decls {
-            self.process_decl(
-                DeclCtx::Automaton {
-                    def_id,
-                    is_constructor_var: false,
-                },
-                member_decl_id,
-            );
-        }
-    }
-
-    fn process_decl_function(
-        &mut self,
-        ctx: DeclCtx,
-        decl_id: DeclId,
-        decl: &'ast ast::DeclFunction,
-    ) {
-        let def_id = self.sema.name_res.decl_defs[decl_id];
-
-        // TODO: process annotations.
-        // TODO: handle extension methods.
-
-        let param_scope_id = self.def::<DefFunction>(def_id).param_scope_id;
-
-        self.def_mut::<DefFunction>(def_id).generics =
-            self.process_generics(def_id, param_scope_id, &decl.generics);
-
-        self.process_function_params(
-            ctx.outer_def_id().is_some(),
-            def_id,
-            param_scope_id,
-            &decl.params,
-        );
-
-        if let Some(ty_expr_id) = decl.ret_ty_expr {
-            self.process_ty_expr(param_scope_id, ty_expr_id);
-        }
-
-        if let Some(body) = &decl.body {
-            self.process_function_body(def_id, body);
-        }
-    }
-
-    fn process_decl_variable(
-        &mut self,
-        ctx: DeclCtx,
-        decl_id: DeclId,
-        decl: &'ast ast::DeclVariable,
-    ) {
-        let (_, scope_id) = ctx.outer(self.sema);
-
-        match ctx {
-            DeclCtx::Global(_) | DeclCtx::Struct(_) | DeclCtx::Automaton { .. } => {
-                // already registered in phase 1.
-            }
-
-            DeclCtx::FuncBody {
-                def_id: func_def_id,
-                ..
-            } => {
-                let _ = self.add_decl_def(
-                    decl_id,
-                    scope_id,
-                    Ns::Var,
-                    decl.name.to_string(),
-                    decl.name.loc.clone(),
-                    DefVariable::new(
-                        Some(decl_id),
-                        VariableKind::Local { of: func_def_id },
-                        decl.kind.is_var(),
-                    )
-                    .into(),
-                );
-            }
-        }
-
-        // TODO: process annotations.
-
-        if let Some(ty_expr_id) = decl.ty_expr {
-            self.process_ty_expr(scope_id, ty_expr_id);
-        }
-
-        if let Some(expr_id) = decl.init {
-            let def_id = self.sema.name_res.decl_defs[decl_id];
-
+        for (idx, arg) in annotation.args.iter().enumerate() {
             self.process_expr(
                 ExprCtx {
                     scope_id,
-                    kind: ExprCtxKind::VariableInit(def_id),
+                    kind: ExprCtxKind::AnnotationArg {
+                        annotation_id: annotation.id,
+                        idx,
+                    },
                 },
-                expr_id,
+                arg.expr,
             );
-        }
-    }
-
-    fn process_decl_state(&mut self, _ctx: DeclCtx, _decl_id: DeclId, _decl: &'ast ast::DeclState) {
-        // do nothing.
-    }
-
-    fn process_decl_shift(&mut self, _ctx: DeclCtx, _decl_id: DeclId, _decl: &'ast ast::DeclShift) {
-        // do nothing.
-    }
-
-    fn process_decl_constructor(
-        &mut self,
-        ctx: DeclCtx,
-        decl_id: DeclId,
-        decl: &'ast ast::DeclConstructor,
-    ) {
-        let def_id = self.sema.name_res.decl_defs[decl_id];
-
-        // TODO: process annotations.
-
-        let param_scope_id = self.def::<DefFunction>(def_id).param_scope_id;
-        self.process_function_params(
-            ctx.outer_def_id().is_some(),
-            def_id,
-            param_scope_id,
-            &decl.params,
-        );
-
-        if let Some(ty_expr_id) = decl.ret_ty_expr {
-            self.process_ty_expr(param_scope_id, ty_expr_id);
-        }
-
-        if let Some(body) = &decl.body {
-            self.process_function_body(def_id, body);
-        }
-    }
-
-    fn process_decl_destructor(
-        &mut self,
-        ctx: DeclCtx,
-        decl_id: DeclId,
-        decl: &'ast ast::DeclDestructor,
-    ) {
-        let def_id = self.sema.name_res.decl_defs[decl_id];
-
-        // TODO: process annotations.
-
-        let param_scope_id = self.def::<DefFunction>(def_id).param_scope_id;
-        self.process_function_params(
-            ctx.outer_def_id().is_some(),
-            def_id,
-            param_scope_id,
-            &decl.params,
-        );
-
-        if let Some(ty_expr_id) = decl.ret_ty_expr {
-            self.process_ty_expr(param_scope_id, ty_expr_id);
-        }
-
-        if let Some(body) = &decl.body {
-            self.process_function_body(def_id, body);
-        }
-    }
-
-    fn process_decl_proc(&mut self, ctx: DeclCtx, decl_id: DeclId, decl: &'ast ast::DeclProc) {
-        let def_id = self.sema.name_res.decl_defs[decl_id];
-
-        // TODO: process annotations.
-
-        let param_scope_id = self.def::<DefFunction>(def_id).param_scope_id;
-
-        self.def_mut::<DefFunction>(def_id).generics =
-            self.process_generics(def_id, param_scope_id, &decl.generics);
-
-        self.process_function_params(
-            ctx.outer_def_id().is_some(),
-            def_id,
-            param_scope_id,
-            &decl.params,
-        );
-
-        if let Some(ty_expr_id) = decl.ret_ty_expr {
-            self.process_ty_expr(param_scope_id, ty_expr_id);
-        }
-
-        if let Some(body) = &decl.body {
-            self.process_function_body(def_id, body);
         }
     }
 
@@ -1631,7 +1276,6 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
 
         for (idx, param) in params.iter().enumerate() {
-            // TODO: process annotations.
             let name = param.name.to_string();
 
             let Ok(param_def_id) = self.add_def(
@@ -1651,6 +1295,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             ) else {
                 continue;
             };
+
+            self.def_mut::<DefVariable>(param_def_id).annotations =
+                self.process_annotations(param_def_id, &param.annotations);
 
             self.def_mut::<DefFunction>(def_id)
                 .params
@@ -1677,6 +1324,422 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         for &stmt_id in &body.stmts {
             self.process_stmt(func_def_id, scope_id, stmt_id);
+        }
+    }
+}
+
+// Phase 3, declarations.
+impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
+    fn process_decl(&mut self, ctx: DeclCtx, decl_id: DeclId) {
+        let decl = &self.sema.libsl.decls[decl_id];
+
+        match &decl.kind {
+            ast::DeclKind::Dummy => unreachable!(),
+            ast::DeclKind::Import(_) => {}
+            ast::DeclKind::Include(_) => {}
+
+            ast::DeclKind::SemanticTy(decl) => self.process_decl_semantic_ty(ctx, decl_id, decl),
+            ast::DeclKind::TyAlias(decl) => self.process_decl_ty_alias(ctx, decl_id, decl),
+            ast::DeclKind::Struct(decl) => self.process_decl_struct(ctx, decl_id, decl),
+            ast::DeclKind::Enum(decl) => self.process_decl_enum(ctx, decl_id, decl),
+            ast::DeclKind::Annotation(decl) => self.process_decl_annotation(ctx, decl_id, decl),
+            ast::DeclKind::Action(decl) => self.process_decl_action(ctx, decl_id, decl),
+            ast::DeclKind::Automaton(decl) => self.process_decl_automaton(ctx, decl_id, decl),
+            ast::DeclKind::Function(decl) => self.process_decl_function(ctx, decl_id, decl),
+            ast::DeclKind::Variable(decl) => self.process_decl_variable(ctx, decl_id, decl),
+            ast::DeclKind::State(decl) => self.process_decl_state(ctx, decl_id, decl),
+            ast::DeclKind::Shift(decl) => self.process_decl_shift(ctx, decl_id, decl),
+            ast::DeclKind::Constructor(decl) => self.process_decl_constructor(ctx, decl_id, decl),
+            ast::DeclKind::Destructor(decl) => self.process_decl_destructor(ctx, decl_id, decl),
+            ast::DeclKind::Proc(decl) => self.process_decl_proc(ctx, decl_id, decl),
+        }
+    }
+
+    fn process_decl_semantic_ty(
+        &mut self,
+        _ctx: DeclCtx,
+        decl_id: DeclId,
+        decl: &'ast ast::DeclSemanticTy,
+    ) {
+        let def_id = self.sema.name_res.decl_defs[decl_id];
+        let param_scope_id = self.def::<DefSemanticTy>(def_id).param_scope_id;
+
+        self.def_mut::<DefSemanticTy>(def_id).annotations =
+            self.process_annotations(def_id, &decl.annotations);
+        self.def_mut::<DefSemanticTy>(def_id).generics =
+            self.process_generics(def_id, param_scope_id, &decl.ty_name.generics);
+
+        self.process_ty_expr(param_scope_id, decl.real_ty);
+
+        match &decl.kind {
+            ast::SemanticTyKind::Simple => {}
+            ast::SemanticTyKind::Enumerated(values) => {
+                let member_scope_id = self.sema.name_res.def_member_scopes[def_id];
+
+                for (idx, value) in values.iter().enumerate() {
+                    let value_def_id =
+                        self.sema.name_res.def::<DefSemanticTy>(def_id).values[idx].def_id;
+
+                    self.process_expr(
+                        ExprCtx {
+                            scope_id: member_scope_id,
+                            kind: ExprCtxKind::EnumSemanticTyValue(value_def_id),
+                        },
+                        value.expr,
+                    );
+                }
+            }
+        }
+    }
+
+    fn process_decl_ty_alias(
+        &mut self,
+        _ctx: DeclCtx,
+        decl_id: DeclId,
+        decl: &'ast ast::DeclTyAlias,
+    ) {
+        let def_id = self.sema.name_res.decl_defs[decl_id];
+        let param_scope_id = self.def::<DefTyAlias>(def_id).param_scope_id;
+
+        self.def_mut::<DefTyAlias>(def_id).generics =
+            self.process_generics(def_id, param_scope_id, &decl.ty_name.generics);
+        self.def_mut::<DefTyAlias>(def_id).annotations =
+            self.process_annotations(def_id, &decl.annotations);
+
+        self.process_ty_expr(param_scope_id, decl.ty_expr);
+    }
+
+    fn process_decl_struct(&mut self, _ctx: DeclCtx, decl_id: DeclId, decl: &'ast ast::DeclStruct) {
+        let def_id = self.sema.name_res.decl_defs[decl_id];
+        let param_scope_id = self.def::<DefStruct>(def_id).param_scope_id;
+
+        self.def_mut::<DefStruct>(def_id).annotations =
+            self.process_annotations(def_id, &decl.annotations);
+        self.def_mut::<DefStruct>(def_id).generics =
+            self.process_generics(def_id, param_scope_id, &decl.ty_name.generics);
+
+        if let Some(is_ty) = decl.is_ty {
+            self.process_ty_expr(param_scope_id, is_ty);
+        }
+
+        for &for_ty in &decl.for_tys {
+            self.process_ty_expr(param_scope_id, for_ty);
+        }
+
+        // TODO: type constraints.
+
+        for &member_decl_id in &decl.decls {
+            self.process_decl(DeclCtx::Struct(def_id), member_decl_id);
+        }
+    }
+
+    fn process_decl_enum(&mut self, _ctx: DeclCtx, decl_id: DeclId, decl: &'ast ast::DeclEnum) {
+        let def_id = self.sema.name_res.decl_defs[decl_id];
+        let param_scope_id = self.def::<DefEnum>(def_id).param_scope_id;
+
+        self.def_mut::<DefEnum>(def_id).annotations =
+            self.process_annotations(def_id, &decl.annotations);
+        self.def_mut::<DefEnum>(def_id).generics =
+            self.process_generics(def_id, param_scope_id, &decl.ty_name.generics);
+    }
+
+    fn process_decl_annotation(
+        &mut self,
+        _ctx: DeclCtx,
+        decl_id: DeclId,
+        decl: &'ast ast::DeclAnnotation,
+    ) {
+        let def_id = self.sema.name_res.decl_defs[decl_id];
+        let param_scope_id = self.def::<DefAnnotation>(def_id).param_scope_id;
+
+        for (idx, param) in decl.params.iter().enumerate() {
+            let Ok(param_def_id) = self.add_def(
+                param_scope_id,
+                Ns::Var,
+                param.name.to_string(),
+                param.name.loc.clone(),
+                DefVariable::new(
+                    None,
+                    VariableKind::Param {
+                        of: def_id,
+                        kind: ParamKind::User { idx },
+                    },
+                    true,
+                )
+                .into(),
+            ) else {
+                continue;
+            };
+
+            self.def_mut::<DefAnnotation>(def_id)
+                .params
+                .push(param_def_id);
+
+            self.process_ty_expr(param_scope_id, param.ty_expr);
+
+            if let Some(expr_id) = param.default {
+                self.process_expr(
+                    ExprCtx {
+                        scope_id: param_scope_id,
+                        kind: ExprCtxKind::AnnotationParam(param_def_id),
+                    },
+                    expr_id,
+                );
+            }
+        }
+    }
+
+    fn process_decl_action(&mut self, _ctx: DeclCtx, decl_id: DeclId, decl: &'ast ast::DeclAction) {
+        let def_id = self.sema.name_res.decl_defs[decl_id];
+        let param_scope_id = self.def::<DefAction>(def_id).param_scope_id;
+
+        self.def_mut::<DefAction>(def_id).annotations =
+            self.process_annotations(def_id, &decl.annotations);
+        self.def_mut::<DefAction>(def_id).generics =
+            self.process_generics(def_id, param_scope_id, &decl.generics);
+
+        for (idx, param) in decl.params.iter().enumerate() {
+            let Ok(param_def_id) = self.add_def(
+                param_scope_id,
+                Ns::Var,
+                param.name.to_string(),
+                param.name.loc.clone(),
+                DefVariable::new(
+                    None,
+                    VariableKind::Param {
+                        of: def_id,
+                        kind: ParamKind::User { idx },
+                    },
+                    true,
+                )
+                .into(),
+            ) else {
+                return;
+            };
+
+            self.def_mut::<DefVariable>(param_def_id).annotations =
+                self.process_annotations(def_id, &param.annotations);
+
+            self.def_mut::<DefAction>(def_id).params.push(param_def_id);
+            self.process_ty_expr(param_scope_id, param.ty_expr);
+        }
+
+        if let Some(ty_expr_id) = decl.ret_ty_expr {
+            self.process_ty_expr(param_scope_id, ty_expr_id);
+        }
+    }
+
+    fn process_decl_automaton(
+        &mut self,
+        _ctx: DeclCtx,
+        decl_id: DeclId,
+        decl: &'ast ast::DeclAutomaton,
+    ) {
+        let def_id = self.sema.name_res.decl_defs[decl_id];
+        let param_scope_id = self.def::<DefAutomaton>(def_id).param_scope_id;
+
+        self.def_mut::<DefAutomaton>(def_id).annotations =
+            self.process_annotations(def_id, &decl.annotations);
+        self.def_mut::<DefAutomaton>(def_id).generics =
+            self.process_generics(def_id, param_scope_id, &decl.name.generics);
+
+        for &var_decl_id in &decl.constructor_variables {
+            self.process_decl(
+                DeclCtx::Automaton {
+                    def_id,
+                    is_constructor_var: true,
+                },
+                var_decl_id,
+            );
+        }
+
+        self.process_ty_expr(param_scope_id, decl.ty_expr);
+
+        // TODO: resolve implemented concepts?
+
+        for &member_decl_id in &decl.decls {
+            self.process_decl(
+                DeclCtx::Automaton {
+                    def_id,
+                    is_constructor_var: false,
+                },
+                member_decl_id,
+            );
+        }
+    }
+
+    fn process_decl_function(
+        &mut self,
+        ctx: DeclCtx,
+        decl_id: DeclId,
+        decl: &'ast ast::DeclFunction,
+    ) {
+        let def_id = self.sema.name_res.decl_defs[decl_id];
+        let param_scope_id = self.def::<DefFunction>(def_id).param_scope_id;
+
+        // TODO: handle extension methods.
+
+        self.def_mut::<DefFunction>(def_id).annotations =
+            self.process_annotations(def_id, &decl.annotations);
+        self.def_mut::<DefFunction>(def_id).generics =
+            self.process_generics(def_id, param_scope_id, &decl.generics);
+
+        self.process_function_params(
+            ctx.outer_def_id().is_some(),
+            def_id,
+            param_scope_id,
+            &decl.params,
+        );
+
+        if let Some(ty_expr_id) = decl.ret_ty_expr {
+            self.process_ty_expr(param_scope_id, ty_expr_id);
+        }
+
+        if let Some(body) = &decl.body {
+            self.process_function_body(def_id, body);
+        }
+    }
+
+    fn process_decl_variable(
+        &mut self,
+        ctx: DeclCtx,
+        decl_id: DeclId,
+        decl: &'ast ast::DeclVariable,
+    ) {
+        let def_id = self.sema.name_res.decl_defs[decl_id];
+        let (_, scope_id) = ctx.outer(self.sema);
+
+        match ctx {
+            DeclCtx::Global(_) | DeclCtx::Struct(_) | DeclCtx::Automaton { .. } => {
+                // already registered in phase 1.
+            }
+
+            DeclCtx::FuncBody {
+                def_id: func_def_id,
+                ..
+            } => {
+                let _ = self.add_decl_def(
+                    decl_id,
+                    scope_id,
+                    Ns::Var,
+                    decl.name.to_string(),
+                    decl.name.loc.clone(),
+                    DefVariable::new(
+                        Some(decl_id),
+                        VariableKind::Local { of: func_def_id },
+                        decl.kind.is_var(),
+                    )
+                    .into(),
+                );
+            }
+        }
+
+        self.sema
+            .name_res
+            .def_mut::<DefVariable>(def_id)
+            .annotations = self.process_annotations(def_id, &decl.annotations);
+
+        if let Some(ty_expr_id) = decl.ty_expr {
+            self.process_ty_expr(scope_id, ty_expr_id);
+        }
+
+        if let Some(expr_id) = decl.init {
+            self.process_expr(
+                ExprCtx {
+                    scope_id,
+                    kind: ExprCtxKind::VariableInit(def_id),
+                },
+                expr_id,
+            );
+        }
+    }
+
+    fn process_decl_state(&mut self, _ctx: DeclCtx, _decl_id: DeclId, _decl: &'ast ast::DeclState) {
+        // do nothing.
+    }
+
+    fn process_decl_shift(&mut self, _ctx: DeclCtx, _decl_id: DeclId, _decl: &'ast ast::DeclShift) {
+        // do nothing.
+    }
+
+    fn process_decl_constructor(
+        &mut self,
+        ctx: DeclCtx,
+        decl_id: DeclId,
+        decl: &'ast ast::DeclConstructor,
+    ) {
+        let def_id = self.sema.name_res.decl_defs[decl_id];
+        let param_scope_id = self.def::<DefFunction>(def_id).param_scope_id;
+
+        self.def_mut::<DefFunction>(def_id).annotations =
+            self.process_annotations(def_id, &decl.annotations);
+
+        self.process_function_params(
+            ctx.outer_def_id().is_some(),
+            def_id,
+            param_scope_id,
+            &decl.params,
+        );
+
+        if let Some(ty_expr_id) = decl.ret_ty_expr {
+            self.process_ty_expr(param_scope_id, ty_expr_id);
+        }
+
+        if let Some(body) = &decl.body {
+            self.process_function_body(def_id, body);
+        }
+    }
+
+    fn process_decl_destructor(
+        &mut self,
+        ctx: DeclCtx,
+        decl_id: DeclId,
+        decl: &'ast ast::DeclDestructor,
+    ) {
+        let def_id = self.sema.name_res.decl_defs[decl_id];
+        let param_scope_id = self.def::<DefFunction>(def_id).param_scope_id;
+
+        self.def_mut::<DefFunction>(def_id).annotations =
+            self.process_annotations(def_id, &decl.annotations);
+
+        self.process_function_params(
+            ctx.outer_def_id().is_some(),
+            def_id,
+            param_scope_id,
+            &decl.params,
+        );
+
+        if let Some(ty_expr_id) = decl.ret_ty_expr {
+            self.process_ty_expr(param_scope_id, ty_expr_id);
+        }
+
+        if let Some(body) = &decl.body {
+            self.process_function_body(def_id, body);
+        }
+    }
+
+    fn process_decl_proc(&mut self, ctx: DeclCtx, decl_id: DeclId, decl: &'ast ast::DeclProc) {
+        let def_id = self.sema.name_res.decl_defs[decl_id];
+        let param_scope_id = self.def::<DefFunction>(def_id).param_scope_id;
+
+        self.def_mut::<DefFunction>(def_id).annotations =
+            self.process_annotations(def_id, &decl.annotations);
+        self.def_mut::<DefFunction>(def_id).generics =
+            self.process_generics(def_id, param_scope_id, &decl.generics);
+
+        self.process_function_params(
+            ctx.outer_def_id().is_some(),
+            def_id,
+            param_scope_id,
+            &decl.params,
+        );
+
+        if let Some(ty_expr_id) = decl.ret_ty_expr {
+            self.process_ty_expr(param_scope_id, ty_expr_id);
+        }
+
+        if let Some(body) = &decl.body {
+            self.process_function_body(def_id, body);
         }
     }
 }

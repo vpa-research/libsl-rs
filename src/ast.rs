@@ -5,7 +5,7 @@
 use libsl_derive::Walkable;
 
 use crate::loc::Loc;
-use crate::{DeclId, ExprId, PredId, StmtId, TyExprId, WithLibSl};
+use crate::{AnnotationId, DeclId, ExprId, PredId, StmtId, TyExprId, WithLibSl};
 
 /// A single LibSL file.
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
@@ -398,7 +398,7 @@ impl WithLibSl for DeclInclude {}
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct DeclSemanticTy {
     /// A list of annotations for this declaration.
-    pub annotations: Vec<Annotation>,
+    pub annotations: Vec<AnnotationId>,
 
     /// The name of the semantic type.
     pub ty_name: QualifiedTyName,
@@ -445,7 +445,7 @@ impl WithLibSl for SemanticTyEnumValue {}
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct DeclTyAlias {
     /// A list of annotations for this declaration.
-    pub annotations: Vec<Annotation>,
+    pub annotations: Vec<AnnotationId>,
 
     /// The alias's name.
     pub ty_name: QualifiedTyName,
@@ -461,7 +461,7 @@ impl WithLibSl for DeclTyAlias {}
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct DeclStruct {
     /// A list of annotations for this declaration.
-    pub annotations: Vec<Annotation>,
+    pub annotations: Vec<AnnotationId>,
 
     /// The declared type's name.
     pub ty_name: QualifiedTyName,
@@ -486,7 +486,7 @@ impl WithLibSl for DeclStruct {}
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct DeclEnum {
     /// A list of annotations for this declaration.
-    pub annotations: Vec<Annotation>,
+    pub annotations: Vec<AnnotationId>,
 
     /// The declared type's name.
     pub ty_name: QualifiedTyName,
@@ -551,7 +551,7 @@ impl WithLibSl for AnnotationParam {}
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct DeclAction {
     /// A list of annotations for this declaration.
-    pub annotations: Vec<Annotation>,
+    pub annotations: Vec<AnnotationId>,
 
     /// The name of the action.
     #[no_walk]
@@ -578,7 +578,7 @@ impl WithLibSl for DeclAction {}
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct ActionParam {
     /// A list of annotations for this parameter declaration.
-    pub annotations: Vec<Annotation>,
+    pub annotations: Vec<AnnotationId>,
 
     /// The name of the parameter.
     #[no_walk]
@@ -595,7 +595,7 @@ impl WithLibSl for ActionParam {}
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct DeclAutomaton {
     /// A list of annotations for this declaration.
-    pub annotations: Vec<Annotation>,
+    pub annotations: Vec<AnnotationId>,
 
     /// Whether this is an automaton concept declaration.
     #[cfg_attr(feature = "serde", no_wrap)]
@@ -629,7 +629,7 @@ impl WithLibSl for DeclAutomaton {}
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct DeclFunction {
     /// A list of annotations for this declaration.
-    pub annotations: Vec<Annotation>,
+    pub annotations: Vec<AnnotationId>,
 
     /// Whether the function has a `static` modifier.
     #[cfg_attr(feature = "serde", no_wrap)]
@@ -680,7 +680,7 @@ impl WithLibSl for DeclFunction {}
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct DeclVariable {
     /// A list of annotations for this declaration.
-    pub annotations: Vec<Annotation>,
+    pub annotations: Vec<AnnotationId>,
 
     /// The kind of variable: `var` or `val`.
     #[cfg_attr(feature = "serde", no_wrap)]
@@ -792,7 +792,7 @@ impl WithLibSl for QualifiedFunctionName {}
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct DeclConstructor {
     /// A list of annotations for this declaration.
-    pub annotations: Vec<Annotation>,
+    pub annotations: Vec<AnnotationId>,
 
     /// Whether the constructor is a method (uses `*.` in its name).
     #[cfg_attr(feature = "serde", no_wrap)]
@@ -824,7 +824,7 @@ impl WithLibSl for DeclConstructor {}
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct DeclDestructor {
     /// A list of annotations for this declaration.
-    pub annotations: Vec<Annotation>,
+    pub annotations: Vec<AnnotationId>,
 
     /// Whether the destructor is a method (uses `*.` in its name).
     #[cfg_attr(feature = "serde", no_wrap)]
@@ -856,7 +856,7 @@ impl WithLibSl for DeclDestructor {}
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct DeclProc {
     /// A list of annotations for this declaration.
-    pub annotations: Vec<Annotation>,
+    pub annotations: Vec<AnnotationId>,
 
     /// Whether the procedure is marked as `pure`.
     #[cfg_attr(feature = "serde", no_wrap)]
@@ -896,7 +896,7 @@ impl WithLibSl for DeclProc {}
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct FunctionParam {
     /// A list of annotations for this parameter declaration.
-    pub annotations: Vec<Annotation>,
+    pub annotations: Vec<AnnotationId>,
 
     /// The name of the parameter.
     #[no_walk]
@@ -990,11 +990,12 @@ pub struct ContractAssigns {
 impl WithLibSl for ContractAssigns {}
 
 /// An annotation use.
-#[derive(Walkable, Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
+#[derive(Debug, Clone)]
 pub struct Annotation {
+    /// The identifier of this annotation.
+    pub id: AnnotationId,
+
     /// The name of the annotation.
-    #[no_walk]
     pub name: Name,
 
     /// A list of arguments to this annotation.

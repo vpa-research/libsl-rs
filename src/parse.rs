@@ -1188,8 +1188,8 @@ impl<'a> AstConstructor<'a> {
     fn process_constructor_decl(&mut self, ctx: &ConstructorDeclContextAll<'_>) -> Result<DeclId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
         let annotations = self.process_annotations(&ctx.annotations)?;
-        let kw = ctx.CONSTRUCTOR().unwrap();
-        let kw_loc = self.get_loc(&kw.start(), &kw.stop());
+        let kw = &ctx.CONSTRUCTOR().unwrap().symbol;
+        let kw_loc = self.get_loc(kw, kw);
         let is_method = ctx.method.is_some();
         let name = ctx.name.as_ref().map(|ctx| self.process_name(ctx));
 

@@ -11,7 +11,7 @@ use antlr_rust::tree::{ErrorNode, ParseTreeListener, TerminalNode};
 use antlr_rust::{InputStream, Parser, TokenSource};
 use args::Command;
 use color_eyre::eyre::{Context, Result, eyre};
-use libsl::LibSl;
+use libsl::{LibSl, WithLibSl};
 use libsl::diag::{Diag, DiagCtx, Level};
 use libsl::file::{FileLoader, FsFileLoader};
 use libsl::grammar::lexer::LibSLLexer;
@@ -297,8 +297,9 @@ where
         };
 
         e = e.wrap_err(format!(
-            "imported from `{}`",
-            sema.libsl.filename_by_id(file_id)
+            "imported from `{}` at {}",
+            sema.libsl.filename_by_id(file_id),
+            sema.libsl.decls[decl_id].loc.with_libsl(sema.libsl),
         ));
 
         load_reason = sema.load_reasons[file_id].clone();

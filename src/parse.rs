@@ -77,7 +77,7 @@ use crate::grammar::parser::{
     VarianceSpecContextAll, WhereClauseContextAll,
 };
 use crate::loc::{Loc, Span};
-use crate::{DeclId, ExprId, FileId, LibSl, PredId, StmtId, TyExprId, ast, grammar};
+use crate::{AnnotationId, DeclId, ExprId, FileId, LibSl, PredId, StmtId, TyExprId, ast, grammar};
 
 type Result<T, E = ParseError> = std::result::Result<T, E>;
 
@@ -1586,11 +1586,12 @@ impl<'a> AstConstructor<'a> {
     fn process_annotations(
         &mut self,
         ctx: &[Rc<AnnotationContextAll<'_>>],
-    ) -> Result<Vec<ast::Annotation>> {
+    ) -> Result<Vec<AnnotationId>> {
         ctx.iter().map(|ctx| self.process_annotation(ctx)).collect()
     }
 
-    fn process_annotation(&mut self, ctx: &AnnotationContextAll<'_>) -> Result<ast::Annotation> {
+    fn process_annotation(&mut self, ctx: &AnnotationContextAll<'_>) -> Result<AnnotationId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
         let name = self.process_name(ctx.name.as_ref().unwrap());
         let args = ctx
             .args
@@ -1604,7 +1605,15 @@ impl<'a> AstConstructor<'a> {
             .transpose()?
             .unwrap_or_default();
 
-        Ok(ast::Annotation { name, args })
+        Ok(self
+            .libsl
+            .annotations
+            .insert_with_key(|id| ast::Annotation {
+                id,
+                loc,
+                name,
+                args,
+            }))
     }
 
     fn process_annotation_arg(

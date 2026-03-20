@@ -432,6 +432,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .name_res
             .scopes
             .insert(Scope::new(None, ScopeKind::Prelude));
+        self.sema.name_res.prelude_scope_id = prelude_scope_id;
 
         for file_id in self.sema.libsl.files.keys() {
             let import_scope_id = self.sema.name_res.scopes.insert(Scope::new(
@@ -1657,7 +1658,6 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         decl_id: DeclId,
         decl: &'ast ast::DeclVariable,
     ) {
-        let def_id = self.sema.name_res.decl_defs[decl_id];
         let (_, scope_id) = ctx.outer(self.sema);
 
         match ctx {
@@ -1685,6 +1685,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             }
         }
 
+        let def_id = self.sema.name_res.decl_defs[decl_id];
         self.sema
             .name_res
             .def_mut::<DefVariable>(def_id)

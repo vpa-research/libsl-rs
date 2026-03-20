@@ -995,6 +995,9 @@ pub struct Annotation {
     /// The identifier of this annotation.
     pub id: AnnotationId,
 
+    /// The annotation use's location in the source text.
+    pub loc: Loc,
+
     /// The name of the annotation.
     pub name: Name,
 

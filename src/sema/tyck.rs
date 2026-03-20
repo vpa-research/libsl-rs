@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::fmt::{self, Display, Write};
+use std::ops::RangeInclusive;
 use std::{iter, mem};
 
 use slotmap::{SecondaryMap, SlotMap, SparseSecondaryMap};
@@ -11,9 +12,9 @@ use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
 use crate::sema::def::{
     Def, DefAction, DefAnnotation, DefAutomaton, DefFunction, DefId, DefKind, DefVariable,
-    FunctionKind, VariableKind,
+    FunctionKind, TyVariableKind, VariableKind,
 };
-use crate::sema::resolve::{ExprCtxKind, Ns, ScopeId, ScopeKind};
+use crate::sema::resolve::{AnnotatedEntity, ExprCtxKind, Ns, ScopeId, ScopeKind};
 use crate::sema::ty::{
     BuiltinTyCtor, ConstructedTy, FloatCtor, IntCtor, IntWidth, Ty, TyId, TyUnion,
 };
@@ -21,7 +22,7 @@ use crate::sema::tyck::constraints::{ConstrProvenance, ConstrSet, VarProvenance}
 use crate::sema::tyck::operators::{Op, OpFnSigProvider, OpOverload, OpOverloadDiagProvider};
 use crate::sema::tyck::overload::Receiver;
 use crate::sema::{Result, Sema};
-use crate::{DeclId, ExprId, PredId, StmtId, TyExprId, ast};
+use crate::{AnnotationId, DeclId, ExprId, PredId, StmtId, TyExprId, ast};
 
 use self::constraints::SubtypeBoundKind;
 
@@ -116,7 +117,7 @@ pub struct TyCk {
     pub exprs: SecondaryMap<ExprId, TyId>,
     pub ty_exprs: SecondaryMap<TyExprId, TyId>,
 
-    // maps variables and generics to their types.
+    /// Maps variables and generics to their types.
     pub def_tys: SecondaryMap<DefId, TyId>,
 
     pub sigs: SparseSecondaryMap<DefId, FnSig>,
@@ -125,17 +126,24 @@ pub struct TyCk {
     pub operators: SparseSecondaryMap<ExprId, OpOverload>,
     pub assignments: SparseSecondaryMap<StmtId, AssignmentKind>,
 
-    // maps procedure call expressions to their resolved call targets.
+    /// Maps procedure call expressions to their resolved call targets.
     pub call_targets: SparseSecondaryMap<ExprId, (Receiver, DefId)>,
 
-    // maps name expressions to resolved entities.
+    /// Maps name expressions to resolved entities.
     pub name_exprs: SparseSecondaryMap<ExprId, ResolvedName>,
 
-    // maps field expressions to resolved fields.
+    /// Maps field expressions to resolved fields.
     pub field_exprs: SparseSecondaryMap<ExprId, DefId>,
 
-    // applicable to enums and automata.
+    /// Stores the underlying (real) type of an entity. Applicable to enums and automata.
     pub underlying_tys: SparseSecondaryMap<DefId, TyId>,
+
+    // The determined arity of annotations. Actual annotation uses may provide any number of
+    // arguments within the range.
+    pub annotation_arities: SparseSecondaryMap<DefId, RangeInclusive<usize>>,
+
+    /// [`DefId`s] of required parameters of annotations (those without a default value).
+    pub required_annotation_params: SparseSecondaryMap<DefId, Vec<DefId>>,
 
     // for each type stores a vec of inference variable occurring in it.
     var_occurrences: SecondaryMap<TyId, Vec<TyId>>,
@@ -877,7 +885,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 Diag::err()
                     .at(loc.clone())
                     .with_msg(format!(
-                        "foo {quantifier} type arguments were provided: expected {expected}, got {actual}",
+                        "foo {quantifier} arguments were provided: expected {expected}, got {actual}",
                         quantifier = if expected < actual { "many" } else { "few" },
                     ))
                     .with_label(Label::primary(loc.clone()))
@@ -1268,6 +1276,58 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             None,
         );
 
+        let mut min_arity: Option<usize> = None;
+        let mut missing_default = None;
+        let mut required_params = vec![];
+
+        for (idx, param) in d.params.iter().enumerate() {
+            min_arity = match (min_arity, param.default.is_some()) {
+                (Some(_), true) => {
+                    // a default is provided for a consecutive parameter — ok.
+                    min_arity
+                }
+
+                (Some(min_arity), false) => {
+                    // a parameter without a default value after optional parameters start — error.
+                    self.result = Err(());
+
+                    missing_default
+                        .get_or_insert_with(|| {
+                            Diag::err()
+                                .at(param.name.loc.clone())
+                                .with_msg("missing default parameter value")
+                                .with_label(
+                                    Label::secondary(d.params[min_arity].name.loc.clone())
+                                        .with_msg("this parameter has a default value"),
+                                )
+                                .with_note("once a parameter is declared as optional, all consecutive parameters must provide a default as well")
+                                .build()
+                        })
+                        .labels
+                        .push(Label::primary(param.name.loc.clone()));
+
+                    Some(min_arity)
+                }
+
+                (None, true) => {
+                    // this is the first optional parameter we've found — record that.
+                    Some(idx)
+                }
+
+                (None, false) => {
+                    // no default values yet — ok.
+                    required_params
+                        .push(self.sema.name_res.def::<DefAnnotation>(def_id).params[idx]);
+
+                    None
+                }
+            };
+        }
+
+        self.sema
+            .tyck
+            .required_annotation_params
+            .insert(def_id, required_params);
         self.register_fn_sig::<DefAnnotation>(def_id, None, |_| &[], |def| &def.params, None);
     }
 
@@ -1757,17 +1817,17 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
-    fn make_missing_constructor_args_err(loc: Loc, missing_args: &[String]) -> Diag {
+    fn make_missing_args_err(loc: Loc, missing_args: &[String]) -> Diag {
         Diag::err()
             .at(loc.clone())
             .with_msg(match missing_args {
                 [] => unreachable!(),
                 [name] => {
-                    format!("no argument initializes the constructor parameter `{name}`")
+                    format!("no argument is provided for the parameter `{name}`")
                 }
 
                 _ => {
-                    let mut msg = "no arguments initialize the constructor parameters ".to_owned();
+                    let mut msg = "no arguments are provided for the parameters ".to_owned();
 
                     for (idx, name) in missing_args.iter().enumerate() {
                         if idx > 0 && !(idx == 1 && missing_args.len() == 2) {
@@ -1891,6 +1951,58 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .collect()
     }
 
+    fn outer_recv_for_def(
+        &mut self,
+        def_id: DefId,
+        replace_ty_args: ReplaceTyArgs,
+    ) -> Option<TyId> {
+        match &self.sema.name_res.defs[def_id].kind {
+            DefKind::Dummy => unreachable!(),
+            DefKind::Import(_) => None,
+            DefKind::BuiltinCtor(_) => None,
+            DefKind::SemanticTy(_) => None,
+            DefKind::SemanticTyEnumValue { .. } => None,
+            DefKind::TyAlias(_) => None,
+            DefKind::Struct(_) => None,
+            DefKind::Enum(_) => None,
+            DefKind::EnumVariant { .. } => None,
+            DefKind::Annotation(_) => None,
+            DefKind::Action(_) => None,
+            DefKind::Automaton(_) => None,
+            DefKind::Function(_) => self.function_recv(def_id, replace_ty_args),
+            DefKind::Variable(_) => self.variable_recv(def_id, replace_ty_args),
+            DefKind::State(def) => Some(self.make_recv_ty(def.automaton_def_id, replace_ty_args)),
+
+            DefKind::TyVariable(def) => match def.kind {
+                TyVariableKind::TyParam { of, .. } => self.recv_inside_def(of, replace_ty_args),
+            },
+
+            DefKind::Pred(def) => self.function_recv(def.func_def_id, replace_ty_args),
+        }
+    }
+
+    fn recv_inside_def(&mut self, def_id: DefId, replace_ty_args: ReplaceTyArgs) -> Option<TyId> {
+        match &self.sema.name_res.defs[def_id].kind {
+            DefKind::Dummy => unreachable!(),
+            DefKind::Import(_) => None,
+            DefKind::BuiltinCtor(_) => None,
+            DefKind::SemanticTy(_) => None,
+            DefKind::SemanticTyEnumValue { .. } => None,
+            DefKind::TyAlias(_) => None,
+            DefKind::Struct(_) => Some(self.make_recv_ty(def_id, replace_ty_args)),
+            DefKind::Enum(_) => None,
+            DefKind::EnumVariant { .. } => None,
+            DefKind::Annotation(_) => None,
+            DefKind::Action(_) => None,
+            DefKind::Automaton(_) => Some(self.make_recv_ty(def_id, replace_ty_args)),
+            DefKind::Function(_) => self.outer_recv_for_def(def_id, replace_ty_args),
+            DefKind::Variable(_) => self.outer_recv_for_def(def_id, replace_ty_args),
+            DefKind::State(_) => self.outer_recv_for_def(def_id, replace_ty_args),
+            DefKind::TyVariable(_) => self.outer_recv_for_def(def_id, replace_ty_args),
+            DefKind::Pred(_) => self.outer_recv_for_def(def_id, replace_ty_args),
+        }
+    }
+
     fn function_recv(&mut self, def_id: DefId, replace_ty_args: ReplaceTyArgs) -> Option<TyId> {
         match self.sema.name_res.def::<DefFunction>(def_id).kind {
             FunctionKind::Fun { of } | FunctionKind::Proc { of, .. } => {
@@ -1903,31 +2015,36 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn find_implicit_recv(
+    fn variable_recv(&mut self, def_id: DefId, replace_ty_args: ReplaceTyArgs) -> Option<TyId> {
+        match self.sema.name_res.def::<DefVariable>(def_id).kind {
+            VariableKind::Global => return None,
+            VariableKind::Local { of } => self.function_recv(of, replace_ty_args),
+            VariableKind::Field { of } => Some(self.make_recv_ty(of, replace_ty_args)),
+            VariableKind::ConstructorVar { of } => Some(self.make_recv_ty(of, replace_ty_args)),
+            VariableKind::Param { of, .. } => self.function_recv(of, replace_ty_args),
+        }
+    }
+
+    fn annotation_recv(
         &mut self,
-        expr_id: ExprId,
+        annotation_id: AnnotationId,
         replace_ty_args: ReplaceTyArgs,
     ) -> Option<TyId> {
+        match self.sema.name_res.annotations[annotation_id].entity {
+            AnnotatedEntity::Def(def_id) => self.outer_recv_for_def(def_id, replace_ty_args),
+        }
+    }
+
+    fn expr_recv(&mut self, expr_id: ExprId, replace_ty_args: ReplaceTyArgs) -> Option<TyId> {
         match self.sema.name_res.exprs[expr_id].kind {
             ExprCtxKind::EnumSemanticTyValue(_) => return None,
             ExprCtxKind::AnnotationParam(_) => return None,
 
-            ExprCtxKind::VariableInit(def_id) => {
-                match self.sema.name_res.def::<DefVariable>(def_id).kind {
-                    VariableKind::Global => return None,
-
-                    VariableKind::Local { of } => self.function_recv(of, replace_ty_args),
-
-                    VariableKind::Field { of } => Some(self.make_recv_ty(of, replace_ty_args)),
-
-                    VariableKind::ConstructorVar { of } => {
-                        Some(self.make_recv_ty(of, replace_ty_args))
-                    }
-
-                    VariableKind::Param { of, .. } => self.function_recv(of, replace_ty_args),
-                }
+            ExprCtxKind::AnnotationArg { annotation_id, .. } => {
+                self.annotation_recv(annotation_id, replace_ty_args)
             }
 
+            ExprCtxKind::VariableInit(def_id) => self.variable_recv(def_id, replace_ty_args),
             ExprCtxKind::FunctionBody(def_id) => self.function_recv(def_id, replace_ty_args),
         }
     }
@@ -1976,6 +2093,169 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         self.sema.tyck.add_ctor_ty(def_id, ty_args)
     }
+
+    fn tyck_annotation(&mut self, annotation_id: AnnotationId) {
+        let annotation = &self.sema.libsl.annotations[annotation_id];
+        self.check_annotation_args(annotation);
+    }
+
+    fn tyck_annotations(&mut self, annotations: &[AnnotationId]) {
+        for &annotation_id in annotations {
+            self.tyck_annotation(annotation_id);
+        }
+    }
+
+    fn check_annotation_args(&mut self, annotation: &'ast ast::Annotation) {
+        enum UnnamedAfterNamed {
+            Unnamed,
+            Named(usize, Option<Diag>),
+        }
+
+        let def_id = self.sema.name_res.annotations[annotation.id].def_id;
+        let mut args = SparseSecondaryMap::<DefId, usize>::new();
+        let mut unnamed_after_named = UnnamedAfterNamed::Unnamed;
+        let mut extraneous_args: Option<Diag> = None;
+        let mut duplicate_args = SparseSecondaryMap::<DefId, Diag>::new();
+
+        let arg_loc = |idx: usize| {
+            let arg = &annotation.args[idx];
+
+            match &arg.name {
+                Some(name) => &name.loc,
+                None => &self.sema.libsl.exprs[arg.expr].loc,
+            }
+        };
+
+        for (idx, arg) in annotation.args.iter().enumerate() {
+            let mut erroneous = false;
+
+            // unnamed arguments must precede named ones.
+            match unnamed_after_named {
+                UnnamedAfterNamed::Unnamed if arg.name.is_none() => {}
+                UnnamedAfterNamed::Named(..) if arg.name.is_some() => {}
+
+                UnnamedAfterNamed::Unnamed => {
+                    unnamed_after_named = UnnamedAfterNamed::Named(idx, None);
+                }
+
+                UnnamedAfterNamed::Named(first, ref mut diag) => {
+                    erroneous = true;
+                    diag.get_or_insert_with(|| {
+                        Diag::err()
+                            .at(arg_loc(idx).clone())
+                            .with_msg("unnamed arguments cannot follow named arguments")
+                            .with_label(
+                                Label::secondary(arg_loc(first).clone())
+                                    .with_msg("named argument provided here"),
+                            )
+                            .build()
+                    })
+                    .labels
+                    .push(Label::primary(arg_loc(idx).clone()));
+                }
+            }
+
+            if !erroneous {
+                let params = &self.sema.name_res.def::<DefAnnotation>(def_id).params;
+
+                // if the argument is unnamed, check that it's not extraneous.
+                if arg.name.is_none() && idx >= params.len() {
+                    let arity = self.sema.tyck.annotation_arities[def_id].clone();
+
+                    erroneous = true;
+                    extraneous_args
+                        .get_or_insert_with(|| {
+                            Diag::err()
+                                .at(arg_loc(idx).clone())
+                                .with_msg(format_args!(
+                                    "too many arguments were provided: expected {}{}, got {}",
+                                    if arity.start() == arity.end() {
+                                        ""
+                                    } else {
+                                        "at most "
+                                    },
+                                    params.len(),
+                                    args.len(),
+                                ))
+                                .build()
+                        })
+                        .labels
+                        .push(Label::primary(arg_loc(idx).clone()));
+                }
+            }
+
+            let param_def_id = self.sema.name_res.annotations[annotation.id].args[idx];
+
+            if erroneous {
+                self.tyck_expr(arg.expr, None);
+            } else {
+                self.tyck_expr(arg.expr, Some(self.sema.tyck.def_tys[param_def_id]));
+            }
+
+            {
+                // ensure the parameter was not provided previously.
+                use slotmap::sparse_secondary::Entry;
+
+                match args.entry(param_def_id).unwrap() {
+                    Entry::Vacant(entry) => {
+                        entry.insert(idx);
+                    }
+
+                    Entry::Occupied(entry) => {
+                        let prev = *entry.get();
+
+                        duplicate_args
+                            .entry(param_def_id)
+                            .unwrap()
+                            .or_insert_with(|| {
+                                Diag::err()
+                                    .at(arg_loc(prev).clone())
+                                    .with_msg(format_args!(
+                                        "duplicate argument `{}`",
+                                        self.sema.name_res.defs[param_def_id].name,
+                                    ))
+                                    .with_label(Label::primary(arg_loc(prev).clone()))
+                                    .build()
+                            })
+                            .labels
+                            .push(Label::primary(arg_loc(idx).clone()));
+                    }
+                }
+            }
+        }
+
+        // check that each parameter without a default value is provided an argument.
+        let missing_args = self.sema.tyck.required_annotation_params[def_id]
+            .iter()
+            .copied()
+            .filter(|&param_def_id| !args.contains_key(param_def_id))
+            .map(|param_def_id| self.sema.name_res.defs[param_def_id].name.clone())
+            .collect::<Vec<_>>();
+
+        // emit collected diagnostics.
+        if !missing_args.is_empty() {
+            self.result = Err(());
+            self.diag.emit(Self::make_missing_args_err(
+                annotation.loc.clone(),
+                &missing_args,
+            ));
+        }
+
+        if let UnnamedAfterNamed::Named(_, Some(diag)) = unnamed_after_named {
+            self.result = Err(());
+            self.diag.emit(diag);
+        }
+
+        if let Some(diag) = extraneous_args {
+            self.result = Err(());
+            self.diag.emit(diag);
+        }
+
+        for (_, diag) in duplicate_args {
+            self.result = Err(());
+            self.diag.emit(diag);
+        }
+    }
 }
 
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
@@ -1998,14 +2278,15 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_decl_struct_body(&mut self, _decl: &'ast ast::Decl, d: &'ast ast::DeclStruct) {
-        // TODO: annotations.
         for &decl_id in &d.decls {
             self.tyck_decl_body(decl_id);
         }
+
+        self.tyck_annotations(&d.annotations);
     }
 
-    fn tyck_decl_enum_body(&mut self, _decl: &'ast ast::Decl, _d: &'ast ast::DeclEnum) {
-        // TODO: annotations.
+    fn tyck_decl_enum_body(&mut self, _decl: &'ast ast::Decl, d: &'ast ast::DeclEnum) {
+        self.tyck_annotations(&d.annotations);
     }
 
     fn tyck_decl_annotation_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAnnotation) {
@@ -2026,26 +2307,37 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn tyck_decl_action_body(&mut self, _decl: &'ast ast::Decl, _d: &'ast ast::DeclAction) {
-        // TODO: annotations.
+    fn tyck_decl_action_body(&mut self, _decl: &'ast ast::Decl, d: &'ast ast::DeclAction) {
+        self.tyck_annotations(&d.annotations);
+
+        for param in &d.params {
+            self.tyck_annotations(&param.annotations);
+        }
     }
 
     fn tyck_decl_automaton_body(&mut self, _decl: &'ast ast::Decl, d: &'ast ast::DeclAutomaton) {
-        // TODO: annotations.
+        self.tyck_annotations(&d.annotations);
+
         for &decl_id in iter::chain(&d.constructor_variables, &d.decls) {
             self.tyck_decl_body(decl_id);
         }
     }
 
     fn tyck_decl_function_body(&mut self, _decl: &'ast ast::Decl, d: &'ast ast::DeclFunction) {
-        // TODO: annotations.
+        self.tyck_annotations(&d.annotations);
+
+        for param in &d.params {
+            self.tyck_annotations(&param.annotations);
+        }
+
         if let Some(body) = &d.body {
             self.tyck_function_body(body);
         }
     }
 
     fn tyck_decl_variable_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclVariable) {
-        // TODO: annotations.
+        self.tyck_annotations(&d.annotations);
+
         if let Some(expr_id) = d.init {
             let def_id = self.sema.name_res.decl_defs[decl.id];
             let ty_id = self.sema.tyck.def_tys[def_id];
@@ -2066,21 +2358,36 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         _decl: &'ast ast::Decl,
         d: &'ast ast::DeclConstructor,
     ) {
-        // TODO: annotations.
+        self.tyck_annotations(&d.annotations);
+
+        for param in &d.params {
+            self.tyck_annotations(&param.annotations);
+        }
+
         if let Some(body) = &d.body {
             self.tyck_function_body(body);
         }
     }
 
     fn tyck_decl_destructor_body(&mut self, _decl: &'ast ast::Decl, d: &'ast ast::DeclDestructor) {
-        // TODO: annotations.
+        self.tyck_annotations(&d.annotations);
+
+        for param in &d.params {
+            self.tyck_annotations(&param.annotations);
+        }
+
         if let Some(body) = &d.body {
             self.tyck_function_body(body);
         }
     }
 
     fn tyck_decl_proc_body(&mut self, _decl: &'ast ast::Decl, d: &'ast ast::DeclProc) {
-        // TODO: annotations.
+        self.tyck_annotations(&d.annotations);
+
+        for param in &d.params {
+            self.tyck_annotations(&param.annotations);
+        }
+
         if let Some(body) = &d.body {
             self.tyck_function_body(body);
         }
@@ -2343,7 +2650,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         let recv = match recv {
             Some(recv) => Receiver::Implicit(recv),
-            None => match self.find_implicit_recv(expr.id, ReplaceTyArgs::No) {
+            None => match self.expr_recv(expr.id, ReplaceTyArgs::No) {
                 Some(recv) => Receiver::Implicit(recv),
                 None => Receiver::None,
             },
@@ -2547,10 +2854,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         if !missing_args.is_empty() {
             self.result = Err(());
-            self.diag.emit(Self::make_missing_constructor_args_err(
-                expr.loc.clone(),
-                &missing_args,
-            ));
+            self.diag
+                .emit(Self::make_missing_args_err(expr.loc.clone(), &missing_args));
         }
 
         match state {

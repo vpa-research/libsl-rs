@@ -9,8 +9,8 @@ use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
 use crate::sema::def::{
     Def, DefAction, DefAnnotation, DefAutomaton, DefEnum, DefFunction, DefId, DefImport, DefKind,
-    DefKindProject, DefPred, DefSemanticTy, DefStruct, DefTyAlias, DefTyVariable, DefVariable,
-    FunctionKind, ParamKind, PredKind, SemanticTyValue, TyVariableKind, VariableKind,
+    DefKindProject, DefPred, DefSemanticTy, DefState, DefStruct, DefTyAlias, DefTyVariable,
+    DefVariable, FunctionKind, ParamKind, PredKind, SemanticTyValue, TyVariableKind, VariableKind,
 };
 use crate::sema::{Result, Sema};
 use crate::{AnnotationId, DeclId, ExprId, FileId, PredId, StmtId, TyExprId, ast};
@@ -187,6 +187,9 @@ pub struct AnnotationCtx {
 
     /// The annotated entity.
     pub entity: AnnotatedEntity,
+
+    /// Points to a variable def for every argument in the order they were provided in the use.
+    pub args: Vec<DefId>,
 }
 
 #[derive(Debug, Clone)]
@@ -244,7 +247,7 @@ pub struct NameRes {
     pub stmts: SecondaryMap<StmtId, StmtCtx>,
 
     /// Maps annotation uses to their context.
-    pub annotations: SecondaryMap<AnnotationId, DefId>,
+    pub annotations: SecondaryMap<AnnotationId, AnnotationCtx>,
 }
 
 impl NameRes {
@@ -930,23 +933,29 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             }
 
             ast::DeclKind::State(decl) => {
-                let Ok(def_id) = self.add_decl_def(
-                    decl_id,
-                    outer_scope_id,
-                    Ns::State,
-                    decl.name.to_string(),
-                    decl.name.loc.clone(),
-                    DefKind::State(decl_id),
-                ) else {
-                    return;
-                };
-
                 let DeclCtx::Automaton {
                     def_id: automaton_def_id,
                     ..
                 } = ctx
                 else {
                     unreachable!();
+                };
+
+                let Ok(def_id) = self.add_decl_def(
+                    decl_id,
+                    outer_scope_id,
+                    Ns::State,
+                    decl.name.to_string(),
+                    decl.name.loc.clone(),
+                    DefState::new(
+                        Some(decl_id),
+                        decl.name.to_string(),
+                        automaton_def_id,
+                        matches!(decl.kind, ast::StateKind::Final),
+                    )
+                    .into(),
+                ) else {
+                    return;
                 };
 
                 let automaton = self.def_mut::<DefAutomaton>(automaton_def_id);
@@ -1202,31 +1211,73 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         let scope_id = self.sema.name_res.defs[def_id].scope_id;
 
         for &annotation_id in annotations {
-            self.process_annotation(scope_id, &self.sema.libsl.annotations[annotation_id]);
+            self.process_annotation(
+                AnnotatedEntity::Def(def_id),
+                scope_id,
+                &self.sema.libsl.annotations[annotation_id],
+            );
         }
 
         annotations.to_vec()
     }
 
-    fn process_annotation(&mut self, scope_id: ScopeId, annotation: &'ast ast::Annotation) {
+    fn process_annotation(
+        &mut self,
+        entity: AnnotatedEntity,
+        scope_id: ScopeId,
+        annotation: &'ast ast::Annotation,
+    ) {
         let name = annotation.name.to_string();
+        let def_id = self
+            .resolve(scope_id, Ns::Annotation, &name, &annotation.name.loc)
+            .ok();
+        let param_scope_id = def_id.map(|def_id| self.def::<DefAnnotation>(def_id).param_scope_id);
 
-        if let Ok(def_id) = self.resolve(scope_id, Ns::Annotation, &name, &annotation.name.loc) {
-            self.sema.name_res.annotations.insert(annotation.id, def_id);
+        if let Some(def_id) = def_id {
+            self.def_mut::<DefAnnotation>(def_id)
+                .users
+                .push(annotation.id);
         }
 
-        for (idx, arg) in annotation.args.iter().enumerate() {
-            self.process_expr(
-                ExprCtx {
-                    scope_id,
-                    kind: ExprCtxKind::AnnotationArg {
-                        annotation_id: annotation.id,
-                        idx,
+        let args = annotation
+            .args
+            .iter()
+            .enumerate()
+            .map(|(idx, arg)| {
+                let param_def_id = match &arg.name {
+                    Some(name) => param_scope_id.and_then(|param_scope_id| {
+                        self.resolve(param_scope_id, Ns::Var, &name.to_string(), &name.loc)
+                            .ok()
+                    }),
+
+                    None => def_id.and_then(|def_id| {
+                        self.def::<DefAnnotation>(def_id).params.get(idx).copied()
+                    }),
+                };
+
+                self.process_expr(
+                    ExprCtx {
+                        scope_id,
+                        kind: ExprCtxKind::AnnotationArg {
+                            annotation_id: annotation.id,
+                            idx,
+                        },
                     },
-                },
-                arg.expr,
-            );
-        }
+                    arg.expr,
+                );
+
+                param_def_id.unwrap_or_default()
+            })
+            .collect();
+
+        self.sema.name_res.annotations.insert(
+            annotation.id,
+            AnnotationCtx {
+                def_id: def_id.unwrap_or_default(),
+                entity,
+                args,
+            },
+        );
     }
 
     fn process_function_params(

@@ -60,7 +60,7 @@ pub enum DefKind {
 
     Variable(DefVariable),
 
-    State(DeclId),
+    State(DefState),
 
     TyVariable(DefTyVariable),
 
@@ -222,6 +222,20 @@ impl DefKind {
         }
     }
 
+    pub fn as_state(&self) -> Option<&DefState> {
+        match self {
+            Self::State(def) => Some(def),
+            _ => None,
+        }
+    }
+
+    pub fn as_state_mut(&mut self) -> Option<&mut DefState> {
+        match self {
+            Self::State(def) => Some(def),
+            _ => None,
+        }
+    }
+
     pub fn as_ty_variable(&self) -> Option<&DefTyVariable> {
         match self {
             Self::TyVariable(def) => Some(def),
@@ -314,6 +328,12 @@ impl From<DefFunction> for DefKind {
 impl From<DefVariable> for DefKind {
     fn from(entity: DefVariable) -> Self {
         Self::Variable(entity)
+    }
+}
+
+impl From<DefState> for DefKind {
+    fn from(entity: DefState) -> Self {
+        Self::State(entity)
     }
 }
 
@@ -711,6 +731,40 @@ pub enum FunctionKind {
     Proc { of: Option<DefId>, pure: bool },
     Constructor { of: DefId },
     Destructor { of: DefId },
+}
+
+#[derive(Debug, Clone)]
+pub struct DefState {
+    pub decl_id: Option<DeclId>,
+    pub name: String,
+    pub automaton_def_id: DefId,
+    pub is_final: bool,
+}
+
+impl DefState {
+    pub fn new(
+        decl_id: Option<DeclId>,
+        name: String,
+        automaton_def_id: DefId,
+        is_final: bool,
+    ) -> Self {
+        Self {
+            decl_id,
+            name,
+            automaton_def_id,
+            is_final,
+        }
+    }
+}
+
+impl DefKindProject for DefState {
+    fn project(kind: &DefKind) -> Option<&Self> {
+        kind.as_state()
+    }
+
+    fn project_mut(kind: &mut DefKind) -> Option<&mut Self> {
+        kind.as_state_mut()
+    }
 }
 
 #[derive(Debug, Clone)]

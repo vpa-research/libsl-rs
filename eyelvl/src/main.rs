@@ -1,6 +1,5 @@
 use std::env::current_dir;
-use std::error::Error;
-use std::fmt::{self, Debug, Display, Write};
+use std::fmt::{self, Display, Write};
 use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -11,15 +10,14 @@ use antlr_rust::tree::{ErrorNode, ParseTreeListener, TerminalNode};
 use antlr_rust::{InputStream, Parser, TokenSource};
 use args::Command;
 use color_eyre::eyre::{Context, Result, eyre};
-use libsl::{LibSl, WithLibSl};
+use libsl::LibSl;
 use libsl::diag::{Diag, DiagCtx, Level};
-use libsl::file::{FileLoader, FsFileLoader};
+use libsl::file::FsFileLoader;
 use libsl::grammar::lexer::LibSLLexer;
 use libsl::grammar::parser::{LibSLParser, LibSLParserContext, LibSLParserContextType};
 use libsl::grammar::parser_listener::LibSLParserListener;
 use libsl::loc::Loc;
-use libsl::sema::{ImportCtx, LoadError, LoadReason, Sema};
-use relative_path::PathExt;
+use libsl::sema::ImportCtx;
 use similar::{ChangeTag, TextDiff};
 use yansi::{Paint, Style};
 
@@ -273,59 +271,12 @@ impl DiagCtx for PlainDiagCtx<'_> {
     }
 }
 
-fn add_load_error_ctx<L>(sema: &Sema<'_>, e: LoadError<L>) -> color_eyre::Report
-where
-    L: FileLoader + Debug + 'static,
-    L::Error: Error + Send + Sync + 'static,
-    L::CanonicalName: Send + Sync,
-{
-    let (msg, mut load_reason) = match &e {
-        LoadError::Parse {
-            path, load_reason, ..
-        } => (format!("could not parse `{path}`"), load_reason.clone()),
-
-        LoadError::File {
-            path, load_reason, ..
-        } => (format!("could not load `{path}`"), load_reason.clone()),
-    };
-
-    let mut e = color_eyre::Report::new(e).wrap_err(msg);
-
-    while let LoadReason::Imported(decl_id) = load_reason {
-        let file_id = match &sema.libsl.decls[decl_id].loc {
-            Loc::Span(span) => span.file_id,
-            _ => break,
-        };
-
-        e = e.wrap_err(format!(
-            "imported from `{}` at {}",
-            sema.libsl.filename_by_id(file_id),
-            sema.libsl.decls[decl_id].loc.with_libsl(sema.libsl),
-        ));
-
-        load_reason = sema.load_reasons[file_id].clone();
-    }
-
-    e
-}
-
 fn check(path: PathBuf, base_dir: Option<PathBuf>) -> Result<ExitCode> {
     let base_dir = match base_dir {
         Some(base_dir) => base_dir,
 
         None => current_dir().wrap_err("could not retrieve the current directory")?,
     };
-
-    let path = path
-        .relative_to(&base_dir)
-        .wrap_err_with(|| {
-            format!(
-                "could not convert `{}` to be relative to `{}`",
-                path.display(),
-                base_dir.display(),
-            )
-        })?
-        .to_string();
 
     let mut libsl = LibSl::new();
     let mut loader = FsFileLoader::new(base_dir.clone()).wrap_err_with(|| {
@@ -336,14 +287,15 @@ fn check(path: PathBuf, base_dir: Option<PathBuf>) -> Result<ExitCode> {
     })?;
 
     let mut import_ctx = ImportCtx::new(&mut libsl, &mut loader);
-    let load_result = import_ctx.load(&path);
+    let load_result = import_ctx.load(&path.to_string_lossy());
     let mut sema = import_ctx.into_sema();
+    let mut diag = PlainDiagCtx { libsl: sema.libsl };
 
     if let Err(e) = load_result {
-        return Err(add_load_error_ctx(&sema, e));
-    }
+        diag.emit(e.to_diag(&loader, &sema));
 
-    let mut diag = PlainDiagCtx { libsl: sema.libsl };
+        return Ok(ExitCode::FAILURE);
+    }
 
     if sema.analyze(&mut diag).is_ok() {
         Ok(ExitCode::SUCCESS)

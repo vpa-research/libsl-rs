@@ -277,6 +277,7 @@ fn add_load_error_ctx<L>(sema: &Sema<'_>, e: LoadError<L>) -> color_eyre::Report
 where
     L: FileLoader + Debug + 'static,
     L::Error: Error + Send + Sync + 'static,
+    L::CanonicalName: Send + Sync,
 {
     let (msg, mut load_reason) = match &e {
         LoadError::Parse {

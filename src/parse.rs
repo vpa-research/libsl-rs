@@ -10,7 +10,7 @@ use antlr_rust::common_token_stream::CommonTokenStream;
 use antlr_rust::error_listener::ErrorListener;
 use antlr_rust::errors::ANTLRError;
 use antlr_rust::parser_rule_context::ParserRuleContext;
-use antlr_rust::token::CommonToken;
+use antlr_rust::token::{CommonToken, Token};
 use antlr_rust::token_factory::TokenFactory;
 use antlr_rust::tree::{ParseTree, TerminalNode};
 use antlr_rust::{InputStream, Parser};
@@ -177,9 +177,17 @@ impl From<Radix> for u32 {
     }
 }
 
-fn parse_line_or_col(number: isize) -> Option<NonZeroUsize> {
-    if number > 0 {
-        Some(NonZeroUsize::new(number as usize).unwrap())
+fn parse_line(line: isize) -> Option<NonZeroUsize> {
+    if line > 0 {
+        Some(NonZeroUsize::new(line as usize).unwrap())
+    } else {
+        None
+    }
+}
+
+fn parse_col(col: isize) -> Option<NonZeroUsize> {
+    if col >= 0 {
+        Some(NonZeroUsize::new(col as usize + 1).unwrap())
     } else {
         None
     }
@@ -219,6 +227,9 @@ pub enum ParseError {
         /// The column number (1-based) this error occurred in.
         col: Option<NonZeroUsize>,
 
+        /// The length of the offending text.
+        len: usize,
+
         /// The error message.
         msg: String,
     },
@@ -236,6 +247,9 @@ pub enum ParseError {
 
         /// The column number (1-based) this error occurred in.
         col: Option<NonZeroUsize>,
+
+        /// The length of the offending text.
+        len: usize,
 
         /// The underlying error.
         inner: ParseIntError,
@@ -315,16 +329,30 @@ impl<'input, T: Parser<'input>> ErrorListener<'input, T> for ErrorCollector {
     fn syntax_error(
         &self,
         _recognizer: &T,
-        _offending_symbol: Option<&<<T>::TF as TokenFactory<'input>>::Inner>,
+        offending_symbol: Option<&<<T>::TF as TokenFactory<'input>>::Inner>,
         line: isize,
         column: isize,
         msg: &str,
         _error: Option<&ANTLRError>,
     ) {
+        let len = offending_symbol
+            .map(|sym| {
+                let start = sym.get_start();
+                let stop = sym.get_stop();
+
+                if start >= 0 && stop >= 0 {
+                    (stop - start) as usize
+                } else {
+                    0
+                }
+            })
+            .unwrap_or_default();
+
         self.errors.borrow_mut().push(ParseError::Syntax {
-            line: parse_line_or_col(line),
-            col: parse_line_or_col(column),
+            line: parse_line(line),
+            col: parse_col(column),
             msg: msg.into(),
+            len,
             file_id: self.file_id,
         });
     }
@@ -398,8 +426,8 @@ impl<'a> AstConstructor<'a> {
     }
 
     fn get_loc(&self, start: &CommonToken<'_>, stop: &CommonToken<'_>) -> Loc {
-        let line = parse_line_or_col(start.line);
-        let col = parse_line_or_col(start.column);
+        let line = parse_line(start.line);
+        let col = parse_col(start.column);
 
         Span {
             start: start.start as usize,
@@ -696,7 +724,7 @@ impl<'a> AstConstructor<'a> {
     ) -> Result<ast::EnumVariant> {
         let name = self.process_name(ctx.name.as_ref().unwrap());
         let value_ctx = ctx.value.as_ref().unwrap();
-        let value = self.process_signed_int_lit(&value_ctx)?;
+        let value = self.process_signed_int_lit(value_ctx)?;
         let value_loc = self.get_loc(&value_ctx.start(), &value_ctx.stop());
 
         Ok(ast::EnumVariant {
@@ -2276,8 +2304,9 @@ impl<'a> AstConstructor<'a> {
         n.map_err(|inner| ParseError::Int {
             radix,
             file_id: self.file_id,
-            line: parse_line_or_col(ctx.symbol.line),
-            col: parse_line_or_col(ctx.symbol.column),
+            line: parse_line(ctx.symbol.line),
+            col: parse_col(ctx.symbol.column),
+            len: ctx.symbol.text.len(),
             inner,
         })
     }

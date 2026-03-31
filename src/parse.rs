@@ -735,7 +735,10 @@ impl<'a> AstConstructor<'a> {
     }
 
     fn process_signed_int_lit(&mut self, ctx: &SignedIntLitContextAll<'_>) -> Result<ast::IntLit> {
-        let sign = self.process_sign(&ctx.sign().unwrap());
+        let sign = ctx
+            .sign()
+            .map(|ctx| self.process_sign(&ctx))
+            .unwrap_or(Sign::Plus);
 
         self.process_integer_lit(sign, &ctx.IntegerLit().unwrap())
     }

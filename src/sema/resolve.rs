@@ -345,10 +345,26 @@ impl NameRes {
     }
 
     pub fn def<T: DefKindProject>(&self, def_id: DefId) -> &T {
-        T::project(&self.defs[def_id].kind).unwrap()
+        match T::project(&self.defs[def_id].kind) {
+            Some(def) => def,
+
+            None => panic!(
+                "cannot project {:?} as {}",
+                self.defs[def_id].kind,
+                std::any::type_name::<T>(),
+            ),
+        }
     }
 
     pub fn def_mut<T: DefKindProject>(&mut self, def_id: DefId) -> &mut T {
+        if T::project_mut(&mut self.defs[def_id].kind).is_none() {
+            panic!(
+                "cannot project {:?} as {}",
+                self.defs[def_id].kind,
+                std::any::type_name::<T>(),
+            );
+        }
+
         T::project_mut(&mut self.defs[def_id].kind).unwrap()
     }
 }
@@ -768,7 +784,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 self.def_mut::<DefEnum>(def_id).member_scope_id = member_scope_id;
 
                 for (idx, variant) in decl.variants.iter().enumerate() {
-                    let Ok(def_id) = self.add_def(
+                    let Ok(variant_def_id) = self.add_def(
                         member_scope_id,
                         Ns::Var,
                         variant.name.to_string(),
@@ -781,7 +797,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         continue;
                     };
 
-                    self.def_mut::<DefEnum>(def_id).variants.push(def_id);
+                    self.def_mut::<DefEnum>(def_id).variants.push(variant_def_id);
                 }
             }
 

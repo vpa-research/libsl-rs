@@ -128,6 +128,7 @@ pub struct PreludeDefs {
     pub array: DefId,
     pub set: DefId,
     pub pointer: DefId,
+    pub intrinsic: DefId,
 }
 
 impl PreludeDefs {
@@ -152,6 +153,7 @@ impl PreludeDefs {
             ("array", Ns::Ty, &mut self.array),
             ("set", Ns::Ty, &mut self.set),
             ("[pointer]", Ns::Ty, &mut self.pointer),
+            ("intrinsic", Ns::Annotation, &mut self.intrinsic),
         ])
     }
 }
@@ -486,6 +488,20 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
             *field = def_id;
         }
+
+        self.register_intrinsic_annotation();
+    }
+
+    fn register_intrinsic_annotation(&mut self) {
+        let def_id = self.sema.name_res.prelude_defs.intrinsic;
+        let mut def = DefAnnotation::new(None);
+
+        def.param_scope_id = self.sema.name_res.scopes.insert(Scope::new(
+            Some(self.sema.name_res.prelude_scope_id),
+            ScopeKind::Params(def_id),
+        ));
+
+        self.sema.name_res.defs[def_id].kind = def.into();
     }
 
     fn add_def(
@@ -797,7 +813,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         continue;
                     };
 
-                    self.def_mut::<DefEnum>(def_id).variants.push(variant_def_id);
+                    self.def_mut::<DefEnum>(def_id)
+                        .variants
+                        .push(variant_def_id);
                 }
             }
 
@@ -808,7 +826,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     Ns::Annotation,
                     decl.name.to_string(),
                     decl.name.loc.clone(),
-                    DefAnnotation::new(decl_id).into(),
+                    DefAnnotation::new(Some(decl_id)).into(),
                 ) else {
                     return;
                 };

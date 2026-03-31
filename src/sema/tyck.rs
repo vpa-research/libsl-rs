@@ -748,6 +748,15 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 .param_variances
                 .insert(*def_id, ctor.variance().into());
         }
+
+        self.register_intrinsic_annotation();
+    }
+
+    fn register_intrinsic_annotation(&mut self) {
+        let def_id = self.sema.name_res.prelude_defs.intrinsic;
+        self.sema.tyck.required_annotation_params.insert(def_id, vec![]);
+        self.sema.tyck.annotation_arities.insert(def_id, 0..=0);
+        self.register_fn_sig::<DefAnnotation>(def_id, None, |_| &[], |def| &def.params, None);
     }
 
     fn int_ctor_ty(&self, ctor: &IntCtor) -> TyId {
@@ -1328,6 +1337,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .tyck
             .required_annotation_params
             .insert(def_id, required_params);
+
+        self.sema
+            .tyck
+            .annotation_arities
+            .insert(def_id, min_arity.unwrap_or(d.params.len())..=d.params.len());
+
         self.register_fn_sig::<DefAnnotation>(def_id, None, |_| &[], |def| &def.params, None);
     }
 

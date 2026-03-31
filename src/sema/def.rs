@@ -536,14 +536,14 @@ impl DefKindProject for DefEnum {
 
 #[derive(Debug, Clone)]
 pub struct DefAnnotation {
-    pub decl_id: DeclId,
+    pub decl_id: Option<DeclId>,
     pub param_scope_id: ScopeId,
     pub params: Vec<DefId>,
     pub users: Vec<AnnotationId>,
 }
 
 impl DefAnnotation {
-    pub fn new(decl_id: DeclId) -> Self {
+    pub fn new(decl_id: Option<DeclId>) -> Self {
         Self {
             decl_id,
             param_scope_id: Default::default(),

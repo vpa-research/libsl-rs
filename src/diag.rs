@@ -2,6 +2,7 @@
 
 use std::fmt::Display;
 
+use crate::LibSl;
 use crate::loc::Loc;
 
 /// A diagnostic message's severity level.
@@ -233,5 +234,50 @@ pub struct DummyDiagCtx;
 impl DiagCtx for DummyDiagCtx {
     fn emit(&mut self, _diag: Diag) {
         // ignore.
+    }
+}
+
+/// A [DiagCtx] that prints diagnostics to stderr as plain text.
+///
+/// Omits labels and notes.
+#[derive(Debug, Clone)]
+pub struct PlainDiagCtx<'a> {
+    libsl: &'a LibSl,
+}
+
+impl<'a> PlainDiagCtx<'a> {
+    /// Creates a new [`PlainDiagCtx`] that resolves spans in `libsl`.
+    pub fn new(libsl: &'a LibSl) -> Self {
+        Self { libsl }
+    }
+}
+
+impl DiagCtx for PlainDiagCtx<'_> {
+    fn emit(&mut self, diag: Diag) {
+        match diag.level {
+            Level::Err => eprint!("error"),
+            Level::Warn => eprint!("warning"),
+        };
+
+        match &diag.loc {
+            None => {}
+            Some(Loc::Synthetic) => eprint!(" in <built-in>"),
+
+            Some(Loc::Span(span)) => {
+                eprint!(" in {file}", file = self.libsl.filename_by_id(span.file_id));
+
+                if let Some(l) = span.line {
+                    eprint!(":L{l}");
+                }
+
+                if let Some(c) = span.col
+                    && span.line.is_some()
+                {
+                    eprint!(":{c}");
+                }
+            }
+        }
+
+        eprintln!(": {}", diag.msg);
     }
 }

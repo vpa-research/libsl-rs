@@ -11,12 +11,11 @@ use antlr_rust::{InputStream, Parser, TokenSource};
 use args::Command;
 use color_eyre::eyre::{Context, Result, eyre};
 use libsl::LibSl;
-use libsl::diag::{Diag, DiagCtx, Level};
+use libsl::diag::{DiagCtx, PlainDiagCtx};
 use libsl::file::FsFileLoader;
 use libsl::grammar::lexer::LibSLLexer;
 use libsl::grammar::parser::{LibSLParser, LibSLParserContext, LibSLParserContextType};
 use libsl::grammar::parser_listener::LibSLParserListener;
-use libsl::loc::Loc;
 use libsl::sema::ImportCtx;
 use similar::{ChangeTag, TextDiff};
 use yansi::{Paint, Style};
@@ -237,40 +236,6 @@ fn check_idempotence(path: PathBuf) -> Result<ExitCode> {
     Ok(ExitCode::FAILURE)
 }
 
-struct PlainDiagCtx<'a> {
-    libsl: &'a LibSl,
-}
-
-impl DiagCtx for PlainDiagCtx<'_> {
-    fn emit(&mut self, diag: Diag) {
-        match diag.level {
-            Level::Err => eprint!("error"),
-            Level::Warn => eprint!("warning"),
-        };
-
-        match &diag.loc {
-            None => {}
-            Some(Loc::Synthetic) => eprint!(" in <built-in>"),
-
-            Some(Loc::Span(span)) => {
-                eprint!(" in {file}", file = self.libsl.filename_by_id(span.file_id),);
-
-                if let Some(l) = span.line {
-                    eprint!(":L{l}");
-                }
-
-                if let Some(c) = span.col
-                    && span.line.is_some()
-                {
-                    eprint!(":{c}");
-                }
-            }
-        }
-
-        eprintln!(": {}", diag.msg);
-    }
-}
-
 fn check(path: PathBuf, base_dir: Option<PathBuf>) -> Result<ExitCode> {
     let base_dir = match base_dir {
         Some(base_dir) => base_dir,
@@ -289,7 +254,7 @@ fn check(path: PathBuf, base_dir: Option<PathBuf>) -> Result<ExitCode> {
     let mut import_ctx = ImportCtx::new(&mut libsl, &mut loader);
     let load_result = import_ctx.load(&path.to_string_lossy());
     let mut sema = import_ctx.into_sema();
-    let mut diag = PlainDiagCtx { libsl: sema.libsl };
+    let mut diag = PlainDiagCtx::new(sema.libsl);
 
     if let Err(e) = load_result {
         diag.emit(e.to_diag(&loader, &sema));

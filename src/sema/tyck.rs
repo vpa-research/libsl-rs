@@ -26,7 +26,7 @@ use crate::{AnnotationId, DeclId, ExprId, PredId, StmtId, TyExprId, ast};
 
 use self::constraints::SubtypeBoundKind;
 
-use super::def::{DefEnum, DefKindProject, DefStruct};
+use super::def::{DefEnum, DefKindProject, DefStruct, DefTyAlias};
 use super::resolve::NameRes;
 
 mod constraints;
@@ -135,7 +135,7 @@ pub struct TyCk {
     /// Maps field expressions to resolved fields.
     pub field_exprs: SparseSecondaryMap<ExprId, DefId>,
 
-    /// Stores the underlying (real) type of an entity. Applicable to enums and automata.
+    /// Stores the underlying type of an entity. Applicable to enums, automata, and type aliases.
     pub underlying_tys: SparseSecondaryMap<DefId, TyId>,
 
     // The determined arity of annotations. Actual annotation uses may provide any number of
@@ -241,6 +241,8 @@ impl TyCk {
         for &ty_id in tys {
             if let Ty::Union(t) = &self.tys[ty_id] {
                 elems.extend_from_slice(&t.elems);
+            } else {
+                elems.push(ty_id);
             }
         }
 
@@ -622,7 +624,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn run(mut self) -> Result {
         self.init_builtin_tys();
         self.early_tyck_decls();
-        self.tyck_decls();
+
+        let mut ty_aliases = vec![];
+        self.tyck_decls(&mut ty_aliases);
+        self.tyck_ty_aliases(&ty_aliases);
+
         self.tyck_decl_bodies();
         self.replace_with_reprs();
 
@@ -754,7 +760,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn register_intrinsic_annotation(&mut self) {
         let def_id = self.sema.name_res.prelude_defs.intrinsic;
-        self.sema.tyck.required_annotation_params.insert(def_id, vec![]);
+        self.sema
+            .tyck
+            .required_annotation_params
+            .insert(def_id, vec![]);
         self.sema.tyck.annotation_arities.insert(def_id, 0..=0);
         self.register_fn_sig::<DefAnnotation>(def_id, None, |_| &[], |def| &def.params, None);
     }
@@ -1038,8 +1047,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         unimplemented!()
     }
 
-    fn early_tyck_decl_ty_alias(&mut self, _decl: &'ast ast::Decl, _d: &'ast ast::DeclTyAlias) {
-        unimplemented!()
+    fn early_tyck_decl_ty_alias(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclTyAlias) {
+        let def_id = self.sema.name_res.decl_defs[decl.id];
+        self.register_parametrized_entity(
+            def_id,
+            |def: &DefTyAlias| &def.generics,
+            &d.ty_name.generics,
+        );
     }
 
     fn early_tyck_decl_struct(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclStruct) {
@@ -1183,10 +1197,17 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 // The declaration type-checking phase: assigns types to globally visible entities, such as
 // variables and functions.
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
-    fn tyck_decls(&mut self) {
+    fn tyck_decls(&mut self, ty_aliases: &mut Vec<DeclId>) {
         for file in self.sema.libsl.files.values() {
             for &decl_id in &file.decls {
                 self.tyck_decl(decl_id);
+
+                if matches!(
+                    self.sema.libsl.decls[decl_id].kind,
+                    ast::DeclKind::TyAlias(_)
+                ) {
+                    ty_aliases.push(decl_id);
+                }
             }
         }
     }
@@ -1220,7 +1241,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_decl_ty_alias(&mut self, _decl: &'ast ast::Decl, _d: &'ast ast::DeclTyAlias) {
-        unimplemented!()
+        // do nothing.
     }
 
     fn tyck_decl_struct(&mut self, _decl: &'ast ast::Decl, d: &'ast ast::DeclStruct) {
@@ -1540,12 +1561,35 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn tyck_ty_expr_name_alias(
         &mut self,
-        _ty_expr: &'ast ast::TyExpr,
+        ty_expr: &'ast ast::TyExpr,
         _t: &'ast ast::TyExprName,
-        _ty_args: Vec<TyId>,
-        _def_id: DefId,
+        ty_args: Vec<TyId>,
+        def_id: DefId,
     ) {
-        unimplemented!()
+        let def = self.sema.name_res.def::<DefTyAlias>(def_id);
+
+        // if this method is called during type alias type-checking, we recurse here.
+        let ty_alias_ty_id = self.tyck_ty_alias(def.decl_id);
+
+        if !self.check_ty_arg_arity(
+            &ty_expr.loc,
+            self.sema.tyck.param_variances[def_id].len(),
+            ty_args.len(),
+        ) {
+            self.sema
+                .tyck
+                .ty_exprs
+                .insert(ty_expr.id, self.sema.tyck.builtin.error);
+
+            return;
+        }
+
+        let def = self.sema.name_res.def::<DefTyAlias>(def_id);
+        let ty_param_map = iter::zip(&def.generics, &ty_args)
+            .map(|(&def_id, &ty_id)| (self.sema.tyck.def_tys[def_id], ty_id))
+            .collect();
+        let ty_id = self.sema.tyck.subst(ty_alias_ty_id, &ty_param_map);
+        self.sema.tyck.ty_exprs.insert(ty_expr.id, ty_id);
     }
 
     fn tyck_ty_expr_name_ty_var(
@@ -1700,6 +1744,32 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             |def| &def.params,
             Some(ret),
         );
+    }
+}
+
+// The type alias type-checking phase.
+impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
+    fn tyck_ty_aliases(&mut self, ty_aliases: &[DeclId]) {
+        for &decl_id in ty_aliases {
+            self.tyck_ty_alias(decl_id);
+        }
+    }
+
+    fn tyck_ty_alias(&mut self, decl_id: DeclId) -> TyId {
+        let def_id = self.sema.name_res.decl_defs[decl_id];
+
+        if let Some(&ty_id) = self.sema.tyck.underlying_tys.get(def_id) {
+            return ty_id;
+        }
+
+        let decl = &self.sema.libsl.decls[decl_id];
+        let ast::DeclKind::TyAlias(d) = &decl.kind else {
+            unreachable!()
+        };
+        let ty_id = self.tyck_ty_expr(d.ty_expr);
+        self.sema.tyck.underlying_tys.insert(def_id, ty_id);
+
+        ty_id
     }
 }
 
@@ -2288,8 +2358,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         unimplemented!()
     }
 
-    fn tyck_decl_ty_alias_body(&mut self, _decl: &'ast ast::Decl, _d: &'ast ast::DeclTyAlias) {
-        unimplemented!()
+    fn tyck_decl_ty_alias_body(&mut self, _decl: &'ast ast::Decl, d: &'ast ast::DeclTyAlias) {
+        // the type expression has already been checked in a previous phase,
+        // leaving only annotations.
+        self.tyck_annotations(&d.annotations);
     }
 
     fn tyck_decl_struct_body(&mut self, _decl: &'ast ast::Decl, d: &'ast ast::DeclStruct) {

@@ -9,6 +9,7 @@ use std::{iter, mem};
 use bit_set::BitSet;
 use slotmap::{SecondaryMap, SlotMap, SparseSecondaryMap, new_key_type};
 
+use crate::ExprId;
 use crate::ast::{self, Variance};
 use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
@@ -16,7 +17,6 @@ use crate::sema::def::DefId;
 use crate::sema::ty::{BuiltinTyCtor, ConstructedTy, Ty, TyId};
 use crate::sema::tyck::{Pass, TyCk};
 use crate::sema::{Result, Sema};
-use crate::ExprId;
 
 new_key_type! {
     pub struct ConstrId;
@@ -193,7 +193,7 @@ impl ConstrSet {
             }
 
             let result = sema.tyck.ty_union(&elems);
-            self.merge(sema, ty_id, result);
+            self.merge(sema, ty_id, result, true);
 
             result
         } else {
@@ -229,9 +229,26 @@ impl ConstrSet {
         }
     }
 
-    pub fn merge(&mut self, sema: &mut Sema<'_>, lhs_ty_id: TyId, rhs_ty_id: TyId) -> TyId {
-        let lhs_ty_id = self.normalize(sema, lhs_ty_id, true);
-        let rhs_ty_id = self.normalize(sema, rhs_ty_id, true);
+    pub fn merge(
+        &mut self,
+        sema: &mut Sema<'_>,
+        lhs_ty_id: TyId,
+        rhs_ty_id: TyId,
+        normalize: bool,
+    ) -> TyId {
+        if lhs_ty_id == rhs_ty_id {
+            return lhs_ty_id;
+        }
+
+        let (lhs_ty_id, rhs_ty_id) = if normalize {
+            (
+                self.normalize(sema, lhs_ty_id, true),
+                self.normalize(sema, rhs_ty_id, true),
+            )
+        } else {
+            (lhs_ty_id, rhs_ty_id)
+        };
+
         let lhs_preds = self.preds(sema, lhs_ty_id).to_vec();
         let rhs_preds = self.preds(sema, rhs_ty_id).to_vec();
         let result = self.union(sema, lhs_ty_id, rhs_ty_id);
@@ -243,7 +260,7 @@ impl ConstrSet {
                 }
 
                 if self.are_congruent(sema, l, r) {
-                    self.merge(sema, l, r);
+                    self.merge(sema, l, r, false);
                 }
             }
         }
@@ -536,7 +553,7 @@ impl ConstrSet {
             sema.tyck.add_ty(normalized)
         };
 
-        self.merge(sema, ty_id, normalized_ty_id)
+        self.merge(sema, ty_id, normalized_ty_id, false)
     }
 
     fn is_free_union(&self, tyck: &TyCk, ty_id: TyId) -> bool {
@@ -621,7 +638,7 @@ impl ConstrSet {
             return Ok(());
         }
 
-        self.merge(sema, lhs, rhs);
+        self.merge(sema, lhs, rhs, false);
 
         let l = &sema.tyck.tys[lhs];
         let r = &sema.tyck.tys[rhs];

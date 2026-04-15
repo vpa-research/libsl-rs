@@ -22,7 +22,7 @@ use crate::sema::tyck::constraints::{ConstrProvenance, ConstrSet, VarProvenance}
 use crate::sema::tyck::operators::{Op, OpFnSigProvider, OpOverload, OpOverloadDiagProvider};
 use crate::sema::tyck::overload::Receiver;
 use crate::sema::{Result, Sema};
-use crate::{AnnotationId, DeclId, ExprId, PredId, StmtId, TyExprId, ast};
+use crate::{AnnotationId, DeclId, ExprId, PredId, StmtId, TyExprId, ast, trace_enabled};
 
 use self::constraints::SubtypeBoundKind;
 
@@ -870,7 +870,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn solve_ty(&mut self, ty_id: TyId) -> Result<TyId> {
-        eprintln!("solve_ty(`{}`)", self.sema.format_ty(ty_id));
+        if trace_enabled() {
+            eprintln!("solve_ty(`{}`)", self.sema.format_ty(ty_id));
+        }
+
         let vars = self.sema.tyck.var_occurrences[ty_id]
             .iter()
             .map(|&ty_id| self.sema.tyck.tys[ty_id].as_var().unwrap())
@@ -1928,10 +1931,14 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         }
 
                         if idx + 1 == missing_args.len() {
+                            if idx == 1 {
+                                let _ = write!(msg, " ");
+                            }
+
                             let _ = write!(msg, "and ");
                         }
 
-                        let _ = write!(msg, "{name}");
+                        let _ = write!(msg, "`{name}`");
                     }
 
                     msg

@@ -238,8 +238,6 @@ impl DiagCtx for DummyDiagCtx {
 }
 
 /// A [DiagCtx] that prints diagnostics to stderr as plain text.
-///
-/// Omits labels and notes.
 #[derive(Debug, Clone)]
 pub struct PlainDiagCtx<'a> {
     libsl: &'a LibSl,
@@ -254,30 +252,50 @@ impl<'a> PlainDiagCtx<'a> {
 
 impl DiagCtx for PlainDiagCtx<'_> {
     fn emit(&mut self, diag: Diag) {
+        fn print_loc(libsl: &LibSl, loc: &Loc) {
+            match loc {
+                Loc::Synthetic => eprint!("in <built-in>"),
+
+                Loc::Span(span) => {
+                    eprint!("in {file}", file = libsl.filename_by_id(span.file_id));
+
+                    if let Some(l) = span.line {
+                        eprint!(":L{l}");
+                    }
+
+                    if let Some(c) = span.col
+                        && span.line.is_some()
+                    {
+                        eprint!(":{c}");
+                    }
+                }
+            }
+        }
+
         match diag.level {
             Level::Err => eprint!("error"),
             Level::Warn => eprint!("warning"),
         };
 
-        match &diag.loc {
-            None => {}
-            Some(Loc::Synthetic) => eprint!(" in <built-in>"),
-
-            Some(Loc::Span(span)) => {
-                eprint!(" in {file}", file = self.libsl.filename_by_id(span.file_id));
-
-                if let Some(l) = span.line {
-                    eprint!(":L{l}");
-                }
-
-                if let Some(c) = span.col
-                    && span.line.is_some()
-                {
-                    eprint!(":{c}");
-                }
-            }
+        if let Some(loc) = &diag.loc {
+            eprint!(" ");
+            print_loc(self.libsl, loc);
         }
 
         eprintln!(": {}", diag.msg);
+
+        for label in &diag.labels {
+            let Some(msg) = &label.msg else {
+                continue;
+            };
+
+            eprint!("  ");
+            print_loc(self.libsl, &label.loc);
+            eprintln!(": {msg}");
+        }
+
+        for note in &diag.notes {
+            eprintln!("  note: {note}");
+        }
     }
 }

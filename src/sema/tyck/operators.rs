@@ -175,10 +175,14 @@ impl<O: Op> OverloadDiagProvider<OpFnSigProvider<O>> for OpOverloadDiagProvider<
                 }
 
                 if idx + 1 == O::ARITY {
+                    if idx == 1 {
+                        let _ = write!(possible_candidates, " ");
+                    }
+
                     let _ = write!(possible_candidates, "and ");
                 }
 
-                let _ = write!(possible_candidates, "{}", sema.format_ty(ty_id));
+                let _ = write!(possible_candidates, "`{}`", sema.format_ty(ty_id));
             }
         }
 

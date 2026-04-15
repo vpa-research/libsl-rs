@@ -98,7 +98,7 @@ impl OverloadDiagProvider<DefFnSigProvider> for CallOverloadDiagProvider<'_> {
     fn empty_candidate_set(&self, _sema: &Sema<'_>) -> Diag {
         Diag::err()
             .at(self.loc.clone())
-            .with_msg(format!("no function named `{}` found", self.name))
+            .with_msg(format!("no applicable function named `{}` found", self.name))
             .with_label(Label::primary(self.loc.clone()))
             .build()
     }

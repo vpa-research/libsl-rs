@@ -1,7 +1,7 @@
 //! Type checking and inference for LibSL.
 
 use std::collections::HashMap;
-use std::fmt::{self, Display, Write};
+use std::fmt::{self, Display};
 use std::ops::RangeInclusive;
 use std::{iter, mem};
 
@@ -22,6 +22,7 @@ use crate::sema::tyck::constraints::{ConstrProvenance, ConstrSet, VarProvenance}
 use crate::sema::tyck::operators::{Op, OpFnSigProvider, OpOverload, OpOverloadDiagProvider};
 use crate::sema::tyck::overload::Receiver;
 use crate::sema::{Result, Sema};
+use crate::util::format_list;
 use crate::{AnnotationId, DeclId, ExprId, PredId, StmtId, TyExprId, ast, trace_enabled};
 
 use self::constraints::SubtypeBoundKind;
@@ -1923,25 +1924,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 }
 
                 _ => {
-                    let mut msg = "no arguments are provided for the parameters ".to_owned();
-
-                    for (idx, name) in missing_args.iter().enumerate() {
-                        if idx > 0 && !(idx == 1 && missing_args.len() == 2) {
-                            let _ = write!(msg, ", ");
-                        }
-
-                        if idx + 1 == missing_args.len() {
-                            if idx == 1 {
-                                let _ = write!(msg, " ");
-                            }
-
-                            let _ = write!(msg, "and ");
-                        }
-
-                        let _ = write!(msg, "`{name}`");
-                    }
-
-                    msg
+                    format!(
+                        "no arguments are provided for the parameters {}",
+                        format_list(missing_args, |f, name| write!(f, "`{name}`")),
+                    )
                 }
             })
             .with_label(Label::primary(loc))

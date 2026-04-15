@@ -76,6 +76,7 @@ pub mod sema;
 #[cfg(feature = "serde")]
 mod serialize;
 pub mod visit;
+mod util;
 
 use std::fmt::{self, Display};
 

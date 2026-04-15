@@ -8,6 +8,7 @@ use crate::sema::ty::{ConstructedTy, IntCtor, Ty, TyId};
 use crate::sema::tyck::constraints::ConstrProvenance;
 use crate::sema::tyck::overload::{ApplicabilityCriteria, FnSigProvider, OverloadDiagProvider};
 use crate::sema::tyck::{BuiltinTys, FnSig, Pass};
+use crate::util::format_list;
 
 #[derive(Debug, Clone)]
 pub enum OpOverload {
@@ -158,7 +159,7 @@ impl<O: Op> OverloadDiagProvider<OpFnSigProvider<O>> for OpOverloadDiagProvider<
     fn empty_candidate_set(&self, _sema: &Sema<'_>) -> Diag {
         Diag::err()
             .at(self.loc.clone())
-            .with_msg(format!("no applicable overload for `{}` found", self.op))
+            .with_msg(format!("no applicable overload of `{}` found", self.op))
             .with_label(Label::primary(self.loc.clone()))
             .build()
     }
@@ -167,23 +168,15 @@ impl<O: Op> OverloadDiagProvider<OpFnSigProvider<O>> for OpOverloadDiagProvider<
         let mut possible_candidates = "the following candidates are possible:".to_owned();
 
         for &candidate in ambiguities {
-            let _ = write!(possible_candidates, "\n  - ");
-
-            for (idx, &ty_id) in candidate.sig.params.iter().enumerate() {
-                if idx > 0 && !(idx == 1 && O::ARITY == 2) {
-                    let _ = write!(possible_candidates, ", ");
-                }
-
-                if idx + 1 == O::ARITY {
-                    if idx == 1 {
-                        let _ = write!(possible_candidates, " ");
-                    }
-
-                    let _ = write!(possible_candidates, "and ");
-                }
-
-                let _ = write!(possible_candidates, "`{}`", sema.format_ty(ty_id));
-            }
+            let _ = write!(
+                possible_candidates,
+                "\n  - {}",
+                format_list(&candidate.sig.params, |f, &ty_id| write!(
+                    f,
+                    "`{}`",
+                    sema.format_ty(ty_id),
+                )),
+            );
         }
 
         Diag::err()

@@ -83,6 +83,11 @@ use slotmap::{SecondaryMap, SlotMap, new_key_type};
 
 use crate::loc::{Loc, Span};
 
+// used for internal debugging.
+fn trace_enabled() -> bool {
+    option_env!("LIBSL_ENABLE_TRACE").is_some_and(|s| !s.is_empty())
+}
+
 new_key_type! {
     /// A file identifier.
     pub struct FileId;

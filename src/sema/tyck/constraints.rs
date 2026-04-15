@@ -9,7 +9,6 @@ use std::{iter, mem};
 use bit_set::BitSet;
 use slotmap::{SecondaryMap, SlotMap, SparseSecondaryMap, new_key_type};
 
-use crate::ExprId;
 use crate::ast::{self, Variance};
 use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
@@ -17,6 +16,7 @@ use crate::sema::def::DefId;
 use crate::sema::ty::{BuiltinTyCtor, ConstructedTy, Ty, TyId};
 use crate::sema::tyck::{Pass, TyCk};
 use crate::sema::{Result, Sema};
+use crate::{ExprId, trace_enabled};
 
 new_key_type! {
     pub struct ConstrId;
@@ -111,7 +111,7 @@ impl TyUnionFind {
             return;
         }
 
-        self.parents.borrow_mut()[lhs] = rhs;
+        self.parents.borrow_mut()[rhs] = lhs;
     }
 }
 
@@ -153,7 +153,7 @@ impl ConstrSet {
     }
 
     pub fn is_free(&self, tyck: &TyCk, ty_id: TyId) -> bool {
-        tyck.var_occurrences[self.repr(ty_id)].is_empty()
+        !tyck.var_occurrences[self.repr(ty_id)].is_empty()
     }
 
     fn is_solved(&self, tyck: &TyCk, idx: usize) -> bool {
@@ -236,7 +236,19 @@ impl ConstrSet {
         rhs_ty_id: TyId,
         normalize: bool,
     ) -> TyId {
+        if trace_enabled() {
+            eprintln!(
+                "merge(`{}`, `{}`, normalize: {normalize})",
+                sema.format_ty(lhs_ty_id),
+                sema.format_ty(rhs_ty_id),
+            );
+        }
+
         if lhs_ty_id == rhs_ty_id {
+            if trace_enabled() {
+                eprintln!("  identical ids -> short-circuiting");
+            }
+
             return lhs_ty_id;
         }
 
@@ -252,6 +264,26 @@ impl ConstrSet {
         let lhs_preds = self.preds(sema, lhs_ty_id).to_vec();
         let rhs_preds = self.preds(sema, rhs_ty_id).to_vec();
         let result = self.union(sema, lhs_ty_id, rhs_ty_id);
+
+        if trace_enabled() {
+            eprintln!("  union -> `{}`", sema.format_ty(result));
+            eprintln!(
+                "  lhs preds: {}",
+                lhs_preds
+                    .iter()
+                    .map(|&t| format!("`{}`", sema.format_ty(t)))
+                    .reduce(|l, r| format!("{l}, {r}"))
+                    .unwrap_or_default(),
+            );
+            eprintln!(
+                "  rhs preds: {}",
+                rhs_preds
+                    .iter()
+                    .map(|&t| format!("`{}`", sema.format_ty(t)))
+                    .reduce(|l, r| format!("{l}, {r}"))
+                    .unwrap_or_default(),
+            );
+        }
 
         for &l in &lhs_preds {
             for &r in &rhs_preds {
@@ -629,10 +661,27 @@ impl ConstrSet {
         lhs: TyId,
         rhs: TyId,
     ) -> Result {
+        if trace_enabled() {
+            eprintln!(
+                "reduce(`{}` = `{}`)",
+                sema.format_ty(lhs),
+                sema.format_ty(rhs),
+            );
+        }
+
         let lhs = self.repr(lhs);
         let rhs = self.repr(rhs);
 
+        if trace_enabled() {
+            eprintln!("  lhs -> `{}`", sema.format_ty(lhs));
+            eprintln!("  rhs -> `{}`", sema.format_ty(rhs));
+        }
+
         if self.is_free_union(&sema.tyck, lhs) || self.is_free_union(&sema.tyck, rhs) {
+            if trace_enabled() {
+                eprintln!("  deferring a union type constraint");
+            }
+
             self.defer_constr(sema, constr_id);
 
             return Ok(());
@@ -642,6 +691,11 @@ impl ConstrSet {
 
         let l = &sema.tyck.tys[lhs];
         let r = &sema.tyck.tys[rhs];
+
+        if trace_enabled() {
+            eprintln!("l: {l:?}");
+            eprintln!("r: {r:?}");
+        }
 
         match (l, r) {
             (&Ty::Var(l), _) => self.add_var_bound(
@@ -709,6 +763,14 @@ impl ConstrSet {
         lhs: TyId,
         rhs: TyId,
     ) -> Result {
+        if trace_enabled() {
+            eprintln!(
+                "reduce(`{}` <: `{}`)",
+                sema.format_ty(lhs),
+                sema.format_ty(rhs),
+            );
+        }
+
         let l = &sema.tyck.tys[lhs];
         let r = &sema.tyck.tys[rhs];
 
@@ -816,6 +878,14 @@ impl ConstrSet {
         lhs: TyId,
         rhs: TyId,
     ) -> Result {
+        if trace_enabled() {
+            eprintln!(
+                "reduce(`{}` -> `{}`)",
+                sema.format_ty(lhs),
+                sema.format_ty(rhs),
+            );
+        }
+
         let lhs = self.normalize_ty_union(sema, lhs);
         let rhs = self.normalize_ty_union(sema, rhs);
 
@@ -898,17 +968,33 @@ impl ConstrSet {
         bound: VarBound,
         provenance: VarBoundProvenance,
     ) -> Result {
+        if trace_enabled() {
+            eprintln!("add_var_bound({idx})");
+        }
+
         let var = self.bounds.var_mut(idx);
 
         if var.status.is_unsat() {
+            if trace_enabled() {
+                eprintln!("  unsat; skipping");
+            }
+
             return Err(());
         }
 
         var.unprocessed.push((bound, provenance));
 
         if var.status.is_processing() {
+            if trace_enabled() {
+                eprintln!("  queued");
+            }
+
             Ok(())
         } else {
+            if trace_enabled() {
+                eprintln!("  processing");
+            }
+
             self.process_var_bounds(sema, diag, idx)
         }
     }
@@ -1083,6 +1169,10 @@ impl ConstrSet {
         provenance: VarBoundProvenance,
         apply_symmetry: bool,
     ) -> Result {
+        if trace_enabled() {
+            eprintln!("incorporate({idx} = `{}`)", sema.format_ty(ty_id));
+        }
+
         let mut ty_id = self.repr(ty_id);
         self.update_bounds(idx);
 
@@ -1090,6 +1180,10 @@ impl ConstrSet {
 
         // α = α: true by reflexivity.
         if ty_id == var_ty_id {
+            if trace_enabled() {
+                eprintln!("  trivially true by reflexivity");
+            }
+
             return Ok(());
         }
 
@@ -1101,6 +1195,10 @@ impl ConstrSet {
 
         // the type must equal an existing eq bound (transitivity).
         if let Some(eq) = prev_eq {
+            if trace_enabled() {
+                eprintln!("  checking against previous eq bound");
+            }
+
             self.add(
                 sema,
                 diag,
@@ -1112,6 +1210,10 @@ impl ConstrSet {
 
             ty_id = self.repr(ty_id);
         } else {
+            if trace_enabled() {
+                eprintln!("  set eq bound");
+            }
+
             var.eq = Some((ty_id, provenance.clone()));
         }
 
@@ -1234,14 +1336,30 @@ impl ConstrSet {
         mut vars: Vec<usize>,
     ) -> Result {
         while let Some(idx) = vars.pop() {
+            if trace_enabled() {
+                eprintln!("solving {idx} and its dependencies");
+            }
+
             self.update_bounds(idx);
 
             if self.is_solved(&sema.tyck, idx) {
+                if trace_enabled() {
+                    eprintln!("  already solved");
+                }
+
                 continue;
             }
 
             for idx in self.find_dependent_vars(&sema.tyck, idx) {
+                if trace_enabled() {
+                    eprintln!("  solving {idx}");
+                }
+
                 if self.is_solved(&sema.tyck, idx) {
+                    if trace_enabled() {
+                        eprintln!("    already solved");
+                    }
+
                     continue;
                 }
 
@@ -1303,14 +1421,32 @@ impl ConstrSet {
         let var_ty_id = sema.tyck.add_ty(Ty::Var(idx));
 
         if self.derive_solution_from_bounds(sema, diag, var_ty_id, idx, SubtypeBoundKind::Lower)? {
+            if trace_enabled() {
+                eprintln!(
+                    "solve_in_isolation -> derived `{}` from lower bounds",
+                    sema.format_ty(self.repr(var_ty_id)),
+                );
+            }
+
             return Ok(());
         }
 
         if self.derive_solution_from_bounds(sema, diag, var_ty_id, idx, SubtypeBoundKind::Upper)? {
+            if trace_enabled() {
+                eprintln!(
+                    "solve_in_isolation -> derived `{}` from upper bounds",
+                    sema.format_ty(self.repr(var_ty_id)),
+                );
+            }
+
             return Ok(());
         }
 
         // default to `any`.
+        if trace_enabled() {
+            eprintln!("solve_in_isolation -> derived `any` by default");
+        }
+
         self.add(
             sema,
             diag,
@@ -1439,7 +1575,7 @@ impl BoundSet {
 
     pub fn var_mut(&mut self, idx: usize) -> &mut VarConstr {
         if idx >= self.vars.len() {
-            self.vars.resize_with(idx, Default::default);
+            self.vars.resize_with(idx + 1, Default::default);
         }
 
         &mut self.vars[idx]

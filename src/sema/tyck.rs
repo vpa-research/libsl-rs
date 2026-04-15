@@ -158,7 +158,11 @@ pub struct TyCk {
     ty_vec: Vec<TyId>,
 }
 
-fn occurring_vars(var_occurrences: &SecondaryMap<TyId, Vec<TyId>>, ty: &Ty) -> Vec<TyId> {
+fn occurring_vars(
+    var_occurrences: &SecondaryMap<TyId, Vec<TyId>>,
+    ty_id: TyId,
+    ty: &Ty,
+) -> Vec<TyId> {
     let mut occurrences = vec![];
 
     match ty {
@@ -172,7 +176,9 @@ fn occurring_vars(var_occurrences: &SecondaryMap<TyId, Vec<TyId>>, ty: &Ty) -> V
             }
         }
 
-        Ty::Var(_) => {}
+        Ty::Var(_) => {
+            occurrences.push(ty_id);
+        }
 
         Ty::Null => {}
 
@@ -223,8 +229,9 @@ impl TyCk {
         *self.ty_dedup.entry(ty).or_insert_with_key(|ty| {
             let ty_id = self.tys.insert(ty.clone());
             self.var_occurrences
-                .insert(ty_id, occurring_vars(&self.var_occurrences, ty));
+                .insert(ty_id, occurring_vars(&self.var_occurrences, ty_id, ty));
             self.ty_vec.push(ty_id);
+            self.ty_preds.insert(ty_id, Default::default());
             add_preds(&mut self.ty_preds, ty, ty_id);
 
             ty_id
@@ -863,6 +870,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn solve_ty(&mut self, ty_id: TyId) -> Result<TyId> {
+        eprintln!("solve_ty(`{}`)", self.sema.format_ty(ty_id));
         let vars = self.sema.tyck.var_occurrences[ty_id]
             .iter()
             .map(|&ty_id| self.sema.tyck.tys[ty_id].as_var().unwrap())
@@ -3086,7 +3094,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 }
             },
 
-            Ty::Var(_) => unreachable!(),
+            Ty::Var(_) => unreachable!(
+                ".solve_ty() returned a non-solution `{}`",
+                self.sema.format_ty(base),
+            ),
 
             Ty::Param(_) | Ty::Null | Ty::Union(_) => {
                 self.result = Err(());

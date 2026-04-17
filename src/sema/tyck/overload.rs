@@ -12,7 +12,7 @@ use crate::sema::ty::{Ty, TyId};
 use crate::sema::tyck::constraints::{Constr, ConstrKind, ConstrProvenance};
 use crate::sema::tyck::{Pass, ReplaceTyArgs};
 use crate::sema::{Result, Sema};
-use crate::{ExprId, WithLibSl};
+use crate::{ExprId, WithLibSl, trace_enabled};
 
 use super::FnSig;
 
@@ -98,7 +98,10 @@ impl OverloadDiagProvider<DefFnSigProvider> for CallOverloadDiagProvider<'_> {
     fn empty_candidate_set(&self, _sema: &Sema<'_>) -> Diag {
         Diag::err()
             .at(self.loc.clone())
-            .with_msg(format!("no applicable function named `{}` found", self.name))
+            .with_msg(format!(
+                "no applicable function named `{}` found",
+                self.name
+            ))
             .with_label(Label::primary(self.loc.clone()))
             .build()
     }
@@ -337,21 +340,46 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             let mut constr = self.constrs.clone();
             let sig = candidate.fn_sig(self.sema).clone();
 
+            if trace_enabled() {
+                eprintln!(
+                    "checking applicability of {}",
+                    self.sema.format_signature(&sig)
+                );
+            }
+
             if ty_args.len() > sig.generics.len() || args.len() != sig.params.len() {
+                if trace_enabled() {
+                    eprintln!(
+                        "  argument count mismatch: got {} type args, {} value args",
+                        ty_args.len(),
+                        args.len()
+                    );
+                }
+
                 return Err(());
             }
 
             let ty_param_map = self.make_fresh_vars_for_ty_params(&sig.generics, &Loc::Synthetic);
 
             for (&param, &arg) in iter::zip(&sig.generics, ty_args) {
-                constr.add(
-                    self.sema,
-                    &mut DummyDiagCtx,
-                    Constr {
-                        kind: ConstrKind::Eq(arg, ty_param_map[param]),
-                        provenance: candidate.applicability_constr_provenance(),
-                    },
-                )?;
+                if trace_enabled() {
+                    eprintln!("  checking type param `{}`", self.sema.format_ty(param));
+                }
+
+                constr
+                    .add(
+                        self.sema,
+                        &mut DummyDiagCtx,
+                        Constr {
+                            kind: ConstrKind::Eq(arg, ty_param_map[param]),
+                            provenance: candidate.applicability_constr_provenance(),
+                        },
+                    )
+                    .inspect_err(|_| {
+                        if trace_enabled() {
+                            eprintln!("    unsat");
+                        }
+                    })?;
             }
 
             match (recv, sig.recv) {
@@ -362,33 +390,66 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 (Receiver::Implicit(ty_id) | Receiver::Explicit(ty_id), Some(recv)) => {
                     let expected = self.make_recv_ty(recv, ReplaceTyArgs::Yes(&Loc::Synthetic));
 
-                    constr.add(
-                        self.sema,
-                        &mut DummyDiagCtx,
-                        Constr {
-                            kind: ConstrKind::Sub(*ty_id, expected),
-                            provenance: candidate.applicability_constr_provenance(),
-                        },
-                    )?;
+                    if trace_enabled() {
+                        eprintln!(
+                            "  checking receiver: `{}` <: `{}`",
+                            self.sema.format_ty(*ty_id),
+                            self.sema.format_ty(expected),
+                        );
+                    }
+
+                    constr
+                        .add(
+                            self.sema,
+                            &mut DummyDiagCtx,
+                            Constr {
+                                kind: ConstrKind::Sub(*ty_id, expected),
+                                provenance: candidate.applicability_constr_provenance(),
+                            },
+                        )
+                        .inspect_err(|_| {
+                            if trace_enabled() {
+                                eprintln!("    unsat");
+                            }
+                        })?;
                 }
 
                 _ => return Err(()),
             }
 
-            for (&param, &arg) in iter::zip(&sig.params, args) {
+            for (idx, (&param, &arg)) in iter::zip(&sig.params, args).enumerate() {
+                if trace_enabled() {
+                    eprintln!(
+                        "  checking param #{}: `{}` -> `{}`",
+                        idx + 1,
+                        self.sema.format_ty(arg),
+                        self.sema.format_ty(param)
+                    );
+                }
+
                 let param = self.sema.tyck.subst(param, &ty_param_map);
 
-                constr.add(
-                    self.sema,
-                    &mut DummyDiagCtx,
-                    Constr {
-                        kind: ConstrKind::Coerce(arg, param),
-                        provenance: candidate.applicability_constr_provenance(),
-                    },
-                )?;
+                constr
+                    .add(
+                        self.sema,
+                        &mut DummyDiagCtx,
+                        Constr {
+                            kind: ConstrKind::Coerce(arg, param),
+                            provenance: candidate.applicability_constr_provenance(),
+                        },
+                    )
+                    .inspect_err(|_| {
+                        if trace_enabled() {
+                            eprintln!("    unsat");
+                        }
+                    })?;
             }
 
-            if !candidate.satisfies(&mut self.sema, criteria) {
+            if !candidate.satisfies(self.sema, criteria) {
+                if trace_enabled() {
+                    eprintln!("  criteria unsatisfied");
+                }
+
                 return Err(());
             }
 

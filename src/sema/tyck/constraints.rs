@@ -229,7 +229,7 @@ impl ConstrSet {
         }
     }
 
-    pub fn merge(
+    fn merge(
         &mut self,
         sema: &mut Sema<'_>,
         lhs_ty_id: TyId,
@@ -320,10 +320,6 @@ impl ConstrSet {
     pub fn add(&mut self, sema: &mut Sema<'_>, diag: &mut impl DiagCtx, constr: Constr) -> Result {
         use std::collections::hash_map::Entry;
 
-        if self.status.is_unsat() {
-            return Err(());
-        }
-
         let Entry::Vacant(entry) = self.constr_dedup.entry(constr.kind.clone()) else {
             return Ok(());
         };
@@ -353,17 +349,21 @@ impl ConstrSet {
             self.last_registered_ty_idx += 1;
         }
 
+        let mut result = Ok(());
+
         while let Some(constr_id) = self.unprocessed.pop() {
             if self.reduce(sema, diag, constr_id).is_err() {
-                self.status = Status::Unsat;
-
-                return Err(());
+                result = Err(());
             }
         }
 
-        self.status = Status::Sat;
+        if self.status.is_processing() && result.is_ok() {
+            self.status = Status::Sat;
+        } else if result.is_err() {
+            self.status = Status::Unsat;
+        }
 
-        Ok(())
+        result
     }
 
     fn constr_loc<'a>(&'a self, sema: &'a Sema<'_>, constr_id: ConstrId) -> &'a Loc {
@@ -1015,18 +1015,21 @@ impl ConstrSet {
 
         var.status = Status::Processing;
 
+        let mut result = Ok(());
+
         while let Some((bound, provenance)) = var.unprocessed.pop() {
-            let result = self.incorporate(sema, diag, idx, bound, provenance);
-            var = self.bounds.var_mut(idx);
-
-            if result.is_err() {
-                var.status = Status::Unsat;
-
-                return Err(());
+            if self.incorporate(sema, diag, idx, bound, provenance).is_err() {
+                result = Err(());
             }
+
+            var = self.bounds.var_mut(idx);
         }
 
-        var.status = Status::Sat;
+        if var.status.is_processing() && result.is_ok() {
+            var.status = Status::Sat;
+        } else if result.is_err() {
+            var.status = Status::Unsat;
+        }
 
         Ok(())
     }

@@ -4,6 +4,7 @@ use crate::ast;
 use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
 use crate::sema::Sema;
+use crate::sema::def::{DefEnum, DefKindTag};
 use crate::sema::ty::{ConstructedTy, IntCtor, Ty, TyId};
 use crate::sema::tyck::constraints::ConstrProvenance;
 use crate::sema::tyck::overload::{ApplicabilityCriteria, FnSigProvider, OverloadDiagProvider};
@@ -38,8 +39,10 @@ pub enum OpOverload {
     Ge(IntCtor),
     EqNumeric(IntCtor),
     EqString,
+    EqEnum,
     NeNumeric(IntCtor),
     NeString,
+    NeEnum,
     InSet,
     InArray,
     NotInSet,
@@ -70,6 +73,7 @@ impl Op for ast::BinOp {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct OpFnSigProvider<O> {
     op: O,
     loc: Loc,
@@ -122,7 +126,7 @@ impl<O: Op> OpFnSigProvider<O> {
 }
 
 impl<O: Op> FnSigProvider for OpFnSigProvider<O> {
-    fn satisfies(&self, sema: &mut Sema<'_>, criteria: &ApplicabilityCriteria) -> bool {
+    fn satisfies(&self, _sema: &mut Sema<'_>, criteria: &ApplicabilityCriteria) -> bool {
         let &ApplicabilityCriteria { proc_only } = criteria;
 
         if proc_only {
@@ -222,6 +226,46 @@ fn cmp<O: Op + Clone>(
         .collect()
 }
 
+fn enum_op_overloads<O: Op + Clone>(
+    sema: &mut Sema<'_>,
+    op: O,
+    loc: &Loc,
+    overload: OpOverload,
+    ret: TyId,
+) -> Vec<OpFnSigProvider<O>> {
+    #[allow(
+        clippy::unnecessary_to_owned,
+        reason = "it is actually necessary due to borrowck rules"
+    )]
+    sema.name_res.defs[DefKindTag::Enum]
+        .to_vec()
+        .into_iter()
+        .map(|def_id| {
+            let def = sema.name_res.def::<DefEnum>(def_id);
+            let generics = def
+                .generics
+                .iter()
+                .map(|&def_id| sema.tyck.def_tys[def_id])
+                .collect::<Vec<_>>();
+            let ty_id = sema.tyck.add_ctor_ty(def_id, generics.clone());
+            let mut params = vec![];
+            params.resize(O::ARITY, ty_id);
+
+            OpFnSigProvider {
+                op: op.clone(),
+                loc: loc.clone(),
+                sig: FnSig {
+                    recv: None,
+                    generics,
+                    params,
+                    ret: Some(ret),
+                },
+                overload: overload.clone(),
+            }
+        })
+        .collect()
+}
+
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     pub(super) fn overloads_for_unary(
         &mut self,
@@ -290,6 +334,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     bool,
                 )]);
 
+                result.extend_from_slice(self.enum_eq_overloads.get_or_insert_with(|| {
+                    enum_op_overloads(self.sema, op, loc, OpOverload::EqEnum, bool)
+                }));
+
                 result
             }
 
@@ -302,6 +350,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     vec![string, string],
                     bool,
                 )]);
+
+                result.extend_from_slice(self.enum_ne_overloads.get_or_insert_with(|| {
+                    enum_op_overloads(self.sema, op, loc, OpOverload::NeEnum, bool)
+                }));
 
                 result
             }

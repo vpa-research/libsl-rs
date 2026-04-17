@@ -26,13 +26,14 @@ use crate::util::format_list;
 use crate::{AnnotationId, DeclId, ExprId, PredId, StmtId, TyExprId, ast, trace_enabled};
 
 use self::constraints::SubtypeBoundKind;
+use self::operators::BinOpFnSigProvider;
 
 use super::def::{DefEnum, DefKindProject, DefStruct, DefTyAlias};
 use super::resolve::NameRes;
 
-mod constraints;
-mod operators;
-mod overload;
+pub mod constraints;
+pub mod operators;
+pub mod overload;
 
 #[derive(Debug, Default)]
 pub struct BuiltinTys {
@@ -617,6 +618,10 @@ struct Pass<'ast, 's, D> {
     diag: &'s mut D,
     result: Result,
     constrs: ConstrSet,
+
+    // memoized overloads of `==` and `!=` for enum values.
+    enum_eq_overloads: Option<Vec<BinOpFnSigProvider>>,
+    enum_ne_overloads: Option<Vec<BinOpFnSigProvider>>,
 }
 
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
@@ -626,6 +631,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             diag,
             result: Ok(()),
             constrs: Default::default(),
+
+            enum_eq_overloads: None,
+            enum_ne_overloads: None,
         }
     }
 
@@ -730,7 +738,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         ];
 
         for &(prelude, def_id, ref ctor) in builtins {
-            self.sema.name_res.defs[def_id].kind = ctor.clone().into();
+            self.sema
+                .name_res
+                .defs
+                .update_def_kind(def_id, |_| ctor.clone().into());
             let ty_id = self.sema.tyck.add_ty(Ty::Ctor(ConstructedTy {
                 ctor: def_id,
                 args: vec![],
@@ -756,7 +767,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         ];
 
         for (def_id, ctor) in ctors {
-            self.sema.name_res.defs[*def_id].kind = ctor.clone().into();
+            self.sema
+                .name_res
+                .defs
+                .update_def_kind(*def_id, |_| ctor.clone().into());
             self.sema
                 .tyck
                 .param_variances

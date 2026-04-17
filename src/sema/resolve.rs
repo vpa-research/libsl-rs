@@ -1,6 +1,8 @@
 //! Name resolution.
 
 use std::collections::HashMap;
+use std::mem;
+use std::ops::{Index, IndexMut};
 
 use slotmap::{SecondaryMap, SlotMap, SparseSecondaryMap, new_key_type};
 
@@ -14,6 +16,8 @@ use crate::sema::def::{
 };
 use crate::sema::{Result, Sema};
 use crate::{AnnotationId, DeclId, ExprId, FileId, PredId, StmtId, TyExprId, ast};
+
+use super::def::DefKindTag;
 
 new_key_type! {
     pub struct ScopeId;
@@ -200,11 +204,79 @@ pub enum AnnotatedEntity {
     Def(DefId),
 }
 
+/// A registry of definitions.
+#[derive(Default, Debug)]
+pub struct Defs {
+    pub by_id: SlotMap<DefId, Def>,
+    pub by_tag: HashMap<DefKindTag, Vec<DefId>>,
+}
+
+impl Defs {
+    pub fn insert_with_key(&mut self, f: impl FnOnce(DefId) -> Def) -> DefId {
+        let def_id = self.by_id.insert_with_key(f);
+        let tag = self.by_id[def_id].kind.tag();
+        self.by_tag.entry(tag).or_default().push(def_id);
+
+        def_id
+    }
+
+    pub fn update_def_kind(
+        &mut self,
+        def_id: DefId,
+        f: impl FnOnce(DefKind) -> DefKind,
+    ) -> &mut DefKind {
+        let def = &mut self.by_id[def_id];
+        let kind = mem::take(&mut def.kind);
+        let prev_tag = kind.tag();
+        let kind = f(kind);
+
+        if prev_tag != kind.tag() {
+            self.by_tag
+                .entry(prev_tag)
+                .or_default()
+                .retain(|&d| d != def_id);
+            self.by_tag.entry(kind.tag()).or_default().push(def_id);
+        }
+
+        def.kind = kind;
+
+        &mut def.kind
+    }
+}
+
+impl Index<DefId> for Defs {
+    type Output = Def;
+
+    fn index(&self, id: DefId) -> &Self::Output {
+        &self.by_id[id]
+    }
+}
+
+impl IndexMut<DefId> for Defs {
+    fn index_mut(&mut self, id: DefId) -> &mut Self::Output {
+        &mut self.by_id[id]
+    }
+}
+
+impl Index<DefKindTag> for Defs {
+    type Output = [DefId];
+
+    fn index(&self, tag: DefKindTag) -> &Self::Output {
+        match self.by_tag.get(&tag) {
+            Some(defs) => defs,
+            None => &[],
+        }
+    }
+}
+
 /// Information collected during name resolution.
 #[derive(Default, Debug)]
 pub struct NameRes {
     /// Entity definitions.
-    pub defs: SlotMap<DefId, Def>,
+    pub defs: Defs,
+
+    /// Entity definitions by their tag.
+    pub defs_by_tag: HashMap<DefKindTag, Vec<DefId>>,
 
     /// Variable scopes.
     pub scopes: SlotMap<ScopeId, Scope>,
@@ -258,7 +330,7 @@ impl NameRes {
     ///
     /// Looks entity definitions up in `defs`. See [`resolve_import`][NameRes::resolve_import] that
     /// supplies [`NameRes::defs`] at the cost of possible borrowing issues.
-    pub fn resolve_import_in(defs: &SlotMap<DefId, Def>, mut def_id: DefId) -> DefId {
+    pub fn resolve_import_in(defs: &Defs, mut def_id: DefId) -> DefId {
         while let DefKind::Import(import1) = &defs[def_id].kind {
             def_id = import1.resolution_cache.get();
 
@@ -501,7 +573,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             ScopeKind::Params(def_id),
         ));
 
-        self.sema.name_res.defs[def_id].kind = def.into();
+        self.sema
+            .name_res
+            .defs
+            .update_def_kind(def_id, |_| def.into());
     }
 
     fn add_def(

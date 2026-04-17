@@ -67,7 +67,52 @@ pub enum DefKind {
     Pred(DefPred),
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DefKindTag {
+    #[default]
+    Dummy,
+
+    Import,
+    BuiltinCtor,
+    SemanticTy,
+    SemanticTyEnumValue,
+    TyAlias,
+    Struct,
+    Enum,
+    EnumVariant,
+    Annotation,
+    Action,
+    Automaton,
+    Function,
+    Variable,
+    State,
+    TyVariable,
+    Pred,
+}
+
 impl DefKind {
+    pub fn tag(&self) -> DefKindTag {
+        match self {
+            Self::Dummy => DefKindTag::Dummy,
+            Self::Import(_) => DefKindTag::Import,
+            Self::BuiltinCtor(_) => DefKindTag::BuiltinCtor,
+            Self::SemanticTy(_) => DefKindTag::SemanticTy,
+            Self::SemanticTyEnumValue { .. } => DefKindTag::SemanticTyEnumValue,
+            Self::TyAlias(_) => DefKindTag::TyAlias,
+            Self::Struct(_) => DefKindTag::Struct,
+            Self::Enum(_) => DefKindTag::Enum,
+            Self::EnumVariant { .. } => DefKindTag::EnumVariant,
+            Self::Annotation(_) => DefKindTag::Annotation,
+            Self::Action(_) => DefKindTag::Action,
+            Self::Automaton(_) => DefKindTag::Automaton,
+            Self::Function(_) => DefKindTag::Function,
+            Self::Variable(_) => DefKindTag::Variable,
+            Self::State(_) => DefKindTag::State,
+            Self::TyVariable(_) => DefKindTag::TyVariable,
+            Self::Pred(_) => DefKindTag::Pred,
+        }
+    }
+
     pub fn as_import(&self) -> Option<&DefImport> {
         match self {
             Self::Import(def) => Some(def),

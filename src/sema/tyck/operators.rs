@@ -12,6 +12,19 @@ use crate::sema::tyck::{BuiltinTys, FnSig, Pass};
 use crate::util::format_list;
 
 #[derive(Debug, Clone)]
+pub enum NumericCmpOpOverload {
+    SameSign(IntCtor),
+    I64U64,
+    U64I64,
+}
+
+impl From<IntCtor> for NumericCmpOpOverload {
+    fn from(value: IntCtor) -> Self {
+        Self::SameSign(value)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum OpOverload {
     // unary operators.
     Plus(IntCtor),
@@ -33,14 +46,14 @@ pub enum OpOverload {
     BitOr(IntCtor),
     BitXor(IntCtor),
     BitAnd(IntCtor),
-    Lt(IntCtor),
-    Le(IntCtor),
-    Gt(IntCtor),
-    Ge(IntCtor),
-    EqNumeric(IntCtor),
+    Lt(NumericCmpOpOverload),
+    Le(NumericCmpOpOverload),
+    Gt(NumericCmpOpOverload),
+    Ge(NumericCmpOpOverload),
+    EqNumeric(NumericCmpOpOverload),
     EqString,
     EqEnum,
-    NeNumeric(IntCtor),
+    NeNumeric(NumericCmpOpOverload),
     NeString,
     NeEnum,
     InSet,
@@ -215,14 +228,36 @@ fn cmp<O: Op + Clone>(
     op: O,
     loc: &Loc,
     builtin: &BuiltinTys,
-    overload: impl Fn(IntCtor) -> OpOverload,
+    overload: impl Fn(NumericCmpOpOverload) -> OpOverload,
 ) -> Vec<OpFnSigProvider<O>> {
     builtin
         .int_tys()
         .into_iter()
         .map(|(ctor, ty)| {
-            OpFnSigProvider::concrete(op.clone(), loc, overload(ctor), vec![ty, ty], builtin.bool)
+            OpFnSigProvider::concrete(
+                op.clone(),
+                loc,
+                overload(ctor.into()),
+                vec![ty, ty],
+                builtin.bool,
+            )
         })
+        .chain([
+            OpFnSigProvider::concrete(
+                op.clone(),
+                loc,
+                overload(NumericCmpOpOverload::I64U64),
+                vec![builtin.int64, builtin.unsigned64],
+                builtin.bool,
+            ),
+            OpFnSigProvider::concrete(
+                op.clone(),
+                loc,
+                overload(NumericCmpOpOverload::U64I64),
+                vec![builtin.unsigned64, builtin.int64],
+                builtin.bool,
+            ),
+        ])
         .collect()
 }
 

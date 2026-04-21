@@ -111,6 +111,42 @@ pub enum ReplaceTyArgs<'a> {
     No,
 }
 
+#[derive(Debug, Clone)]
+struct ExprCkCtx {
+    expected: Option<TyId>,
+    is_field_base: bool,
+}
+
+impl ExprCkCtx {
+    fn empty() -> Self {
+        Self {
+            expected: None,
+            is_field_base: false,
+        }
+    }
+
+    fn expecting(ty: TyId) -> Self {
+        Self {
+            expected: Some(ty),
+            is_field_base: false,
+        }
+    }
+
+    fn field_base(&self) -> Self {
+        Self {
+            expected: None,
+            is_field_base: true,
+        }
+    }
+
+    fn nested(&self, expected: Option<TyId>) -> Self {
+        Self {
+            expected,
+            is_field_base: false,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct TyCk {
     pub tys: SlotMap<TyId, Ty>,
@@ -1833,26 +1869,26 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn tyck_expr(&mut self, expr_id: ExprId, expected: Option<TyId>) -> TyId {
+    fn tyck_expr(&mut self, expr_id: ExprId, ctx: ExprCkCtx) -> TyId {
         let expr = &self.sema.libsl.exprs[expr_id];
 
         match &expr.kind {
             ast::ExprKind::Dummy => unreachable!(),
-            ast::ExprKind::PrimitiveLit(e) => self.tyck_expr_primitive_lit(expr, e, expected),
-            ast::ExprKind::ArrayLit(e) => self.tyck_expr_array_lit(expr, e, expected),
-            ast::ExprKind::SetLit(e) => self.tyck_expr_set_lit(expr, e, expected),
-            ast::ExprKind::ProcCall(e) => self.tyck_expr_proc_call(expr, e, expected),
-            ast::ExprKind::ActionCall(e) => self.tyck_expr_action_call(expr, e, expected),
-            ast::ExprKind::Instantiate(e) => self.tyck_expr_instantiate(expr, e, expected),
-            ast::ExprKind::Name(e) => self.tyck_expr_name(expr, e, expected),
-            ast::ExprKind::Prev(e) => self.tyck_expr_prev(expr, e, expected),
-            ast::ExprKind::Field(e) => self.tyck_expr_field(expr, e, expected),
-            ast::ExprKind::Index(e) => self.tyck_expr_index(expr, e, expected),
-            ast::ExprKind::HasConcept(e) => self.tyck_expr_has_concept(expr, e, expected),
-            ast::ExprKind::Cast(e) => self.tyck_expr_cast(expr, e, expected),
-            ast::ExprKind::TyCompare(e) => self.tyck_expr_ty_compare(expr, e, expected),
-            ast::ExprKind::Unary(e) => self.tyck_expr_unary(expr, e, expected),
-            ast::ExprKind::Binary(e) => self.tyck_expr_binary(expr, e, expected),
+            ast::ExprKind::PrimitiveLit(e) => self.tyck_expr_primitive_lit(expr, e, ctx),
+            ast::ExprKind::ArrayLit(e) => self.tyck_expr_array_lit(expr, e, ctx),
+            ast::ExprKind::SetLit(e) => self.tyck_expr_set_lit(expr, e, ctx),
+            ast::ExprKind::ProcCall(e) => self.tyck_expr_proc_call(expr, e, ctx),
+            ast::ExprKind::ActionCall(e) => self.tyck_expr_action_call(expr, e, ctx),
+            ast::ExprKind::Instantiate(e) => self.tyck_expr_instantiate(expr, e, ctx),
+            ast::ExprKind::Name(e) => self.tyck_expr_name(expr, e, ctx),
+            ast::ExprKind::Prev(e) => self.tyck_expr_prev(expr, e, ctx),
+            ast::ExprKind::Field(e) => self.tyck_expr_field(expr, e, ctx),
+            ast::ExprKind::Index(e) => self.tyck_expr_index(expr, e, ctx),
+            ast::ExprKind::HasConcept(e) => self.tyck_expr_has_concept(expr, e, ctx),
+            ast::ExprKind::Cast(e) => self.tyck_expr_cast(expr, e, ctx),
+            ast::ExprKind::TyCompare(e) => self.tyck_expr_ty_compare(expr, e, ctx),
+            ast::ExprKind::Unary(e) => self.tyck_expr_unary(expr, e, ctx),
+            ast::ExprKind::Binary(e) => self.tyck_expr_binary(expr, e, ctx),
         }
 
         self.sema.tyck.exprs[expr_id]
@@ -1895,7 +1931,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn tyck_op_expr<O: Op>(
         &mut self,
         expr: &'ast ast::Expr,
-        expected: Option<TyId>,
+        ctx: ExprCkCtx,
         op: O,
         args: &[TyId],
         mut candidates: Vec<OpFnSigProvider<O>>,
@@ -1924,7 +1960,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
 
         let ret = self.sema.tyck.subst(sig.ret.unwrap(), &ty_param_map);
-        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), expected, ret);
+        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, ret);
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
@@ -1964,14 +2000,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .build()
     }
 
-    fn resolve_expr_name(
-        &mut self,
-        mut scope_id: ScopeId,
-        name: &ast::Name,
-    ) -> Result<ResolvedName> {
-        let loc = &name.loc;
-        let name = name.to_string();
-
+    fn try_resolve_expr_name(&self, mut scope_id: ScopeId, name: &str) -> Result<ResolvedName> {
         loop {
             let scope = &self.sema.name_res.scopes[scope_id];
 
@@ -1983,23 +2012,28 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             if let Some(def_id) = self
                 .sema
                 .name_res
-                .try_resolve_local(scope_id, Ns::Var, &name)
+                .try_resolve_local(scope_id, Ns::Var, name)
             {
                 return Ok(ResolvedName { kind, def_id });
             }
 
             match scope.parent {
                 Some(parent_scope_id) => scope_id = parent_scope_id,
-
-                None => {
-                    self.result = Err(());
-                    self.diag
-                        .emit(NameRes::make_unresolved_name_error(&name, loc.clone()));
-
-                    return Err(());
-                }
+                None => return Err(()),
             }
         }
+    }
+
+    fn resolve_expr_name(&mut self, scope_id: ScopeId, name: &ast::Name) -> Result<ResolvedName> {
+        let loc = &name.loc;
+        let name = name.to_string();
+
+        self.try_resolve_expr_name(scope_id, &name)
+            .inspect_err(|()| {
+                self.result = Err(());
+                self.diag
+                    .emit(NameRes::make_unresolved_name_error(&name, loc.clone()));
+            })
     }
 
     fn check_assignable(&mut self, stmt: &'ast ast::Stmt, lhs: ExprId) {
@@ -2287,9 +2321,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             let param_def_id = self.sema.name_res.annotations[annotation.id].args[idx];
 
             if erroneous {
-                self.tyck_expr(arg.expr, None);
+                self.tyck_expr(arg.expr, ExprCkCtx::empty());
             } else {
-                self.tyck_expr(arg.expr, Some(self.sema.tyck.def_tys[param_def_id]));
+                self.tyck_expr(
+                    arg.expr,
+                    ExprCkCtx::expecting(self.sema.tyck.def_tys[param_def_id]),
+                );
             }
 
             {
@@ -2404,7 +2441,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         for (param, ty_id) in iter::zip(&d.params, param_tys) {
             if let Some(expr_id) = param.default {
-                self.tyck_expr(expr_id, Some(ty_id));
+                self.tyck_expr(expr_id, ExprCkCtx::expecting(ty_id));
             }
         }
     }
@@ -2443,7 +2480,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         if let Some(expr_id) = d.init {
             let def_id = self.sema.name_res.decl_defs[decl.id];
             let ty_id = self.sema.tyck.def_tys[def_id];
-            self.tyck_expr(expr_id, Some(ty_id));
+            self.tyck_expr(expr_id, ExprCkCtx::expecting(ty_id));
         }
     }
 
@@ -2550,7 +2587,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_stmt_if(&mut self, _stmt: &'ast ast::Stmt, s: &'ast ast::StmtIf) {
-        self.tyck_expr(s.cond, Some(self.sema.tyck.builtin.bool));
+        self.tyck_expr(s.cond, ExprCkCtx::expecting(self.sema.tyck.builtin.bool));
 
         for &stmt_id in iter::chain(&s.then_branch, &s.else_branch) {
             self.tyck_stmt(stmt_id);
@@ -2558,8 +2595,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_stmt_assign(&mut self, stmt: &'ast ast::Stmt, s: &'ast ast::StmtAssign) {
-        let lhs = self.tyck_expr(s.lhs, None);
-        self.tyck_expr(s.rhs, Some(lhs));
+        let lhs = self.tyck_expr(s.lhs, ExprCkCtx::empty());
+        self.tyck_expr(s.rhs, ExprCkCtx::expecting(lhs));
 
         let kind = match &self.sema.libsl.exprs[s.lhs].kind {
             ast::ExprKind::Name(_) => {
@@ -2611,7 +2648,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_stmt_expr(&mut self, _stmt: &'ast ast::Stmt, expr_id: ExprId) {
-        self.tyck_expr(expr_id, None);
+        self.tyck_expr(expr_id, ExprCkCtx::empty());
     }
 
     fn tyck_pred(&mut self, pred_id: PredId) {
@@ -2642,7 +2679,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_pred_if(&mut self, _pred: &'ast ast::Pred, p: &'ast ast::PredIf) {
-        self.tyck_expr(p.cond, Some(self.sema.tyck.builtin.bool));
+        self.tyck_expr(p.cond, ExprCkCtx::expecting(self.sema.tyck.builtin.bool));
         self.tyck_pred(p.then_branch);
 
         if let Some(else_branch) = p.else_branch {
@@ -2651,16 +2688,16 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_pred_expr(&mut self, _pred: &'ast ast::Pred, expr_id: ExprId) {
-        self.tyck_expr(expr_id, Some(self.sema.tyck.builtin.bool));
+        self.tyck_expr(expr_id, ExprCkCtx::expecting(self.sema.tyck.builtin.bool));
     }
 
     fn tyck_expr_primitive_lit(
         &mut self,
         expr: &'ast ast::Expr,
         e: &'ast ast::ExprPrimitiveLit,
-        expected: Option<TyId>,
+        ctx: ExprCkCtx,
     ) {
-        let ty_id = self.check_lit_ty(ConstrProvenance::Expr(expr.id), &e.lit, expected);
+        let ty_id = self.check_lit_ty(ConstrProvenance::Expr(expr.id), &e.lit, ctx.expected);
 
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
@@ -2669,19 +2706,19 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         &mut self,
         expr: &'ast ast::Expr,
         e: &'ast ast::ExprArrayLit,
-        expected: Option<TyId>,
+        ctx: ExprCkCtx,
     ) {
         let elem_ty_id = self.fresh_var(VarProvenance::Element { of: expr.id });
 
         for &elem in &e.elems {
-            self.tyck_expr(elem, Some(elem_ty_id));
+            self.tyck_expr(elem, ctx.nested(Some(elem_ty_id)));
         }
 
         let ty_id = self
             .sema
             .tyck
             .add_ctor_ty(self.sema.name_res.prelude_defs.array, vec![elem_ty_id]);
-        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), expected, ty_id);
+        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, ty_id);
 
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
@@ -2690,19 +2727,19 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         &mut self,
         expr: &'ast ast::Expr,
         e: &'ast ast::ExprSetLit,
-        expected: Option<TyId>,
+        ctx: ExprCkCtx,
     ) {
         let elem_ty_id = self.fresh_var(VarProvenance::Element { of: expr.id });
 
         for &elem in &e.elems {
-            self.tyck_expr(elem, Some(elem_ty_id));
+            self.tyck_expr(elem, ctx.nested(Some(elem_ty_id)));
         }
 
         let ty_id = self
             .sema
             .tyck
             .add_ctor_ty(self.sema.name_res.prelude_defs.set, vec![elem_ty_id]);
-        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), expected, ty_id);
+        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, ty_id);
 
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
@@ -2711,7 +2748,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         &mut self,
         expr: &'ast ast::Expr,
         e: &'ast ast::ExprProcCall,
-        expected: Option<TyId>,
+        ctx: ExprCkCtx,
     ) {
         self.sema
             .tyck
@@ -2721,7 +2758,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         let recv = e
             .recv
             .map(|expr_id| {
-                let ty_id = self.tyck_expr(expr_id, None);
+                let ty_id = self.tyck_expr(expr_id, ctx.nested(None));
 
                 self.solve_ty(ty_id)
             })
@@ -2739,7 +2776,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .args
             .iter()
             .copied()
-            .map(|arg| self.tyck_expr(arg, None))
+            .map(|arg| self.tyck_expr(arg, ctx.nested(None)))
             .collect::<Vec<_>>();
 
         let Ok(recv) = recv else {
@@ -2798,7 +2835,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
 
         let ret = self.sema.tyck.subst(sig.ret.unwrap(), &ty_param_map);
-        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), expected, ret);
+        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, ret);
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
@@ -2806,7 +2843,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         &mut self,
         expr: &'ast ast::Expr,
         e: &'ast ast::ExprActionCall,
-        expected: Option<TyId>,
+        ctx: ExprCkCtx,
     ) {
         // TODO: deduplicate.
         let ty_args = e
@@ -2821,7 +2858,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .args
             .iter()
             .copied()
-            .map(|arg| self.tyck_expr(arg, None))
+            .map(|arg| self.tyck_expr(arg, ctx.nested(None)))
             .collect::<Vec<_>>();
 
         let def_id = self.sema.name_res.expr_action_calls[expr.id];
@@ -2842,7 +2879,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
 
         let ret = self.sema.tyck.subst(sig.ret.unwrap(), &ty_param_map);
-        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), expected, ret);
+        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, ret);
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
@@ -2850,7 +2887,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         &mut self,
         expr: &'ast ast::Expr,
         e: &'ast ast::ExprInstantiate,
-        expected: Option<TyId>,
+        ctx: ExprCkCtx,
     ) {
         let automaton_def_id = self.sema.name_res.expr_instantiations[expr.id].automaton;
 
@@ -2899,10 +2936,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 ast::ConstructorArg::Var(loc, _, expr_id) => {
                     use slotmap::sparse_secondary::Entry;
 
-                    let ty_id = self.tyck_expr(*expr_id, None);
-                    let info = &self.sema.name_res.expr_instantiations[expr.id];
+                    let var_def_id = self.sema.name_res.expr_instantiations[expr.id].args[idx];
+                    let ty_id = self.tyck_expr(
+                        *expr_id,
+                        ctx.nested(Some(self.sema.tyck.def_tys[var_def_id])),
+                    );
 
-                    match args.entry(info.args[idx]).unwrap() {
+                    match args.entry(var_def_id).unwrap() {
                         Entry::Vacant(entry) => {
                             entry.insert(Ok((arg, ty_id)));
                         }
@@ -3015,16 +3055,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         let ty_args = generics.iter().map(|ty_arg| self.repr(*ty_arg)).collect();
 
         let ty_id = self.sema.tyck.add_ctor_ty(automaton_def_id, ty_args);
-        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), expected, ty_id);
+        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, ty_id);
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
-    fn tyck_expr_name(
-        &mut self,
-        expr: &'ast ast::Expr,
-        e: &'ast ast::ExprName,
-        expected: Option<TyId>,
-    ) {
+    fn tyck_expr_name(&mut self, expr: &'ast ast::Expr, e: &'ast ast::ExprName, ctx: ExprCkCtx) {
         let scope_id = self.sema.name_res.exprs[expr.id].scope_id;
 
         let Ok(res) = self.resolve_expr_name(scope_id, &e.name) else {
@@ -3040,34 +3075,24 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.sema.tyck.name_exprs.insert(expr.id, res);
 
         let ty_id = self.sema.tyck.def_tys[def_id];
-        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), expected, ty_id);
+        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, ty_id);
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
-    fn tyck_expr_prev(
-        &mut self,
-        expr: &'ast ast::Expr,
-        e: &'ast ast::ExprPrev,
-        expected: Option<TyId>,
-    ) {
+    fn tyck_expr_prev(&mut self, expr: &'ast ast::Expr, e: &'ast ast::ExprPrev, ctx: ExprCkCtx) {
         // TODO: ensure well-formedness.
-        let ty_id = self.tyck_expr(e.base, expected);
+        let ty_id = self.tyck_expr(e.base, ctx.nested(ctx.expected));
 
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
-    fn tyck_expr_field(
-        &mut self,
-        expr: &'ast ast::Expr,
-        e: &'ast ast::ExprField,
-        expected: Option<TyId>,
-    ) {
+    fn tyck_expr_field(&mut self, expr: &'ast ast::Expr, e: &'ast ast::ExprField, ctx: ExprCkCtx) {
         self.sema
             .tyck
             .exprs
             .insert(expr.id, self.sema.tyck.builtin.error);
 
-        let base = self.tyck_expr(e.base, None);
+        let base = self.tyck_expr(e.base, ctx.field_base());
         let Ok(base) = self.solve_ty(base) else {
             return;
         };
@@ -3142,25 +3167,20 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         let ty_id = self.sema.tyck.def_tys[def_id];
         let ty_id = self.sema.tyck.subst(ty_id, &param_map);
-        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), expected, ty_id);
+        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, ty_id);
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
-    fn tyck_expr_index(
-        &mut self,
-        expr: &'ast ast::Expr,
-        e: &'ast ast::ExprIndex,
-        expected: Option<TyId>,
-    ) {
+    fn tyck_expr_index(&mut self, expr: &'ast ast::Expr, e: &'ast ast::ExprIndex, ctx: ExprCkCtx) {
         let elem_ty = self.fresh_var(VarProvenance::Element { of: expr.id });
         let array_ty = self
             .sema
             .tyck
             .add_ctor_ty(self.sema.name_res.prelude_defs.array, vec![elem_ty]);
-        self.tyck_expr(e.base, Some(array_ty));
-        self.tyck_expr(e.index, Some(self.sema.tyck.builtin.int32));
+        self.tyck_expr(e.base, ctx.nested(Some(array_ty)));
+        self.tyck_expr(e.index, ctx.nested(Some(self.sema.tyck.builtin.int32)));
 
-        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), expected, elem_ty);
+        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, elem_ty);
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
@@ -3168,20 +3188,15 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         &mut self,
         _expr: &'ast ast::Expr,
         _e: &'ast ast::ExprHasConcept,
-        _expected: Option<TyId>,
+        _ctx: ExprCkCtx,
     ) {
         unimplemented!()
     }
 
-    fn tyck_expr_cast(
-        &mut self,
-        expr: &'ast ast::Expr,
-        e: &'ast ast::ExprCast,
-        expected: Option<TyId>,
-    ) {
-        self.tyck_expr(e.expr, None);
+    fn tyck_expr_cast(&mut self, expr: &'ast ast::Expr, e: &'ast ast::ExprCast, ctx: ExprCkCtx) {
+        self.tyck_expr(e.expr, ctx.nested(None));
         let ty_id = self.tyck_ty_expr(e.ty_expr);
-        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), expected, ty_id);
+        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, ty_id);
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
@@ -3189,39 +3204,37 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         &mut self,
         expr: &'ast ast::Expr,
         e: &'ast ast::ExprTyCompare,
-        expected: Option<TyId>,
+        ctx: ExprCkCtx,
     ) {
-        self.tyck_expr(e.expr, None);
+        self.tyck_expr(e.expr, ctx.nested(None));
         self.tyck_ty_expr(e.ty_expr);
         let ty_id = self.check_ty(
             ConstrProvenance::Expr(expr.id),
-            expected,
+            ctx.expected,
             self.sema.tyck.builtin.bool,
         );
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
-    fn tyck_expr_unary(
-        &mut self,
-        expr: &'ast ast::Expr,
-        e: &'ast ast::ExprUnary,
-        expected: Option<TyId>,
-    ) {
-        let args = vec![self.tyck_expr(e.expr, None)];
+    fn tyck_expr_unary(&mut self, expr: &'ast ast::Expr, e: &'ast ast::ExprUnary, ctx: ExprCkCtx) {
+        let args = vec![self.tyck_expr(e.expr, ctx.nested(None))];
         let candidates = self.overloads_for_unary(e.op, &expr.loc);
 
-        self.tyck_op_expr(expr, expected, e.op, &args, candidates)
+        self.tyck_op_expr(expr, ctx, e.op, &args, candidates)
     }
 
     fn tyck_expr_binary(
         &mut self,
         expr: &'ast ast::Expr,
         e: &'ast ast::ExprBinary,
-        expected: Option<TyId>,
+        ctx: ExprCkCtx,
     ) {
-        let args = vec![self.tyck_expr(e.lhs, None), self.tyck_expr(e.rhs, None)];
+        let args = vec![
+            self.tyck_expr(e.lhs, ctx.nested(None)),
+            self.tyck_expr(e.rhs, ctx.nested(None)),
+        ];
         let candidates = self.overloads_for_binary(e.op, &expr.loc);
 
-        self.tyck_op_expr(expr, expected, e.op, &args, candidates)
+        self.tyck_op_expr(expr, ctx, e.op, &args, candidates)
     }
 }

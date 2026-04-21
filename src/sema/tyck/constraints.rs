@@ -27,8 +27,6 @@ enum Status {
     #[default]
     Sat,
 
-    Processing,
-
     Unsat,
 }
 
@@ -39,10 +37,6 @@ impl Status {
 
     fn is_unsat(&self) -> bool {
         matches!(self, Self::Unsat)
-    }
-
-    fn is_processing(&self) -> bool {
-        matches!(self, Self::Processing)
     }
 }
 
@@ -128,6 +122,7 @@ pub struct ConstrSet {
     unprocessed: Vec<ConstrId>,
     pub bounds: BoundSet,
     status: Status,
+    processing: bool,
 
     uf: TyUnionFind,
 
@@ -328,7 +323,7 @@ impl ConstrSet {
         entry.insert(id);
         self.unprocessed.push(id);
 
-        if !self.status.is_processing() {
+        if !self.processing {
             return self.process(sema, diag);
         }
 
@@ -336,13 +331,15 @@ impl ConstrSet {
     }
 
     fn process(&mut self, sema: &mut Sema<'_>, diag: &mut impl DiagCtx) -> Result {
-        assert!(!self.status.is_processing());
-
-        if self.status.is_unsat() {
-            return Err(());
+        if trace_enabled() {
+            eprintln!(
+                "processing constraints (remaining: {})...",
+                self.unprocessed.len()
+            );
         }
 
-        self.status = Status::Processing;
+        assert!(!self.processing);
+        self.processing = true;
 
         while let Some(&ty_id) = sema.tyck.ty_vec.get(self.last_registered_ty_idx) {
             self.normalize(sema, ty_id, false);
@@ -353,15 +350,12 @@ impl ConstrSet {
 
         while let Some(constr_id) = self.unprocessed.pop() {
             if self.reduce(sema, diag, constr_id).is_err() {
+                self.status = Status::Unsat;
                 result = Err(());
             }
         }
 
-        if self.status.is_processing() && result.is_ok() {
-            self.status = Status::Sat;
-        } else if result.is_err() {
-            self.status = Status::Unsat;
-        }
+        self.processing = false;
 
         result
     }
@@ -984,7 +978,7 @@ impl ConstrSet {
 
         var.unprocessed.push((bound, provenance));
 
-        if var.status.is_processing() {
+        if var.processing {
             if trace_enabled() {
                 eprintln!("  queued");
             }
@@ -1007,31 +1001,24 @@ impl ConstrSet {
     ) -> Result {
         let mut var = self.bounds.var_mut(idx);
 
-        assert!(!var.status.is_processing());
-
-        if var.status.is_unsat() {
-            return Err(());
-        }
-
-        var.status = Status::Processing;
+        assert!(!var.processing);
+        var.processing = true;
 
         let mut result = Ok(());
 
         while let Some((bound, provenance)) = var.unprocessed.pop() {
-            if self.incorporate(sema, diag, idx, bound, provenance).is_err() {
+            let r = self.incorporate(sema, diag, idx, bound, provenance);
+            var = self.bounds.var_mut(idx);
+
+            if r.is_err() {
+                var.status = Status::Unsat;
                 result = Err(());
             }
-
-            var = self.bounds.var_mut(idx);
         }
 
-        if var.status.is_processing() && result.is_ok() {
-            var.status = Status::Sat;
-        } else if result.is_err() {
-            var.status = Status::Unsat;
-        }
+        var.processing = false;
 
-        Ok(())
+        result
     }
 
     fn update_bounds(&mut self, idx: usize) {
@@ -1626,6 +1613,7 @@ pub struct VarConstr {
 
     unprocessed: Vec<(VarBound, VarBoundProvenance)>,
     status: Status,
+    processing: bool,
 
     // indices of variables whose equality bounds mention this variable.
     used_by: BitSet,

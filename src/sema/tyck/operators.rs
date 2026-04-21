@@ -187,13 +187,25 @@ impl<O: Op> OverloadDiagProvider<OpFnSigProvider<O>> for OpOverloadDiagProvider<
         for &candidate in ambiguities {
             let _ = write!(
                 possible_candidates,
-                "\n  - {}",
+                "\n- {}",
                 format_list(&candidate.sig.params, |f, &ty_id| write!(
                     f,
                     "`{}`",
                     sema.format_ty(ty_id),
                 )),
             );
+
+            if !candidate.sig.generics.is_empty() {
+                let _ = write!(
+                    possible_candidates,
+                    " for any {}",
+                    format_list(&candidate.sig.generics, |f, &ty_id| write!(
+                        f,
+                        "`{}`",
+                        sema.format_ty(ty_id),
+                    )),
+                );
+            }
         }
 
         Diag::err()

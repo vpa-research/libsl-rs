@@ -359,7 +359,7 @@ impl NameRes {
         Diag::err()
             .at(loc.clone())
             .with_msg(format!("the name `{name}` is not defined"))
-            .with_label(Label::primary(loc).with_msg("used here"))
+            .with_label(Label::primary(loc))
             .build()
     }
 

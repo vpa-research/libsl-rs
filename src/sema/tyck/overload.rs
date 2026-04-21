@@ -112,7 +112,7 @@ impl OverloadDiagProvider<DefFnSigProvider> for CallOverloadDiagProvider<'_> {
         for candidate in ambiguities {
             let _ = write!(
                 possible_candidates,
-                "\n  - {} defined at {}",
+                "\n- {} defined at {}",
                 sema.format_def_signature(candidate.0),
                 sema.name_res.defs[candidate.0].loc.with_libsl(sema.libsl),
             );

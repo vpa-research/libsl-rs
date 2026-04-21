@@ -295,7 +295,12 @@ impl DiagCtx for PlainDiagCtx<'_> {
         }
 
         for note in &diag.notes {
-            eprintln!("  note: {note}");
+            let mut lines = note.lines();
+            eprintln!("  note: {}", lines.next().unwrap_or_default());
+
+            for line in lines {
+                eprintln!("    {line}");
+            }
         }
     }
 }

@@ -10,7 +10,7 @@ where
                 write!(fmt, ", ")?;
             }
 
-            if idx + 1 == elems.len() {
+            if idx > 0 && idx + 1 == elems.len() {
                 if idx == 1 {
                     write!(fmt, " ")?;
                 }

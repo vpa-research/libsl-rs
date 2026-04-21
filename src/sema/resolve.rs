@@ -358,7 +358,7 @@ impl NameRes {
     pub(crate) fn make_unresolved_name_error(name: &str, loc: Loc) -> Diag {
         Diag::err()
             .at(loc.clone())
-            .with_msg(format!("the name `{name}` is not defined"))
+            .with_msg(format!("name `{name}` is not defined"))
             .with_label(Label::primary(loc))
             .build()
     }

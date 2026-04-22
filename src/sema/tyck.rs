@@ -96,6 +96,7 @@ pub struct ResolvedName {
 pub enum ResolvedNameKind {
     Var,
     ImplicitField,
+    MemberScope(ScopeId),
 }
 
 #[derive(Debug, Clone)]
@@ -2000,12 +2001,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .build()
     }
 
-    fn try_resolve_expr_name(&self, mut scope_id: ScopeId, name: &str) -> Result<ResolvedName> {
+    fn try_resolve_expr_name(&self, mut scope_id: ScopeId, name: &str) -> Option<ResolvedName> {
         loop {
             let scope = &self.sema.name_res.scopes[scope_id];
 
             let kind = match scope.kind {
-                ScopeKind::Automaton(_) | ScopeKind::Struct(_) => ResolvedNameKind::ImplicitField,
+                ScopeKind::Instance(_) => ResolvedNameKind::ImplicitField,
                 _ => ResolvedNameKind::Var,
             };
 
@@ -2014,26 +2015,48 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 .name_res
                 .try_resolve_local(scope_id, Ns::Var, name)
             {
-                return Ok(ResolvedName { kind, def_id });
+                return Some(ResolvedName {
+                    kind,
+                    def_id: self.sema.name_res.resolve_import(def_id),
+                });
             }
 
             match scope.parent {
                 Some(parent_scope_id) => scope_id = parent_scope_id,
-                None => return Err(()),
+                None => return None,
             }
         }
     }
 
-    fn resolve_expr_name(&mut self, scope_id: ScopeId, name: &ast::Name) -> Result<ResolvedName> {
+    fn resolve_expr_name(
+        &mut self,
+        scope_id: ScopeId,
+        name: &ast::Name,
+        search_tys: bool,
+    ) -> Result<ResolvedName> {
         let loc = &name.loc;
         let name = name.to_string();
 
-        self.try_resolve_expr_name(scope_id, &name)
-            .inspect_err(|()| {
-                self.result = Err(());
-                self.diag
-                    .emit(NameRes::make_unresolved_name_error(&name, loc.clone()));
-            })
+        if let Some(res) = self.try_resolve_expr_name(scope_id, &name) {
+            return Ok(res);
+        }
+
+        if search_tys
+            && let Some(def_id) = self.sema.name_res.try_resolve(scope_id, Ns::Ty, &name)
+            && let def_id = self.sema.name_res.resolve_import(def_id)
+            && let Some(&scope_id) = self.sema.name_res.def_member_scopes.get(def_id)
+        {
+            return Ok(ResolvedName {
+                kind: ResolvedNameKind::MemberScope(scope_id),
+                def_id,
+            });
+        }
+
+        self.result = Err(());
+        self.diag
+            .emit(NameRes::make_unresolved_name_error(&name, loc.clone()));
+
+        Err(())
     }
 
     fn check_assignable(&mut self, stmt: &'ast ast::Stmt, lhs: ExprId) {
@@ -2609,6 +2632,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         implicit: true,
                         def_id: res.def_id,
                     },
+
+                    ResolvedNameKind::MemberScope(_) => unreachable!(),
                 }
             }
 
@@ -3062,7 +3087,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn tyck_expr_name(&mut self, expr: &'ast ast::Expr, e: &'ast ast::ExprName, ctx: ExprCkCtx) {
         let scope_id = self.sema.name_res.exprs[expr.id].scope_id;
 
-        let Ok(res) = self.resolve_expr_name(scope_id, &e.name) else {
+        let Ok(res) = self.resolve_expr_name(scope_id, &e.name, ctx.is_field_base) else {
             self.sema
                 .tyck
                 .exprs
@@ -3073,6 +3098,18 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         let def_id = res.def_id;
         self.sema.tyck.name_exprs.insert(expr.id, res);
+
+        if matches!(
+            self.sema.tyck.name_exprs[expr.id].kind,
+            ResolvedNameKind::MemberScope(_)
+        ) {
+            self.sema
+                .tyck
+                .exprs
+                .insert(expr.id, self.sema.tyck.builtin.any);
+
+            return;
+        }
 
         let ty_id = self.sema.tyck.def_tys[def_id];
         let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, ty_id);
@@ -3087,6 +3124,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_expr_field(&mut self, expr: &'ast ast::Expr, e: &'ast ast::ExprField, ctx: ExprCkCtx) {
+        enum Base {
+            MemberScope(DefId),
+            Expr(TyId),
+        }
+
         self.sema
             .tyck
             .exprs
@@ -3097,24 +3139,50 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             return;
         };
 
-        let (scope_id, param_map) = match &self.sema.tyck.tys[base] {
-            Ty::Error => return,
+        let (base, scope_id, param_map) = match self.sema.tyck.name_exprs.get(e.base) {
+            Some(&ResolvedName {
+                kind: ResolvedNameKind::MemberScope(scope_id),
+                def_id,
+                ..
+            }) => (Base::MemberScope(def_id), scope_id, Default::default()),
 
-            Ty::Ctor(t) => match &self.sema.name_res.defs[t.ctor].kind {
-                DefKind::Dummy => unreachable!(),
-                DefKind::Import(_) => unreachable!(),
+            _ => match &self.sema.tyck.tys[base] {
+                Ty::Error => return,
 
-                DefKind::Struct(def) => (
-                    self.sema.name_res.def_member_scopes[t.ctor],
-                    self.ty_param_map_from_args(&def.generics, &t.args),
+                Ty::Ctor(t) => match &self.sema.name_res.defs[t.ctor].kind {
+                    DefKind::Dummy => unreachable!(),
+                    DefKind::Import(_) => unreachable!(),
+
+                    DefKind::Struct(def) => (
+                        Base::Expr(base),
+                        def.instance_scope_id,
+                        self.ty_param_map_from_args(&def.generics, &t.args),
+                    ),
+
+                    DefKind::Automaton(def) => (
+                        Base::Expr(base),
+                        def.instance_scope_id,
+                        self.ty_param_map_from_args(&def.generics, &t.args),
+                    ),
+
+                    _ => {
+                        self.result = Err(());
+                        self.diag.emit(self.make_wrong_field_base_ty_err(
+                            expr.loc.clone(),
+                            e.base,
+                            base,
+                        ));
+
+                        return;
+                    }
+                },
+
+                Ty::Var(_) => unreachable!(
+                    ".solve_ty() returned a non-solution `{}`",
+                    self.sema.format_ty(base),
                 ),
 
-                DefKind::Automaton(def) => (
-                    self.sema.name_res.def_member_scopes[t.ctor],
-                    self.ty_param_map_from_args(&def.generics, &t.args),
-                ),
-
-                _ => {
+                Ty::Param(_) | Ty::Null | Ty::Union(_) => {
                     self.result = Err(());
                     self.diag.emit(self.make_wrong_field_base_ty_err(
                         expr.loc.clone(),
@@ -3125,27 +3193,27 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     return;
                 }
             },
-
-            Ty::Var(_) => unreachable!(
-                ".solve_ty() returned a non-solution `{}`",
-                self.sema.format_ty(base),
-            ),
-
-            Ty::Param(_) | Ty::Null | Ty::Union(_) => {
-                self.result = Err(());
-                self.diag
-                    .emit(self.make_wrong_field_base_ty_err(expr.loc.clone(), e.base, base));
-
-                return;
-            }
         };
 
         let field = e.field.to_string();
 
-        let Some(def_id) = self.sema.name_res.try_resolve(scope_id, Ns::Var, &field) else {
+        let Some(def_id) = self
+            .sema
+            .name_res
+            .try_resolve_local(scope_id, Ns::Var, &field)
+        else {
             self.result = Err(());
-            self.diag.emit(
-                Diag::err()
+            self.diag.emit(match base {
+                Base::MemberScope(def_id) => Diag::err()
+                    .at(e.field.loc.clone())
+                    .with_msg(format_args!(
+                        "no member `{field}` found in `{}`",
+                        self.sema.name_res.defs[def_id].name
+                    ))
+                    .with_label(Label::primary(self.sema.libsl.exprs[e.base].loc.clone()))
+                    .build(),
+
+                Base::Expr(base) => Diag::err()
                     .at(e.field.loc.clone())
                     .with_msg(format_args!(
                         "type `{}` has no field named `{field}`",
@@ -3160,11 +3228,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         ),
                     )
                     .build(),
-            );
+            });
 
             return;
         };
 
+        let def_id = self.sema.name_res.resolve_import(def_id);
         let ty_id = self.sema.tyck.def_tys[def_id];
         let ty_id = self.sema.tyck.subst(ty_id, &param_map);
         let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, ty_id);

@@ -80,6 +80,7 @@ pub enum ScopeKind {
     Struct(DefId),
     Enum(DefId),
     Automaton(DefId),
+    Instance(DefId),
     Block {
         func: DefId,
     },
@@ -486,6 +487,24 @@ impl DeclCtx {
             DeclCtx::FuncBody { def_id, scope_id } => (Some(def_id), scope_id),
         }
     }
+
+    fn outer_instance(&self, sema: &Sema<'_>) -> Option<(DefId, ScopeId)> {
+        match *self {
+            DeclCtx::Global(_) => None,
+
+            DeclCtx::Struct(def_id) => Some((
+                def_id,
+                sema.name_res.def::<DefStruct>(def_id).instance_scope_id,
+            )),
+
+            DeclCtx::Automaton { def_id, .. } => Some((
+                def_id,
+                sema.name_res.def::<DefAutomaton>(def_id).instance_scope_id,
+            )),
+
+            DeclCtx::FuncBody { .. } => None,
+        }
+    }
 }
 
 struct Pass<'ast, 's, D> {
@@ -845,10 +864,15 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     return;
                 };
 
-                let param_scope_id = self.add_param_scope(def_id, outer_scope_id);
+                let member_scope_id =
+                    self.add_member_scope(def_id, outer_scope_id, ScopeKind::Struct(def_id));
+                let param_scope_id = self.add_param_scope(def_id, member_scope_id);
+                let instance_scope_id = self.sema.name_res.scopes.insert(Scope::new(
+                    Some(param_scope_id),
+                    ScopeKind::Instance(def_id),
+                ));
                 self.def_mut::<DefStruct>(def_id).param_scope_id = param_scope_id;
-
-                self.add_member_scope(def_id, param_scope_id, ScopeKind::Struct(def_id));
+                self.def_mut::<DefStruct>(def_id).instance_scope_id = instance_scope_id;
 
                 for &member_decl_id in &decl.decls {
                     self.process_decl_symbol(DeclCtx::Struct(def_id), member_decl_id);
@@ -938,10 +962,15 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     return;
                 };
 
-                let param_scope_id = self.add_param_scope(def_id, outer_scope_id);
+                let member_scope_id =
+                    self.add_member_scope(def_id, outer_scope_id, ScopeKind::Automaton(def_id));
+                let param_scope_id = self.add_param_scope(def_id, member_scope_id);
+                let instance_scope_id = self.sema.name_res.scopes.insert(Scope::new(
+                    Some(param_scope_id),
+                    ScopeKind::Instance(def_id),
+                ));
                 self.def_mut::<DefAutomaton>(def_id).param_scope_id = param_scope_id;
-
-                self.add_member_scope(def_id, param_scope_id, ScopeKind::Automaton(def_id));
+                self.def_mut::<DefAutomaton>(def_id).instance_scope_id = instance_scope_id;
 
                 for &var_decl_id in &decl.constructor_variables {
                     self.process_decl_symbol(
@@ -965,9 +994,17 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             }
 
             ast::DeclKind::Function(decl) => {
+                let scope_id = if decl.is_static {
+                    outer_scope_id
+                } else {
+                    ctx.outer_instance(self.sema)
+                        .map(|(_, scope_id)| scope_id)
+                        .unwrap_or(outer_scope_id)
+                };
+
                 let Ok(def_id) = self.add_decl_def(
                     decl_id,
-                    outer_scope_id,
+                    scope_id,
                     Ns::Function,
                     decl.name.to_string(),
                     decl.name.loc.clone(),
@@ -983,33 +1020,43 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     return;
                 };
 
-                let param_scope_id = self.add_param_scope(def_id, outer_scope_id);
+                let param_scope_id = self.add_param_scope(def_id, scope_id);
                 self.def_mut::<DefFunction>(def_id).param_scope_id = param_scope_id;
 
                 self.record_member_function(ctx, decl.is_static, decl.is_method, def_id);
             }
 
             ast::DeclKind::Variable(decl) => {
-                let kind = match ctx {
-                    DeclCtx::Global(_) => VariableKind::Global,
-                    DeclCtx::Struct(def_id) => VariableKind::Field { of: def_id },
+                let (scope_id, kind) = match ctx {
+                    DeclCtx::Global(_) => (outer_scope_id, VariableKind::Global),
+
+                    DeclCtx::Struct(def_id) => (
+                        ctx.outer_instance(self.sema).unwrap().1,
+                        VariableKind::Field { of: def_id },
+                    ),
 
                     DeclCtx::Automaton {
                         def_id,
                         is_constructor_var: true,
-                    } => VariableKind::ConstructorVar { of: def_id },
+                    } => (
+                        ctx.outer_instance(self.sema).unwrap().1,
+                        VariableKind::ConstructorVar { of: def_id },
+                    ),
 
                     DeclCtx::Automaton {
                         def_id,
                         is_constructor_var: false,
-                    } => VariableKind::Field { of: def_id },
+                    } => (
+                        ctx.outer_instance(self.sema).unwrap().1,
+                        VariableKind::Field { of: def_id },
+                    ),
 
                     DeclCtx::FuncBody { .. } => unreachable!(),
                 };
 
                 let Ok(def_id) = self.add_decl_def(
                     decl_id,
-                    outer_scope_id,
+                    scope_id,
                     Ns::Var,
                     decl.name.to_string(),
                     decl.name.loc.clone(),
@@ -1340,6 +1387,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         let name = annotation.name.to_string();
         let def_id = self
             .resolve(scope_id, Ns::Annotation, &name, &annotation.name.loc)
+            .map(|def_id| self.sema.name_res.resolve_import(def_id))
             .ok();
         let param_scope_id = def_id.map(|def_id| self.def::<DefAnnotation>(def_id).param_scope_id);
 
@@ -1357,6 +1405,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 let param_def_id = match &arg.name {
                     Some(name) => param_scope_id.and_then(|param_scope_id| {
                         self.resolve(param_scope_id, Ns::Var, &name.to_string(), &name.loc)
+                            .map(|def_id| self.sema.name_res.resolve_import(def_id))
                             .ok()
                     }),
 
@@ -2297,6 +2346,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         let ty_name = ty_expr.ty_name.to_string();
 
         if let Ok(ctor_def_id) = self.resolve(scope_id, Ns::Ty, &ty_name, &ty_expr.ty_name.loc) {
+            let ctor_def_id = self.sema.name_res.resolve_import(ctor_def_id);
             self.sema
                 .name_res
                 .ty_expr_names
@@ -2454,6 +2504,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             &expr.name.to_string(),
             &expr.name.loc,
         ) {
+            let def_id = self.sema.name_res.resolve_import(def_id);
             self.sema.name_res.expr_action_calls.insert(expr_id, def_id);
         }
 
@@ -2481,6 +2532,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 &expr.name.to_string(),
                 &expr.name.loc,
             )
+            .map(|def_id| self.sema.name_res.resolve_import(def_id))
             .ok();
 
         if let Some(ty_args) = &expr.generics {
@@ -2498,6 +2550,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         let scope_id = self.sema.name_res.def_member_scopes[automaton];
 
                         self.resolve(scope_id, Ns::State, &name.to_string(), &name.loc)
+                            .map(|def_id| self.sema.name_res.resolve_import(def_id))
                             .ok()
                     })
                     .unwrap_or_default(),
@@ -2508,6 +2561,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                             let scope_id = self.sema.name_res.def_member_scopes[automaton];
 
                             self.resolve(scope_id, Ns::Var, &name.to_string(), &name.loc)
+                                .map(|def_id| self.sema.name_res.resolve_import(def_id))
                                 .ok()
                                 .and_then(|def_id| {
                                     let def = self.def::<DefAutomaton>(automaton);
@@ -2580,6 +2634,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             &expr.concept.to_string(),
             &expr.concept.loc,
         ) {
+            let def_id = self.sema.name_res.resolve_import(def_id);
             self.sema.name_res.expr_has_concepts.insert(expr_id, def_id);
         }
     }

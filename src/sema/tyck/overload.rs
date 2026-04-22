@@ -262,7 +262,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     // enumerated semantic types do not define functions.
                 }
 
-                ScopeKind::Struct(def_id) | ScopeKind::Automaton(def_id) => {
+                ScopeKind::Instance(def_id)
+                | ScopeKind::Struct(def_id)
+                | ScopeKind::Automaton(def_id) => {
                     self.find_method_candidates(
                         &mut candidates,
                         *def_id,

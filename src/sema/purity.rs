@@ -158,6 +158,8 @@ impl<'ast, D: DiagCtx> ProcChecker<'ast, '_, '_, D> {
                     },
                 ));
             }
+
+            ResolvedNameKind::MemberScope(_) => {}
         }
     }
 }

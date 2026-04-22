@@ -1365,9 +1365,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         );
 
         self.sema.tyck.underlying_tys.insert(def_id, common_ty);
+        // FIXME: make enums non-generic!
+        let ty_id = self.sema.tyck.add_ctor_ty(def_id, vec![]);
 
         for &variant in &self.sema.name_res.def::<DefEnum>(def_id).variants {
-            self.sema.tyck.def_tys.insert(variant, common_ty);
+            self.sema.tyck.def_tys.insert(variant, ty_id);
         }
     }
 

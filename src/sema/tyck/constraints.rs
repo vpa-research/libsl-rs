@@ -148,7 +148,9 @@ impl ConstrSet {
     }
 
     pub fn is_free(&self, tyck: &TyCk, ty_id: TyId) -> bool {
-        !tyck.var_occurrences[self.repr(ty_id)].is_empty()
+        tyck.var_occurrences[self.repr(ty_id)]
+            .iter()
+            .any(|&var_ty_id| !self.is_solved(tyck, tyck.tys[var_ty_id].as_var().unwrap()))
     }
 
     fn is_solved(&self, tyck: &TyCk, idx: usize) -> bool {
@@ -1325,6 +1327,10 @@ impl ConstrSet {
         diag: &mut impl DiagCtx,
         mut vars: Vec<usize>,
     ) -> Result {
+        if trace_enabled() {
+            eprintln!("constrs.solve({vars:?})");
+        }
+
         while let Some(idx) = vars.pop() {
             if trace_enabled() {
                 eprintln!("solving {idx} and its dependencies");
@@ -1342,7 +1348,7 @@ impl ConstrSet {
 
             for idx in self.find_dependent_vars(&sema.tyck, idx) {
                 if trace_enabled() {
-                    eprintln!("  solving {idx}");
+                    eprintln!("  solving {idx} ({})", self.display_var(sema, idx));
                 }
 
                 if self.is_solved(&sema.tyck, idx) {
@@ -1354,6 +1360,7 @@ impl ConstrSet {
                 }
 
                 self.solve_in_isolation(sema, diag, idx)?;
+                debug_assert!(self.is_solved(&sema.tyck, idx));
             }
         }
 
@@ -1410,6 +1417,16 @@ impl ConstrSet {
     ) -> Result {
         let var_ty_id = sema.tyck.add_ty(Ty::Var(idx));
 
+        if trace_enabled() {
+            eprintln!(
+                "solve_in_isolation({}): has {} lower, {} upper, {} eq bounds",
+                sema.format_ty(var_ty_id),
+                self.bounds.var(idx).lower.len(),
+                self.bounds.var(idx).upper.len(),
+                self.bounds.var(idx).eq.is_some() as i32,
+            );
+        }
+
         if self.derive_solution_from_bounds(sema, diag, var_ty_id, idx, SubtypeBoundKind::Lower)? {
             if trace_enabled() {
                 eprintln!(
@@ -1417,6 +1434,8 @@ impl ConstrSet {
                     sema.format_ty(self.repr(var_ty_id)),
                 );
             }
+
+            debug_assert!(!self.is_free(&sema.tyck, var_ty_id));
 
             return Ok(());
         }
@@ -1428,6 +1447,7 @@ impl ConstrSet {
                     sema.format_ty(self.repr(var_ty_id)),
                 );
             }
+            debug_assert!(!self.is_free(&sema.tyck, var_ty_id));
 
             return Ok(());
         }
@@ -1458,10 +1478,22 @@ impl ConstrSet {
         idx: usize,
         kind: SubtypeBoundKind,
     ) -> Result<bool> {
+        if trace_enabled() {
+            eprintln!("derive_solution_from_bounds({kind:?})");
+        }
+
         let var = self.bounds.var(idx);
         let bounds = var
             .subtype_bounds(kind)
             .keys()
+            .inspect(|&ty_id| {
+                if trace_enabled() && self.is_free(&sema.tyck, ty_id) {
+                    eprintln!(
+                        "  skipping bound `{}`: has a free variable",
+                        sema.format_ty(ty_id)
+                    );
+                }
+            })
             .filter(|&ty_id| !self.is_free(&sema.tyck, ty_id))
             .collect::<Vec<_>>();
 

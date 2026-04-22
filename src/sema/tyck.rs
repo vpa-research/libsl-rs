@@ -148,6 +148,19 @@ impl ExprCkCtx {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ResolvedFieldExpr {
+    pub field_def_id: DefId,
+    pub base_scope_id: ScopeId,
+    pub base: FieldExprBase,
+}
+
+#[derive(Debug, Clone)]
+pub enum FieldExprBase {
+    MemberScopeOf(DefId),
+    InstanceScopeOf(DefId),
+}
+
 #[derive(Debug, Default)]
 pub struct TyCk {
     pub tys: SlotMap<TyId, Ty>,
@@ -172,7 +185,7 @@ pub struct TyCk {
     pub name_exprs: SparseSecondaryMap<ExprId, ResolvedName>,
 
     /// Maps field expressions to resolved fields.
-    pub field_exprs: SparseSecondaryMap<ExprId, DefId>,
+    pub field_exprs: SparseSecondaryMap<ExprId, ResolvedFieldExpr>,
 
     /// Stores the underlying type of an entity. Applicable to enums, automata, and type aliases.
     pub underlying_tys: SparseSecondaryMap<DefId, TyId>,
@@ -2637,10 +2650,17 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 }
             }
 
-            ast::ExprKind::Field(_) => AssignmentKind::Field {
-                implicit: false,
-                def_id: self.sema.tyck.field_exprs[s.lhs],
-            },
+            ast::ExprKind::Field(_) => {
+                let resolved = &self.sema.tyck.field_exprs[s.lhs];
+
+                match resolved.base {
+                    FieldExprBase::MemberScopeOf(_) => AssignmentKind::Var(resolved.field_def_id),
+                    FieldExprBase::InstanceScopeOf(_) => AssignmentKind::Field {
+                        implicit: false,
+                        def_id: self.sema.tyck.field_exprs[s.lhs].field_def_id,
+                    },
+                }
+            }
 
             ast::ExprKind::Index(_) => AssignmentKind::Index,
 
@@ -3126,7 +3146,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn tyck_expr_field(&mut self, expr: &'ast ast::Expr, e: &'ast ast::ExprField, ctx: ExprCkCtx) {
         enum Base {
             MemberScope(DefId),
-            Expr(TyId),
+            InstanceScope(DefId, TyId),
         }
 
         self.sema
@@ -3154,13 +3174,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     DefKind::Import(_) => unreachable!(),
 
                     DefKind::Struct(def) => (
-                        Base::Expr(base),
+                        Base::InstanceScope(t.ctor, base),
                         def.instance_scope_id,
                         self.ty_param_map_from_args(&def.generics, &t.args),
                     ),
 
                     DefKind::Automaton(def) => (
-                        Base::Expr(base),
+                        Base::InstanceScope(t.ctor, base),
                         def.instance_scope_id,
                         self.ty_param_map_from_args(&def.generics, &t.args),
                     ),
@@ -3213,17 +3233,17 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     .with_label(Label::primary(self.sema.libsl.exprs[e.base].loc.clone()))
                     .build(),
 
-                Base::Expr(base) => Diag::err()
+                Base::InstanceScope(_, base_ty_id) => Diag::err()
                     .at(e.field.loc.clone())
                     .with_msg(format_args!(
                         "type `{}` has no field named `{field}`",
-                        self.sema.format_ty(base),
+                        self.sema.format_ty(base_ty_id),
                     ))
                     .with_label(
                         Label::primary(self.sema.libsl.exprs[e.base].loc.clone()).with_msg(
                             format_args!(
                                 "this expression has type `{}`",
-                                self.sema.format_ty(base),
+                                self.sema.format_ty(base_ty_id),
                             ),
                         ),
                     )
@@ -3237,6 +3257,21 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         let ty_id = self.sema.tyck.def_tys[def_id];
         let ty_id = self.sema.tyck.subst(ty_id, &param_map);
         let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, ty_id);
+
+        self.sema.tyck.field_exprs.insert(
+            expr.id,
+            ResolvedFieldExpr {
+                field_def_id: def_id,
+                base_scope_id: scope_id,
+                base: match base {
+                    Base::MemberScope(base_def_id) => FieldExprBase::MemberScopeOf(base_def_id),
+                    Base::InstanceScope(base_def_id, ty_id) => {
+                        FieldExprBase::InstanceScopeOf(base_def_id)
+                    }
+                },
+            },
+        );
+
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 

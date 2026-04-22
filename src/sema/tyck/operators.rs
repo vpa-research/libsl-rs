@@ -1,6 +1,5 @@
 use std::fmt::{Display, Write};
 
-use crate::ast;
 use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
 use crate::sema::Sema;
@@ -10,6 +9,7 @@ use crate::sema::tyck::constraints::ConstrProvenance;
 use crate::sema::tyck::overload::{ApplicabilityCriteria, FnSigProvider, OverloadDiagProvider};
 use crate::sema::tyck::{BuiltinTys, FnSig, Pass};
 use crate::util::format_list;
+use crate::{ExprId, ast};
 
 #[derive(Debug, Clone)]
 pub enum NumericCmpOpOverload {
@@ -161,24 +161,59 @@ impl<O: Op> FnSigProvider for OpFnSigProvider<O> {
 pub type UnOpFnSigProvider = OpFnSigProvider<ast::UnOp>;
 pub type BinOpFnSigProvider = OpFnSigProvider<ast::BinOp>;
 
-pub struct OpOverloadDiagProvider<'a, O> {
+pub struct OpOverloadDiagProvider<'a, O, F> {
     op: O,
     loc: &'a Loc,
+    arg_tys: &'a [TyId],
+    arg_loc: F,
 }
 
-impl<'a, O: Op> OpOverloadDiagProvider<'a, O> {
-    pub fn new(op: O, loc: &'a Loc) -> Self {
-        Self { op, loc }
+impl<'a, O: Op, F> OpOverloadDiagProvider<'a, O, F>
+where
+    F: Fn(&Sema<'_>, usize) -> Loc,
+{
+    pub fn new(op: O, loc: &'a Loc, arg_tys: &'a [TyId], arg_loc: F) -> Self {
+        Self {
+            op,
+            loc,
+            arg_tys,
+            arg_loc,
+        }
+    }
+
+    fn label_operand_tys(&self, sema: &Sema<'_>, diag: &mut Diag) {
+        for (idx, &arg_ty) in self.arg_tys.iter().enumerate() {
+            diag.labels.push(
+                Label::secondary((self.arg_loc)(sema, idx)).with_msg(format_args!(
+                    "this operand has type `{}`",
+                    sema.format_ty(arg_ty),
+                )),
+            );
+        }
     }
 }
 
-impl<O: Op> OverloadDiagProvider<OpFnSigProvider<O>> for OpOverloadDiagProvider<'_, O> {
-    fn empty_candidate_set(&self, _sema: &Sema<'_>) -> Diag {
-        Diag::err()
+impl<O: Op, F> OverloadDiagProvider<OpFnSigProvider<O>> for OpOverloadDiagProvider<'_, O, F>
+where
+    F: Fn(&Sema<'_>, usize) -> Loc,
+{
+    fn empty_candidate_set(&self, sema: &Sema<'_>) -> Diag {
+        let mut diag = Diag::err()
             .at(self.loc.clone())
-            .with_msg(format!("no applicable overload of `{}` found", self.op))
+            .with_msg(format!(
+                "no applicable overload of `{}` found for {}",
+                self.op,
+                format_list(self.arg_tys, |f, &ty_id| write!(
+                    f,
+                    "`{}`",
+                    sema.format_ty(ty_id),
+                ))
+            ))
             .with_label(Label::primary(self.loc.clone()))
-            .build()
+            .build();
+        self.label_operand_tys(sema, &mut diag);
+
+        diag
     }
 
     fn ambiguity(&self, sema: &Sema<'_>, ambiguities: &[&OpFnSigProvider<O>]) -> Diag {
@@ -208,7 +243,7 @@ impl<O: Op> OverloadDiagProvider<OpFnSigProvider<O>> for OpOverloadDiagProvider<
             }
         }
 
-        Diag::err()
+        let mut diag = Diag::err()
             .at(self.loc.clone())
             .with_msg(format!(
                 "type of `{}` is ambiguous: found {} possible candidates",
@@ -217,7 +252,10 @@ impl<O: Op> OverloadDiagProvider<OpFnSigProvider<O>> for OpOverloadDiagProvider<
             ))
             .with_label(Label::primary(self.loc.clone()))
             .with_note(possible_candidates)
-            .build()
+            .build();
+        self.label_operand_tys(sema, &mut diag);
+
+        diag
     }
 }
 

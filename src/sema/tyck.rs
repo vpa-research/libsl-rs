@@ -1950,15 +1950,17 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         ctx: ExprCkCtx,
         op: O,
         args: &[TyId],
+        arg_loc: impl Fn(&Sema<'_>, usize) -> Loc,
         mut candidates: Vec<OpFnSigProvider<O>>,
     ) {
         candidates.retain(|candidate| {
             self.is_function_applicable(candidate, &Default::default(), &Receiver::None, args, &[])
         });
 
-        let Ok(overload) =
-            self.select_overload(&candidates, &OpOverloadDiagProvider::new(op, &expr.loc))
-        else {
+        let Ok(overload) = self.select_overload(
+            &candidates,
+            &OpOverloadDiagProvider::new(op, &expr.loc, args, arg_loc),
+        ) else {
             self.sema
                 .tyck
                 .exprs
@@ -2010,7 +2012,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 self.sema.format_ty(base_ty),
             ))
             .with_label(Label::primary(base_loc).with_msg(format_args!(
-                "this expression has type `{}`",
+                "this expression has type `{}`, which has no fields",
                 self.sema.format_ty(base_ty),
             )))
             .build()
@@ -3267,7 +3269,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 base_scope_id: scope_id,
                 base: match base {
                     Base::MemberScope(base_def_id) => FieldExprBase::MemberScopeOf(base_def_id),
-                    Base::InstanceScope(base_def_id, ty_id) => {
+                    Base::InstanceScope(base_def_id, _) => {
                         FieldExprBase::InstanceScopeOf(base_def_id)
                     }
                 },
@@ -3326,7 +3328,17 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         let args = vec![self.tyck_expr(e.expr, ctx.nested(None))];
         let candidates = self.overloads_for_unary(e.op, &expr.loc);
 
-        self.tyck_op_expr(expr, ctx, e.op, &args, candidates)
+        self.tyck_op_expr(
+            expr,
+            ctx,
+            e.op,
+            &args,
+            |sema, idx| {
+                assert_eq!(idx, 0);
+                sema.libsl.exprs[e.expr].loc.clone()
+            },
+            candidates,
+        )
     }
 
     fn tyck_expr_binary(
@@ -3341,6 +3353,21 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         ];
         let candidates = self.overloads_for_binary(e.op, &expr.loc);
 
-        self.tyck_op_expr(expr, ctx, e.op, &args, candidates)
+        self.tyck_op_expr(
+            expr,
+            ctx,
+            e.op,
+            &args,
+            |sema, idx| {
+                let operand = match idx {
+                    0 => e.lhs,
+                    1 => e.rhs,
+                    n => panic!("operand index out of range: {n}"),
+                };
+
+                sema.libsl.exprs[operand].loc.clone()
+            },
+            candidates,
+        )
     }
 }

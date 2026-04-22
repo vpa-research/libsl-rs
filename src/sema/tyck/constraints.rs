@@ -2,7 +2,7 @@
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::fmt::{self, Display, Write};
+use std::fmt::{self, Debug, Display, Write};
 use std::sync::LazyLock;
 use std::{iter, mem};
 
@@ -317,7 +317,15 @@ impl ConstrSet {
     pub fn add(&mut self, sema: &mut Sema<'_>, diag: &mut impl DiagCtx, constr: Constr) -> Result {
         use std::collections::hash_map::Entry;
 
+        if trace_enabled() {
+            eprintln!("adding constraint {:?}", constr.kind.debug(sema));
+        }
+
         let Entry::Vacant(entry) = self.constr_dedup.entry(constr.kind.clone()) else {
+            if trace_enabled() {
+                eprintln!("  already recorded");
+            }
+
             return Ok(());
         };
 
@@ -354,6 +362,7 @@ impl ConstrSet {
             if self.reduce(sema, diag, constr_id).is_err() {
                 self.status = Status::Unsat;
                 result = Err(());
+                self.constr_dedup.remove(&self.constrs[constr_id].kind);
             }
         }
 
@@ -1577,6 +1586,24 @@ pub enum ConstrKind {
     ///
     /// Subsumes Sub.
     Coerce(TyId, TyId),
+}
+
+impl ConstrKind {
+    pub fn debug(&self, sema: &Sema<'_>) -> impl Debug {
+        fmt::from_fn(|f| match *self {
+            Self::Eq(lhs, rhs) => {
+                write!(f, "`{}` = `{}`", sema.format_ty(lhs), sema.format_ty(rhs))
+            }
+
+            Self::Sub(lhs, rhs) => {
+                write!(f, "`{}` <; `{}`", sema.format_ty(lhs), sema.format_ty(rhs))
+            }
+
+            Self::Coerce(lhs, rhs) => {
+                write!(f, "`{}` -> `{}`", sema.format_ty(lhs), sema.format_ty(rhs))
+            }
+        })
+    }
 }
 
 #[derive(Debug, Clone, Default)]

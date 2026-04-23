@@ -450,7 +450,6 @@ pub struct DefSemanticTy {
     pub decl_id: DeclId,
     pub annotations: Vec<AnnotationId>,
     pub param_scope_id: ScopeId,
-    pub generics: Vec<DefId>,
     pub values: Vec<SemanticTyValue>,
 }
 
@@ -460,7 +459,6 @@ impl DefSemanticTy {
             decl_id,
             annotations: Default::default(),
             param_scope_id: Default::default(),
-            generics: Default::default(),
             values: Default::default(),
         }
     }
@@ -487,7 +485,6 @@ pub struct DefTyAlias {
     pub decl_id: DeclId,
     pub annotations: Vec<AnnotationId>,
     pub param_scope_id: ScopeId,
-    pub generics: Vec<DefId>,
 }
 
 impl DefTyAlias {
@@ -496,7 +493,6 @@ impl DefTyAlias {
             decl_id,
             annotations: Default::default(),
             param_scope_id: Default::default(),
-            generics: Default::default(),
         }
     }
 }
@@ -516,8 +512,6 @@ pub struct DefStruct {
     pub decl_id: DeclId,
     pub annotations: Vec<AnnotationId>,
     pub param_scope_id: ScopeId,
-    pub instance_scope_id: ScopeId,
-    pub generics: Vec<DefId>,
     pub fields: Vec<DefId>,
     pub instance_methods: Vec<DefId>,
     pub static_methods: Vec<DefId>,
@@ -529,8 +523,6 @@ impl DefStruct {
             decl_id,
             annotations: Default::default(),
             param_scope_id: Default::default(),
-            instance_scope_id: Default::default(),
-            generics: Default::default(),
             fields: Default::default(),
             instance_methods: Default::default(),
             static_methods: Default::default(),
@@ -553,7 +545,6 @@ pub struct DefEnum {
     pub decl_id: DeclId,
     pub annotations: Vec<AnnotationId>,
     pub param_scope_id: ScopeId,
-    pub generics: Vec<DefId>,
     pub member_scope_id: ScopeId,
     pub variants: Vec<DefId>,
 }
@@ -564,7 +555,6 @@ impl DefEnum {
             decl_id,
             annotations: Default::default(),
             param_scope_id: Default::default(),
-            generics: Default::default(),
             member_scope_id: Default::default(),
             variants: Default::default(),
         }
@@ -615,7 +605,6 @@ pub struct DefAction {
     pub decl_id: DeclId,
     pub annotations: Vec<AnnotationId>,
     pub param_scope_id: ScopeId,
-    pub generics: Vec<DefId>,
     pub params: Vec<DefId>,
 }
 
@@ -625,7 +614,6 @@ impl DefAction {
             decl_id,
             annotations: Default::default(),
             param_scope_id: Default::default(),
-            generics: Default::default(),
             params: Default::default(),
         }
     }
@@ -647,8 +635,6 @@ pub struct DefAutomaton {
     pub annotations: Vec<AnnotationId>,
     pub is_concept: bool,
     pub param_scope_id: ScopeId,
-    pub instance_scope_id: ScopeId,
-    pub generics: Vec<DefId>,
     pub constructor_params: Vec<DefId>,
     pub fields: Vec<DefId>,
     pub instance_methods: Vec<DefId>,
@@ -665,8 +651,6 @@ impl DefAutomaton {
             annotations: Default::default(),
             is_concept,
             param_scope_id: Default::default(),
-            instance_scope_id: Default::default(),
-            generics: Default::default(),
             constructor_params: Default::default(),
             fields: Default::default(),
             instance_methods: Default::default(),
@@ -730,17 +714,16 @@ pub enum VariableKind {
 pub enum ParamKind {
     This,
     Result,
-    User { idx: usize },
+    Explicit { idx: usize },
 }
 
 #[derive(Debug, Clone)]
 pub struct DefFunction {
-    pub decl_id: DeclId,
+    pub decl_id: Option<DeclId>,
     pub annotations: Vec<AnnotationId>,
     pub kind: FunctionKind,
     pub is_method: bool,
     pub param_scope_id: ScopeId,
-    pub generics: Vec<DefId>,
     pub params: Vec<DefId>,
     pub body_scope_id: ScopeId,
     pub result_def_id: DefId,
@@ -748,14 +731,13 @@ pub struct DefFunction {
 }
 
 impl DefFunction {
-    pub fn new(decl_id: DeclId, kind: FunctionKind, is_method: bool) -> Self {
+    pub fn new(decl_id: Option<DeclId>, kind: FunctionKind, is_method: bool) -> Self {
         Self {
             decl_id,
             annotations: Default::default(),
             kind,
             is_method,
             param_scope_id: Default::default(),
-            generics: Default::default(),
             params: Default::default(),
             body_scope_id: Default::default(),
             result_def_id: Default::default(),
@@ -780,6 +762,17 @@ pub enum FunctionKind {
     Proc { of: Option<DefId>, pure: bool },
     Constructor { of: DefId },
     Destructor { of: DefId },
+}
+
+impl FunctionKind{
+    pub fn of(&self) -> Option<DefId> {
+        match *self {
+            Self::Fun { of, .. } => of,
+            Self::Proc { of, .. } => of,
+            Self::Constructor { of, .. } => Some(of),
+            Self::Destructor { of, .. } => Some(of),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

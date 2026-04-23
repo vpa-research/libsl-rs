@@ -75,12 +75,9 @@ pub enum ScopeKind {
     Prelude,
     Import(FileId),
     File(FileScope),
-    SemanticTyEnum(DefId),
-    Params(DefId),
-    Struct(DefId),
-    Enum(DefId),
-    Automaton(DefId),
+    Member(DefId),
     Instance(DefId),
+    Params(DefId),
     Block {
         func: DefId,
     },
@@ -134,10 +131,17 @@ pub struct PreludeDefs {
     pub set: DefId,
     pub pointer: DefId,
     pub intrinsic: DefId,
+    pub array_methods: PreludeArrayDefs,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct PreludeArrayDefs {
+    pub length: DefId,
+    pub slice: DefId,
 }
 
 impl PreludeDefs {
-    pub fn defs_mut(&mut self) -> impl Iterator<Item = (&'static str, Ns, &mut DefId)> {
+    pub fn top_level_defs_mut(&mut self) -> impl Iterator<Item = (&'static str, Ns, &mut DefId)> {
         IntoIterator::into_iter([
             ("int8", Ns::Ty, &mut self.int8),
             ("int16", Ns::Ty, &mut self.int16),
@@ -291,8 +295,14 @@ pub struct NameRes {
     /// Maps each file to its top-level scope.
     pub file_scopes: SecondaryMap<FileId, ScopeId>,
 
-    /// Maps entities to scopes for their members.
+    /// Maps entities to their member scopes.
     pub def_member_scopes: SparseSecondaryMap<DefId, ScopeId>,
+
+    /// Maps entities to their instance scopes.
+    pub def_instance_scopes: SparseSecondaryMap<DefId, ScopeId>,
+
+    /// Type parameters of generic entities.
+    pub generics: SparseSecondaryMap<DefId, Vec<DefId>>,
 
     /// The prelude scope.
     pub prelude_scope_id: ScopeId,
@@ -442,6 +452,78 @@ impl NameRes {
 
         T::project_mut(&mut self.defs[def_id].kind).unwrap()
     }
+
+    pub fn add_def(
+        &mut self,
+        scope_id: ScopeId,
+        ns: Ns,
+        name: String,
+        loc: Loc,
+        kind: DefKind,
+    ) -> Result<DefId, (DefId, String)> {
+        let scope = &mut self.scopes[scope_id];
+
+        match ns {
+            Ns::Function => {
+                let def_id = self.defs.insert_with_key(|id| Def {
+                    id,
+                    loc: loc.clone(),
+                    name: name.clone(),
+                    scope_id,
+                    kind,
+                });
+
+                scope.functions.entry(name).or_default().push(def_id);
+
+                Ok(def_id)
+            }
+
+            _ => {
+                let key = (ns, name);
+                let (_, name) = &key;
+
+                if let Some((key, &prev_def_id)) = scope.defs.get_key_value(&key) {
+                    return Err((prev_def_id, key.1.clone()));
+                }
+
+                let def_id = self.defs.insert_with_key(|id| Def {
+                    id,
+                    loc: loc.clone(),
+                    name: name.clone(),
+                    scope_id,
+                    kind,
+                });
+
+                scope.defs.insert(key, def_id);
+
+                Ok(def_id)
+            }
+        }
+    }
+
+    pub fn add_member_scope(&mut self, def_id: DefId, outer_scope_id: ScopeId) -> ScopeId {
+        let member_scope_id = self
+            .scopes
+            .insert(Scope::new(Some(outer_scope_id), ScopeKind::Member(def_id)));
+        self.def_member_scopes.insert(def_id, member_scope_id);
+
+        member_scope_id
+    }
+
+    pub fn add_param_scope(&mut self, def_id: DefId, outer_scope_id: ScopeId) -> ScopeId {
+        self.scopes
+            .insert(Scope::new(Some(outer_scope_id), ScopeKind::Params(def_id)))
+    }
+
+    pub fn add_instance_scope(&mut self, def_id: DefId, outer_scope_id: ScopeId) -> ScopeId {
+        let instance_scope_id = self.scopes.insert(Scope::new(
+            Some(outer_scope_id),
+            ScopeKind::Instance(def_id),
+        ));
+        self.def_instance_scopes.insert(def_id, instance_scope_id);
+
+        instance_scope_id
+    }
 }
 
 impl Sema<'_> {
@@ -492,15 +574,9 @@ impl DeclCtx {
         match *self {
             DeclCtx::Global(_) => None,
 
-            DeclCtx::Struct(def_id) => Some((
-                def_id,
-                sema.name_res.def::<DefStruct>(def_id).instance_scope_id,
-            )),
-
-            DeclCtx::Automaton { def_id, .. } => Some((
-                def_id,
-                sema.name_res.def::<DefAutomaton>(def_id).instance_scope_id,
-            )),
+            DeclCtx::Struct(def_id) | DeclCtx::Automaton { def_id, .. } => {
+                Some((def_id, sema.name_res.def_instance_scopes[def_id]))
+            }
 
             DeclCtx::FuncBody { .. } => None,
         }
@@ -567,7 +643,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn add_prelude_defs(&mut self) {
         let prelude_scope = &mut self.sema.name_res.scopes[self.sema.name_res.prelude_scope_id];
 
-        for (name, ns, field) in self.sema.name_res.prelude_defs.defs_mut() {
+        for (name, ns, field) in self.sema.name_res.prelude_defs.top_level_defs_mut() {
             let def_id = self.sema.name_res.defs.insert_with_key(|id| Def {
                 id,
                 loc: Loc::Synthetic,
@@ -581,6 +657,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
 
         self.register_intrinsic_annotation();
+        self.register_builtin_methods();
     }
 
     fn register_intrinsic_annotation(&mut self) {
@@ -592,10 +669,110 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             ScopeKind::Params(def_id),
         ));
 
+        self.sema.name_res.generics.insert(def_id, vec![]);
+
         self.sema
             .name_res
             .defs
             .update_def_kind(def_id, |_| def.into());
+    }
+
+    fn register_builtin_methods(&mut self) {
+        self.register_builtin_array_methods();
+    }
+
+    fn register_builtin_function(
+        &mut self,
+        scope_id: ScopeId,
+        name: String,
+        kind: FunctionKind,
+        generics: &[(&str, Variance)],
+        params: &[&str],
+    ) -> DefId {
+        let def_id = self
+            .add_def(
+                scope_id,
+                Ns::Function,
+                name,
+                Loc::Synthetic,
+                DefFunction::new(None, kind, false).into(),
+            )
+            .unwrap();
+        let param_scope_id = self.add_param_scope(def_id, scope_id);
+        self.def_mut::<DefFunction>(def_id).param_scope_id = param_scope_id;
+
+        let generic_defs = generics
+            .iter()
+            .enumerate()
+            .map(|(idx, (generic, variance))| {
+                self.add_def(
+                    param_scope_id,
+                    Ns::Ty,
+                    generic.to_string(),
+                    Loc::Synthetic,
+                    DefTyVariable::new(
+                        TyVariableKind::TyParam { of: def_id, idx },
+                        variance.clone(),
+                    )
+                    .into(),
+                )
+                .unwrap()
+            })
+            .collect();
+        self.sema.name_res.generics.insert(def_id, generic_defs);
+
+        for (idx, param) in params.iter().enumerate() {
+            let param_def_id = self
+                .add_def(
+                    param_scope_id,
+                    Ns::Var,
+                    param.to_string(),
+                    Loc::Synthetic,
+                    DefVariable::new(
+                        None,
+                        VariableKind::Param {
+                            of: def_id,
+                            kind: ParamKind::Explicit { idx },
+                        },
+                        false,
+                    )
+                    .into(),
+                )
+                .unwrap();
+            self.def_mut::<DefFunction>(def_id)
+                .params
+                .push(param_def_id);
+        }
+
+        def_id
+    }
+
+    fn register_builtin_array_methods(&mut self) {
+        let def_id = self.sema.name_res.prelude_defs.array;
+        let member_scope_id = self.add_member_scope(def_id, self.sema.name_res.prelude_scope_id);
+        let instance_scope_id = self.add_instance_scope(def_id, member_scope_id);
+
+        self.sema.name_res.prelude_defs.array_methods.length = self.register_builtin_function(
+            instance_scope_id,
+            "length".into(),
+            FunctionKind::Proc {
+                of: Some(def_id),
+                pure: true,
+            },
+            &[],
+            &[],
+        );
+
+        self.sema.name_res.prelude_defs.array_methods.slice = self.register_builtin_function(
+            instance_scope_id,
+            "slice".into(),
+            FunctionKind::Proc {
+                of: Some(def_id),
+                pure: true,
+            },
+            &[],
+            &["from", "to"],
+        );
     }
 
     fn add_def(
@@ -606,57 +783,30 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         loc: Loc,
         kind: DefKind,
     ) -> Result<DefId> {
-        let scope = &mut self.sema.name_res.scopes[scope_id];
+        match self
+            .sema
+            .name_res
+            .add_def(scope_id, ns, name, loc.clone(), kind)
+        {
+            Ok(def_id) => Ok(def_id),
 
-        match ns {
-            Ns::Function => {
-                let def_id = self.sema.name_res.defs.insert_with_key(|id| Def {
-                    id,
-                    loc: loc.clone(),
-                    name: name.clone(),
-                    scope_id,
-                    kind,
-                });
+            Err((prev_def_id, name)) => {
+                let prev_def = &self.sema.name_res.defs[prev_def_id];
+                self.result = Err(());
 
-                scope.functions.entry(name).or_default().push(def_id);
+                self.diag.emit(
+                    Diag::err()
+                        .at(loc.clone())
+                        .with_msg(format!("the name `{name}` is defined multiple times"))
+                        .with_label(Label::primary(loc).with_msg("defined here"))
+                        .with_label(
+                            Label::secondary(prev_def.loc.clone())
+                                .with_msg("previously defined here"),
+                        )
+                        .build(),
+                );
 
-                Ok(def_id)
-            }
-
-            _ => {
-                let key = (ns, name);
-                let (_, name) = &key;
-
-                if let Some((key, &prev_def_id)) = scope.defs.get_key_value(&key) {
-                    let prev_def = &self.sema.name_res.defs[prev_def_id];
-                    self.result = Err(());
-
-                    self.diag.emit(
-                        Diag::err()
-                            .at(loc.clone())
-                            .with_msg(format!("the name `{}` is defined multiple times", key.1))
-                            .with_label(Label::primary(loc).with_msg("defined here"))
-                            .with_label(
-                                Label::secondary(prev_def.loc.clone())
-                                    .with_msg("previously defined here"),
-                            )
-                            .build(),
-                    );
-
-                    return Err(());
-                }
-
-                let def_id = self.sema.name_res.defs.insert_with_key(|id| Def {
-                    id,
-                    loc: loc.clone(),
-                    name: name.clone(),
-                    scope_id,
-                    kind,
-                });
-
-                scope.defs.insert(key, def_id);
-
-                Ok(def_id)
+                Err(())
             }
         }
     }
@@ -696,30 +846,18 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn add_member_scope(
-        &mut self,
-        def_id: DefId,
-        outer_scope_id: ScopeId,
-        kind: ScopeKind,
-    ) -> ScopeId {
-        let member_scope_id = self
-            .sema
-            .name_res
-            .scopes
-            .insert(Scope::new(Some(outer_scope_id), kind));
-        self.sema
-            .name_res
-            .def_member_scopes
-            .insert(def_id, member_scope_id);
-
-        member_scope_id
+    fn add_member_scope(&mut self, def_id: DefId, outer_scope_id: ScopeId) -> ScopeId {
+        self.sema.name_res.add_member_scope(def_id, outer_scope_id)
     }
 
     fn add_param_scope(&mut self, def_id: DefId, outer_scope_id: ScopeId) -> ScopeId {
+        self.sema.name_res.add_param_scope(def_id, outer_scope_id)
+    }
+
+    fn add_instance_scope(&mut self, def_id: DefId, outer_scope_id: ScopeId) -> ScopeId {
         self.sema
             .name_res
-            .scopes
-            .insert(Scope::new(Some(outer_scope_id), ScopeKind::Params(def_id)))
+            .add_instance_scope(def_id, outer_scope_id)
     }
 
     fn add_decl_def(
@@ -805,11 +943,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     ast::SemanticTyKind::Simple => {}
 
                     ast::SemanticTyKind::Enumerated(values) => {
-                        let member_scope_id = self.add_member_scope(
-                            def_id,
-                            param_scope_id,
-                            ScopeKind::SemanticTyEnum(def_id),
-                        );
+                        let member_scope_id = self.add_member_scope(def_id, param_scope_id);
 
                         for (idx, value) in values.iter().enumerate() {
                             let Ok(value_def_id) = self.add_def(
@@ -864,15 +998,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     return;
                 };
 
-                let member_scope_id =
-                    self.add_member_scope(def_id, outer_scope_id, ScopeKind::Struct(def_id));
+                let member_scope_id = self.add_member_scope(def_id, outer_scope_id);
                 let param_scope_id = self.add_param_scope(def_id, member_scope_id);
-                let instance_scope_id = self.sema.name_res.scopes.insert(Scope::new(
-                    Some(param_scope_id),
-                    ScopeKind::Instance(def_id),
-                ));
+                self.add_instance_scope(def_id, param_scope_id);
                 self.def_mut::<DefStruct>(def_id).param_scope_id = param_scope_id;
-                self.def_mut::<DefStruct>(def_id).instance_scope_id = instance_scope_id;
 
                 for &member_decl_id in &decl.decls {
                     self.process_decl_symbol(DeclCtx::Struct(def_id), member_decl_id);
@@ -894,8 +1023,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 let param_scope_id = self.add_param_scope(def_id, outer_scope_id);
                 self.def_mut::<DefEnum>(def_id).param_scope_id = param_scope_id;
 
-                let member_scope_id =
-                    self.add_member_scope(def_id, param_scope_id, ScopeKind::Enum(def_id));
+                let member_scope_id = self.add_member_scope(def_id, param_scope_id);
                 self.def_mut::<DefEnum>(def_id).member_scope_id = member_scope_id;
 
                 for (idx, variant) in decl.variants.iter().enumerate() {
@@ -962,15 +1090,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     return;
                 };
 
-                let member_scope_id =
-                    self.add_member_scope(def_id, outer_scope_id, ScopeKind::Automaton(def_id));
+                let member_scope_id = self.add_member_scope(def_id, outer_scope_id);
                 let param_scope_id = self.add_param_scope(def_id, member_scope_id);
-                let instance_scope_id = self.sema.name_res.scopes.insert(Scope::new(
-                    Some(param_scope_id),
-                    ScopeKind::Instance(def_id),
-                ));
+                self.add_instance_scope(def_id, param_scope_id);
                 self.def_mut::<DefAutomaton>(def_id).param_scope_id = param_scope_id;
-                self.def_mut::<DefAutomaton>(def_id).instance_scope_id = instance_scope_id;
 
                 for &var_decl_id in &decl.constructor_variables {
                     self.process_decl_symbol(
@@ -1009,7 +1132,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     decl.name.to_string(),
                     decl.name.loc.clone(),
                     DefFunction::new(
-                        decl_id,
+                        Some(decl_id),
                         FunctionKind::Fun {
                             of: ctx.outer_def_id(),
                         },
@@ -1143,7 +1266,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         .map(|name| name.loc.clone())
                         .unwrap_or_else(|| decl.kw_loc.clone()),
                     DefFunction::new(
-                        decl_id,
+                        Some(decl_id),
                         FunctionKind::Constructor {
                             of: outer_def_id.unwrap(),
                         },
@@ -1174,7 +1297,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         .map(|name| name.loc.clone())
                         .unwrap_or_else(|| decl.kw_loc.clone()),
                     DefFunction::new(
-                        decl_id,
+                        Some(decl_id),
                         FunctionKind::Destructor {
                             of: outer_def_id.unwrap(),
                         },
@@ -1199,7 +1322,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     decl.name.to_string(),
                     decl.name.loc.clone(),
                     DefFunction::new(
-                        decl_id,
+                        Some(decl_id),
                         FunctionKind::Proc {
                             of: match ctx {
                                 DeclCtx::Global(_) => None,
@@ -1336,8 +1459,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         def_id: DefId,
         param_scope_id: ScopeId,
         generics: &[ast::Generic],
-    ) -> Vec<DefId> {
-        let mut result = vec![];
+    ) {
+        let mut generic_defs = vec![];
 
         for (idx, generic) in generics.iter().enumerate() {
             let Ok(param_def_id) = self.add_def(
@@ -1354,10 +1477,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 continue;
             };
 
-            result.push(param_def_id);
+            generic_defs.push(param_def_id);
         }
 
-        result
+        self.sema.name_res.generics.insert(def_id, generic_defs);
     }
 
     fn process_annotations(
@@ -1496,7 +1619,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 DefVariable::new(
                     None,
                     VariableKind::Param {
-                        kind: ParamKind::User { idx },
+                        kind: ParamKind::Explicit { idx },
                         of: def_id,
                     },
                     true,
@@ -1576,8 +1699,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         self.def_mut::<DefSemanticTy>(def_id).annotations =
             self.process_annotations(def_id, &decl.annotations);
-        self.def_mut::<DefSemanticTy>(def_id).generics =
-            self.process_generics(def_id, param_scope_id, &decl.ty_name.generics);
+        self.process_generics(def_id, param_scope_id, &decl.ty_name.generics);
 
         self.process_ty_expr(param_scope_id, decl.real_ty);
 
@@ -1611,8 +1733,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         let def_id = self.sema.name_res.decl_defs[decl_id];
         let param_scope_id = self.def::<DefTyAlias>(def_id).param_scope_id;
 
-        self.def_mut::<DefTyAlias>(def_id).generics =
-            self.process_generics(def_id, param_scope_id, &decl.ty_name.generics);
+        self.process_generics(def_id, param_scope_id, &decl.ty_name.generics);
         self.def_mut::<DefTyAlias>(def_id).annotations =
             self.process_annotations(def_id, &decl.annotations);
 
@@ -1625,8 +1746,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         self.def_mut::<DefStruct>(def_id).annotations =
             self.process_annotations(def_id, &decl.annotations);
-        self.def_mut::<DefStruct>(def_id).generics =
-            self.process_generics(def_id, param_scope_id, &decl.ty_name.generics);
+        self.process_generics(def_id, param_scope_id, &decl.ty_name.generics);
 
         if let Some(is_ty) = decl.is_ty {
             self.process_ty_expr(param_scope_id, is_ty);
@@ -1649,8 +1769,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         self.def_mut::<DefEnum>(def_id).annotations =
             self.process_annotations(def_id, &decl.annotations);
-        self.def_mut::<DefEnum>(def_id).generics =
-            self.process_generics(def_id, param_scope_id, &decl.ty_name.generics);
+        self.process_generics(def_id, param_scope_id, &decl.ty_name.generics);
     }
 
     fn process_decl_annotation(
@@ -1672,7 +1791,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     None,
                     VariableKind::Param {
                         of: def_id,
-                        kind: ParamKind::User { idx },
+                        kind: ParamKind::Explicit { idx },
                     },
                     true,
                 )
@@ -1705,8 +1824,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         self.def_mut::<DefAction>(def_id).annotations =
             self.process_annotations(def_id, &decl.annotations);
-        self.def_mut::<DefAction>(def_id).generics =
-            self.process_generics(def_id, param_scope_id, &decl.generics);
+        self.process_generics(def_id, param_scope_id, &decl.generics);
 
         for (idx, param) in decl.params.iter().enumerate() {
             let Ok(param_def_id) = self.add_def(
@@ -1718,7 +1836,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     None,
                     VariableKind::Param {
                         of: def_id,
-                        kind: ParamKind::User { idx },
+                        kind: ParamKind::Explicit { idx },
                     },
                     true,
                 )
@@ -1750,8 +1868,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         self.def_mut::<DefAutomaton>(def_id).annotations =
             self.process_annotations(def_id, &decl.annotations);
-        self.def_mut::<DefAutomaton>(def_id).generics =
-            self.process_generics(def_id, param_scope_id, &decl.name.generics);
+        self.process_generics(def_id, param_scope_id, &decl.name.generics);
 
         for &var_decl_id in &decl.constructor_variables {
             self.process_decl(
@@ -1791,8 +1908,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         self.def_mut::<DefFunction>(def_id).annotations =
             self.process_annotations(def_id, &decl.annotations);
-        self.def_mut::<DefFunction>(def_id).generics =
-            self.process_generics(def_id, param_scope_id, &decl.generics);
+        self.process_generics(def_id, param_scope_id, &decl.generics);
 
         self.process_function_params(
             ctx.outer_def_id().is_some(),
@@ -1934,8 +2050,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         self.def_mut::<DefFunction>(def_id).annotations =
             self.process_annotations(def_id, &decl.annotations);
-        self.def_mut::<DefFunction>(def_id).generics =
-            self.process_generics(def_id, param_scope_id, &decl.generics);
+        self.process_generics(def_id, param_scope_id, &decl.generics);
 
         self.process_function_params(
             ctx.outer_def_id().is_some(),

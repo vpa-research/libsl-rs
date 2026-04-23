@@ -35,7 +35,6 @@ pub enum Ty {
 
     /// A type union.
     Union(TyUnion),
-
     // TODO: literal types.
 }
 
@@ -182,7 +181,7 @@ pub enum BuiltinTyCtor {
 }
 
 impl BuiltinTyCtor {
-    pub fn variance(&self) -> &'static [Variance] {
+    pub fn ty_params(&self) -> &'static [(&'static str, Variance)] {
         match self {
             Self::Any => &[],
             Self::Nothing => &[],
@@ -191,9 +190,9 @@ impl BuiltinTyCtor {
             Self::String => &[],
             Self::Int(_) => &[],
             Self::Float(_) => &[],
-            Self::Array => &[Variance::Invariant],
-            Self::Set => &[Variance::Covariant],
-            Self::Pointer => &[Variance::Invariant],
+            Self::Array => &[("T", Variance::Invariant)],
+            Self::Set => &[("T", Variance::Covariant)],
+            Self::Pointer => &[("T", Variance::Invariant)],
             Self::Void => &[],
         }
     }

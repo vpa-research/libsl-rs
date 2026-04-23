@@ -13,6 +13,7 @@ use crate::ast::{self, Variance};
 use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
 use crate::sema::def::DefId;
+use crate::sema::resolve::NameRes;
 use crate::sema::ty::{BuiltinTyCtor, ConstructedTy, Ty, TyId};
 use crate::sema::tyck::{Pass, TyCk};
 use crate::sema::{Result, Sema};
@@ -841,7 +842,17 @@ impl ConstrSet {
 
                 // the two types have the same type constructor. this is now a question of variance.
                 let ctor = l.ctor;
-                let variances = sema.tyck.param_variances[ctor].clone();
+                let variances = sema.name_res.generics[ctor]
+                    .iter()
+                    .map(|&def_id| {
+                        sema.name_res.defs[def_id]
+                            .kind
+                            .as_ty_variable()
+                            .unwrap()
+                            .variance
+                            .clone()
+                    })
+                    .collect::<Vec<_>>();
 
                 for (variance, (l_arg, r_arg)) in
                     iter::zip(variances, iter::zip(l.args.clone(), r.args.clone()))
@@ -1316,6 +1327,7 @@ impl ConstrSet {
 
     pub fn has_var_bound(
         &self,
+        name_res: &NameRes,
         tyck: &TyCk,
         idx: usize,
         kind: SubtypeBoundKind,
@@ -1326,7 +1338,7 @@ impl ConstrSet {
         bounds.keys().any(|bound_ty_id| {
             let (l, r) = kind.order_subtype(ty_id, bound_ty_id);
 
-            tyck.is_subty(l, r, Some(self))
+            tyck.is_subty(name_res, l, r, Some(self))
         })
     }
 
@@ -1512,8 +1524,12 @@ impl ConstrSet {
 
         for &bound in &bounds[1..] {
             if let Some(r) = match kind {
-                SubtypeBoundKind::Upper => sema.tyck.glb(solution, bound, Some(self)),
-                SubtypeBoundKind::Lower => Some(sema.tyck.lub(solution, bound, Some(self))),
+                SubtypeBoundKind::Upper => {
+                    sema.tyck.glb(&sema.name_res, solution, bound, Some(self))
+                }
+                SubtypeBoundKind::Lower => {
+                    Some(sema.tyck.lub(&sema.name_res, solution, bound, Some(self)))
+                }
             } {
                 solution = r;
             } else {

@@ -4,7 +4,7 @@ use crate::ast;
 use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
 use crate::sema::Sema;
-use crate::sema::def::{DefEnum, DefKindTag};
+use crate::sema::def::DefKindTag;
 use crate::sema::ty::{ConstructedTy, IntCtor, Ty, TyId};
 use crate::sema::tyck::constraints::ConstrProvenance;
 use crate::sema::tyck::overload::{ApplicabilityCriteria, FnSigProvider, OverloadDiagProvider};
@@ -331,9 +331,7 @@ fn enum_op_overloads<O: Op + Clone>(
         .to_vec()
         .into_iter()
         .map(|def_id| {
-            let def = sema.name_res.def::<DefEnum>(def_id);
-            let generics = def
-                .generics
+            let generics = sema.name_res.generics[def_id]
                 .iter()
                 .map(|&def_id| sema.tyck.def_tys[def_id])
                 .collect::<Vec<_>>();

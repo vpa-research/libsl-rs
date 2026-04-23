@@ -24,6 +24,12 @@ pub enum Receiver {
     Explicit(TyId),
 }
 
+impl Receiver {
+    pub fn is_some(&self) -> bool {
+        !matches!(self, Self::None)
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct ApplicabilityCriteria {
     pub proc_only: bool,
@@ -108,6 +114,8 @@ impl CallOverloadDiagProvider<'_> {
                 Receiver::Implicit(ty_id) => write!(f, "({}).", format_ty(*ty_id))?,
                 Receiver::Explicit(ty_id) => write!(f, "{}.", format_ty(*ty_id))?,
             }
+
+            write!(f, "{}", self.name)?;
 
             if !self.ty_args.is_empty() {
                 write!(
@@ -260,7 +268,23 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         args: &[TyId],
         ty_args: &[TyId],
     ) {
-        let member_scope_id = self.sema.name_res.def_member_scopes[def_id];
+        let Some(&member_scope_id) = self.sema.name_res.def_member_scopes.get(def_id) else {
+            return;
+        };
+
+        if recv.is_some()
+            && let Some(&instance_scope_id) = self.sema.name_res.def_instance_scopes.get(def_id)
+            && let Some(overloads) = self.sema.name_res.scopes[instance_scope_id]
+                .functions
+                .get(name)
+        {
+            candidates.extend(overloads.clone().into_iter().filter_map(|def_id| {
+                let provider = DefFnSigProvider(def_id);
+
+                self.is_function_applicable(&provider, criteria, recv, args, ty_args)
+                    .then_some(provider)
+            }));
+        }
 
         if let Some(overloads) = self.sema.name_res.scopes[member_scope_id]
             .functions
@@ -310,13 +334,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     }
                 }
 
-                ScopeKind::SemanticTyEnum(_) => {
-                    // enumerated semantic types do not define functions.
-                }
-
-                ScopeKind::Instance(def_id)
-                | ScopeKind::Struct(def_id)
-                | ScopeKind::Automaton(def_id) => {
+                // FIXME: the two scopes should probably be treated differently...
+                ScopeKind::Instance(def_id) | ScopeKind::Member(def_id) => {
                     self.find_method_candidates(
                         &mut candidates,
                         *def_id,
@@ -326,10 +345,6 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         args,
                         ty_args,
                     );
-                }
-
-                ScopeKind::Enum(_) => {
-                    // enums never define functions.
                 }
             }
 
@@ -376,10 +391,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 );
             }
 
-            Ty::Param(_) => todo!(),
-            Ty::Var(_) => todo!(),
-            Ty::Null => todo!(),
-            Ty::Union(_) => todo!(),
+            Ty::Param(_) => {}
+            Ty::Var(_) => {}
+            Ty::Null => {}
+            Ty::Union(_) => {}
         }
 
         let diag_provider = CallOverloadDiagProvider {
@@ -622,8 +637,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         if !ambiguities.is_empty() {
             ambiguities.insert(0, best);
             self.result = Err(());
-            self.diag
-                .emit(diag_provider.ambiguity(self, &ambiguities));
+            self.diag.emit(diag_provider.ambiguity(self, &ambiguities));
 
             return Err(());
         }

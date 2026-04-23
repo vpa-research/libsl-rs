@@ -51,9 +51,13 @@ pub enum OpOverload {
     Gt(NumericCmpOpOverload),
     Ge(NumericCmpOpOverload),
     EqNumeric(NumericCmpOpOverload),
+    EqBool,
+    EqChar,
     EqString,
     EqEnum,
     NeNumeric(NumericCmpOpOverload),
+    NeBool,
+    NeChar,
     NeString,
     NeEnum,
     InSet,
@@ -379,7 +383,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     ) -> Vec<BinOpFnSigProvider> {
         type P = BinOpFnSigProvider;
 
-        let b @ &BuiltinTys { bool, string, .. } = &self.sema.tyck.builtin;
+        let b @ &BuiltinTys {
+            bool, string, char, ..
+        } = &self.sema.tyck.builtin;
 
         match op {
             ast::BinOp::Mul => arith(op, loc, b, OpOverload::Mul),
@@ -414,13 +420,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
             ast::BinOp::Eq => {
                 let mut result = cmp(op, loc, b, OpOverload::EqNumeric);
-                result.extend([P::concrete(
-                    op,
-                    loc,
-                    OpOverload::EqString,
-                    vec![string, string],
-                    bool,
-                )]);
+                result.extend([
+                    P::concrete(op, loc, OpOverload::EqBool, vec![bool, bool], bool),
+                    P::concrete(op, loc, OpOverload::EqChar, vec![char, char], bool),
+                    P::concrete(op, loc, OpOverload::EqString, vec![string, string], bool),
+                ]);
 
                 result.extend_from_slice(self.enum_eq_overloads.get_or_insert_with(|| {
                     enum_op_overloads(self.sema, op, loc, OpOverload::EqEnum, bool)
@@ -431,13 +435,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
             ast::BinOp::Ne => {
                 let mut result = cmp(op, loc, b, OpOverload::NeNumeric);
-                result.extend([P::concrete(
-                    op,
-                    loc,
-                    OpOverload::NeString,
-                    vec![string, string],
-                    bool,
-                )]);
+                result.extend([
+                    P::concrete(op, loc, OpOverload::NeBool, vec![bool, bool], bool),
+                    P::concrete(op, loc, OpOverload::NeChar, vec![char, char], bool),
+                    P::concrete(op, loc, OpOverload::NeString, vec![string, string], bool),
+                ]);
 
                 result.extend_from_slice(self.enum_ne_overloads.get_or_insert_with(|| {
                     enum_op_overloads(self.sema, op, loc, OpOverload::NeEnum, bool)

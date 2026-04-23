@@ -1315,9 +1315,14 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             }
 
             ast::DeclKind::Proc(decl) => {
+                let scope_id = ctx
+                    .outer_instance(self.sema)
+                    .map(|(_, scope_id)| scope_id)
+                    .unwrap_or(outer_scope_id);
+
                 let Ok(def_id) = self.add_decl_def(
                     decl_id,
-                    outer_scope_id,
+                    scope_id,
                     Ns::Function,
                     decl.name.to_string(),
                     decl.name.loc.clone(),
@@ -1340,7 +1345,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     return;
                 };
 
-                let param_scope_id = self.add_param_scope(def_id, outer_scope_id);
+                let param_scope_id = self.add_param_scope(def_id, scope_id);
                 self.def_mut::<DefFunction>(def_id).param_scope_id = param_scope_id;
 
                 self.record_member_function(ctx, false, decl.is_method, def_id);

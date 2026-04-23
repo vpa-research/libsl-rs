@@ -69,12 +69,12 @@ use crate::grammar::parser::{
     SignedNumLitIntContextAttrs, StateDeclContextAll, StateKindContextAll, StmtAssignContextAttrs,
     StmtCancelContextAttrs, StmtContextAll, StmtExprContext, StmtIfContextAttrs,
     StmtVariableDeclContext, StmtVariableDeclContextAttrs, StructDeclContextAll,
-    StructDefDeclContextAll, StructDefDeclFunctionContextAttrs, StructDefDeclVariableContextAttrs,
-    TypeAliasDeclContextAll, TypeArgContextAll, TypeArgSpecContextAll, TypeArgTypeExprContextAttrs,
-    TypeConstraintContextAll, TypeExprContextAll, TypeExprIntersectionContext,
-    TypeExprNameContextAttrs, TypeExprPointerContextAttrs, TypeExprPrimitiveLitContext,
-    TypeExprUnionContext, UnOpContextAll, VariableDeclContextAll, VariableKindContextAll,
-    VarianceSpecContextAll, WhereClauseContextAll,
+    StructDefDeclContextAll, StructDefDeclFunctionContextAttrs, StructDefDeclProcContextAttrs,
+    StructDefDeclVariableContextAttrs, TypeAliasDeclContextAll, TypeArgContextAll,
+    TypeArgSpecContextAll, TypeArgTypeExprContextAttrs, TypeConstraintContextAll,
+    TypeExprContextAll, TypeExprIntersectionContext, TypeExprNameContextAttrs,
+    TypeExprPointerContextAttrs, TypeExprPrimitiveLitContext, TypeExprUnionContext, UnOpContextAll,
+    VariableDeclContextAll, VariableKindContextAll, VarianceSpecContextAll, WhereClauseContextAll,
 };
 use crate::loc::{Loc, Span};
 use crate::{AnnotationId, DeclId, ExprId, FileId, LibSl, PredId, StmtId, TyExprId, ast, grammar};
@@ -675,6 +675,10 @@ impl<'a> AstConstructor<'a> {
 
                 StructDefDeclContextAll::StructDefDeclFunctionContext(ctx) => {
                     self.process_function_decl(&ctx.functionDecl().unwrap())
+                }
+
+                StructDefDeclContextAll::StructDefDeclProcContext(ctx) => {
+                    self.process_proc_decl(&ctx.procDecl().unwrap())
                 }
 
                 StructDefDeclContextAll::Error(_) => unreachable!(),

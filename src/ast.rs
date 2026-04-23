@@ -475,7 +475,7 @@ pub struct DeclStruct {
     /// Type parameter constraints, specified in a `where`-clause.
     pub ty_constraints: Vec<TyConstraint>,
 
-    /// Entities (variables and functions) defined as members of this type.
+    /// Entities (variables, functions, and procedures) defined as members of this type.
     pub decls: Vec<DeclId>,
 }
 

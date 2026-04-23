@@ -1,5 +1,6 @@
 use std::fmt::{Display, Write};
 
+use crate::ast;
 use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
 use crate::sema::Sema;
@@ -9,7 +10,6 @@ use crate::sema::tyck::constraints::ConstrProvenance;
 use crate::sema::tyck::overload::{ApplicabilityCriteria, FnSigProvider, OverloadDiagProvider};
 use crate::sema::tyck::{BuiltinTys, FnSig, Pass};
 use crate::util::format_list;
-use crate::{ExprId, ast};
 
 #[derive(Debug, Clone)]
 pub enum NumericCmpOpOverload {
@@ -181,14 +181,15 @@ where
         }
     }
 
-    fn label_operand_tys(&self, sema: &Sema<'_>, diag: &mut Diag) {
+    fn label_operand_tys<D: DiagCtx>(&self, pass: &Pass<'_, '_, D>, diag: &mut Diag) {
         for (idx, &arg_ty) in self.arg_tys.iter().enumerate() {
-            diag.labels.push(
-                Label::secondary((self.arg_loc)(sema, idx)).with_msg(format_args!(
-                    "this operand has type `{}`",
-                    sema.format_ty(arg_ty),
-                )),
-            );
+            diag.labels
+                .push(
+                    Label::secondary((self.arg_loc)(pass.sema, idx)).with_msg(format_args!(
+                        "this operand has type `{}`",
+                        pass.sema.format_ty(pass.repr(arg_ty)),
+                    )),
+                );
         }
     }
 }
@@ -197,7 +198,7 @@ impl<O: Op, F> OverloadDiagProvider<OpFnSigProvider<O>> for OpOverloadDiagProvid
 where
     F: Fn(&Sema<'_>, usize) -> Loc,
 {
-    fn empty_candidate_set(&self, sema: &Sema<'_>) -> Diag {
+    fn empty_candidate_set<D: DiagCtx>(&self, pass: &Pass<'_, '_, D>) -> Diag {
         let mut diag = Diag::err()
             .at(self.loc.clone())
             .with_msg(format!(
@@ -206,17 +207,21 @@ where
                 format_list(self.arg_tys, |f, &ty_id| write!(
                     f,
                     "`{}`",
-                    sema.format_ty(ty_id),
+                    pass.sema.format_ty(pass.repr(ty_id)),
                 ))
             ))
             .with_label(Label::primary(self.loc.clone()))
             .build();
-        self.label_operand_tys(sema, &mut diag);
+        self.label_operand_tys(pass, &mut diag);
 
         diag
     }
 
-    fn ambiguity(&self, sema: &Sema<'_>, ambiguities: &[&OpFnSigProvider<O>]) -> Diag {
+    fn ambiguity<D: DiagCtx>(
+        &self,
+        pass: &Pass<'_, '_, D>,
+        ambiguities: &[&OpFnSigProvider<O>],
+    ) -> Diag {
         let mut possible_candidates = "the following candidates are possible:".to_owned();
 
         for &candidate in ambiguities {
@@ -226,7 +231,7 @@ where
                 format_list(&candidate.sig.params, |f, &ty_id| write!(
                     f,
                     "`{}`",
-                    sema.format_ty(ty_id),
+                    pass.sema.format_ty(pass.repr(ty_id)),
                 )),
             );
 
@@ -237,7 +242,7 @@ where
                     format_list(&candidate.sig.generics, |f, &ty_id| write!(
                         f,
                         "`{}`",
-                        sema.format_ty(ty_id),
+                        pass.sema.format_ty(pass.repr(ty_id)),
                     )),
                 );
             }
@@ -253,7 +258,7 @@ where
             .with_label(Label::primary(self.loc.clone()))
             .with_note(possible_candidates)
             .build();
-        self.label_operand_tys(sema, &mut diag);
+        self.label_operand_tys(pass, &mut diag);
 
         diag
     }

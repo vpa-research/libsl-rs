@@ -1,7 +1,7 @@
 //! Overload resolution.
 
 use std::cmp::Ordering;
-use std::fmt::Write;
+use std::fmt::{self, Display, Write};
 use std::iter;
 
 use crate::diag::{Diag, DiagCtx, DummyDiagCtx, Label};
@@ -12,6 +12,7 @@ use crate::sema::ty::{Ty, TyId};
 use crate::sema::tyck::constraints::{Constr, ConstrKind, ConstrProvenance};
 use crate::sema::tyck::{Pass, ReplaceTyArgs};
 use crate::sema::{Result, Sema};
+use crate::util::format_list;
 use crate::{ExprId, WithLibSl, trace_enabled};
 
 use super::FnSig;
@@ -84,37 +85,84 @@ impl FnSigProvider for DefFnSigProvider {
 }
 
 pub trait OverloadDiagProvider<F: FnSigProvider> {
-    fn empty_candidate_set(&self, sema: &Sema<'_>) -> Diag;
+    fn empty_candidate_set<D: DiagCtx>(&self, pass: &Pass<'_, '_, D>) -> Diag;
 
-    fn ambiguity(&self, sema: &Sema<'_>, ambiguities: &[&F]) -> Diag;
+    fn ambiguity<D: DiagCtx>(&self, pass: &Pass<'_, '_, D>, ambiguities: &[&F]) -> Diag;
 }
 
 struct CallOverloadDiagProvider<'a> {
     name: &'a str,
     loc: &'a Loc,
+    recv: &'a Receiver,
+    ty_args: &'a [TyId],
+    args: &'a [TyId],
+}
+
+impl CallOverloadDiagProvider<'_> {
+    fn display_call_sig<D: DiagCtx>(&self, pass: &Pass<'_, '_, D>) -> impl Display {
+        let format_ty = |ty_id| pass.sema.format_ty(pass.repr(ty_id));
+
+        fmt::from_fn(move |f| {
+            match self.recv {
+                Receiver::None => {}
+                Receiver::Implicit(ty_id) => write!(f, "({}).", format_ty(*ty_id))?,
+                Receiver::Explicit(ty_id) => write!(f, "{}.", format_ty(*ty_id))?,
+            }
+
+            if !self.ty_args.is_empty() {
+                write!(
+                    f,
+                    "<{}>",
+                    format_list(self.ty_args, |f, &ty_arg| write!(
+                        f,
+                        "{}",
+                        format_ty(ty_arg),
+                    ))
+                )?;
+            }
+
+            write!(
+                f,
+                "({})",
+                format_list(self.args, |f, &arg| write!(f, "{}", format_ty(arg))),
+            )?;
+
+            Ok(())
+        })
+    }
 }
 
 impl OverloadDiagProvider<DefFnSigProvider> for CallOverloadDiagProvider<'_> {
-    fn empty_candidate_set(&self, _sema: &Sema<'_>) -> Diag {
+    fn empty_candidate_set<D: DiagCtx>(&self, pass: &Pass<'_, '_, D>) -> Diag {
         Diag::err()
             .at(self.loc.clone())
             .with_msg(format!(
                 "no applicable function named `{}` found",
-                self.name
+                self.name,
             ))
             .with_label(Label::primary(self.loc.clone()))
+            .with_note(format!(
+                "this call has signature {}",
+                self.display_call_sig(pass),
+            ))
             .build()
     }
 
-    fn ambiguity(&self, sema: &Sema<'_>, ambiguities: &[&DefFnSigProvider]) -> Diag {
+    fn ambiguity<D: DiagCtx>(
+        &self,
+        pass: &Pass<'_, '_, D>,
+        ambiguities: &[&DefFnSigProvider],
+    ) -> Diag {
         let mut possible_candidates = "the following candidates are possible:".to_owned();
 
         for candidate in ambiguities {
             let _ = write!(
                 possible_candidates,
                 "\n- {} defined at {}",
-                sema.format_def_signature(candidate.0),
-                sema.name_res.defs[candidate.0].loc.with_libsl(sema.libsl),
+                pass.sema.format_def_signature(candidate.0),
+                pass.sema.name_res.defs[candidate.0]
+                    .loc
+                    .with_libsl(pass.sema.libsl),
             );
         }
 
@@ -130,6 +178,10 @@ impl OverloadDiagProvider<DefFnSigProvider> for CallOverloadDiagProvider<'_> {
                     .with_msg("cannot determine which function this refers to"),
             )
             .with_note(possible_candidates)
+            .with_note(format!(
+                "this call has signature {}",
+                self.display_call_sig(pass),
+            ))
             .build()
     }
 }
@@ -286,7 +338,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             }
         }
 
-        let diag_provider = CallOverloadDiagProvider { loc, name };
+        let diag_provider = CallOverloadDiagProvider {
+            loc,
+            name,
+            recv,
+            ty_args,
+            args,
+        };
 
         self.select_overload(&candidates, &diag_provider)
             .map(|candidate| candidate.0)
@@ -324,7 +382,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             Ty::Union(_) => todo!(),
         }
 
-        let diag_provider = CallOverloadDiagProvider { loc, name };
+        let diag_provider = CallOverloadDiagProvider {
+            loc,
+            name,
+            recv: &recv,
+            ty_args,
+            args,
+        };
 
         self.select_overload(&candidates, &diag_provider)
             .map(|candidate| candidate.0)
@@ -512,7 +576,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     ) -> Result<&'a F> {
         if candidates.is_empty() {
             self.result = Err(());
-            self.diag.emit(diag_provider.empty_candidate_set(self.sema));
+            self.diag.emit(diag_provider.empty_candidate_set(self));
 
             return Err(());
         }
@@ -559,7 +623,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             ambiguities.insert(0, best);
             self.result = Err(());
             self.diag
-                .emit(diag_provider.ambiguity(self.sema, &ambiguities));
+                .emit(diag_provider.ambiguity(self, &ambiguities));
 
             return Err(());
         }

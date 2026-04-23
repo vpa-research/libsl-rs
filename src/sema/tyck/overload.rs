@@ -12,7 +12,7 @@ use crate::sema::ty::{Ty, TyId};
 use crate::sema::tyck::constraints::{Constr, ConstrKind, ConstrProvenance};
 use crate::sema::tyck::{Pass, ReplaceTyArgs};
 use crate::sema::{Result, Sema};
-use crate::util::format_list;
+use crate::util::format_sep_list;
 use crate::{ExprId, WithLibSl, trace_enabled};
 
 use super::FnSig;
@@ -121,7 +121,7 @@ impl CallOverloadDiagProvider<'_> {
                 write!(
                     f,
                     "<{}>",
-                    format_list(self.ty_args, |f, &ty_arg| write!(
+                    format_sep_list(self.ty_args, |f, &ty_arg| write!(
                         f,
                         "{}",
                         format_ty(ty_arg),
@@ -132,7 +132,7 @@ impl CallOverloadDiagProvider<'_> {
             write!(
                 f,
                 "({})",
-                format_list(self.args, |f, &arg| write!(f, "{}", format_ty(arg))),
+                format_sep_list(self.args, |f, &arg| write!(f, "{}", format_ty(arg))),
             )?;
 
             Ok(())

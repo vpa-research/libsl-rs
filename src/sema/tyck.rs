@@ -28,7 +28,7 @@ use crate::{AnnotationId, DeclId, ExprId, PredId, StmtId, TyExprId, ast, trace_e
 use self::constraints::SubtypeBoundKind;
 use self::operators::BinOpFnSigProvider;
 
-use super::def::{DefEnum, DefKindProject, DefTyAlias, DefTyVariable};
+use super::def::{DefEnum, DefKindProject, DefStruct, DefTyAlias, DefTyVariable};
 use super::resolve::NameRes;
 
 pub mod constraints;
@@ -915,18 +915,15 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
 
         let recv = self.sema.name_res.def::<DefFunction>(def_id).kind.of();
+        let param_defs = self.sema.name_res.def::<DefFunction>(def_id).params.clone();
         let generics = self.def_generic_tys(def_id).collect::<Vec<TyId>>();
-        let (params, ret) = sig(self.sema, generics.clone().try_into().unwrap());
+        let (param_tys, ret) = sig(self.sema, generics.clone().try_into().unwrap());
 
-        self.sema.tyck.sigs.insert(
-            def_id,
-            FnSig {
-                recv,
-                generics,
-                params,
-                ret: Some(ret),
-            },
-        );
+        for (&param_def, &param_ty) in iter::zip(&param_defs, &param_tys) {
+            self.sema.tyck.def_tys.insert(param_def, param_ty);
+        }
+
+        self.register_fn_sig::<DefFunction>(def_id, recv, |def| &def.params, Some(ret));
     }
 
     fn register_builtin_array_methods(&mut self) {
@@ -1405,10 +1402,30 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         // do nothing.
     }
 
-    fn tyck_decl_struct(&mut self, _decl: &'ast ast::Decl, d: &'ast ast::DeclStruct) {
+    fn tyck_decl_struct(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclStruct) {
+        let def_id = self.sema.name_res.decl_defs[decl.id];
+        let ctor_def_id = self.sema.name_res.def::<DefStruct>(def_id).ctor_def_id;
+
         for &decl_id in &d.decls {
             self.tyck_decl(decl_id);
         }
+
+        let fields = self.sema.name_res.def::<DefStruct>(def_id).fields.clone();
+        let ctor_params = self
+            .sema
+            .name_res
+            .def::<DefFunction>(ctor_def_id)
+            .params
+            .clone();
+
+        for (field, param) in iter::zip(fields, ctor_params) {
+            let ty_id = self.sema.tyck.def_tys[field];
+            self.sema.tyck.def_tys.insert(param, ty_id);
+        }
+
+        let generics = self.def_generic_tys(def_id).collect();
+        let ret_ty_id = self.sema.tyck.add_ctor_ty(def_id, generics);
+        self.register_fn_sig::<DefFunction>(ctor_def_id, None, |def| &def.params, Some(ret_ty_id));
     }
 
     fn tyck_decl_enum(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclEnum) {
@@ -1839,17 +1856,14 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         ret: Option<TyId>,
     ) {
         let def = self.sema.name_res.def(def_id);
-        let generics = &self.sema.name_res.generics[def_id];
         let params = params(def);
 
-        let generics = generics
-            .iter()
-            .map(|&generic| self.sema.tyck.def_tys[generic])
-            .collect();
         let params = params
             .iter()
             .map(|&param| self.sema.tyck.def_tys[param])
             .collect();
+
+        let generics = self.def_generic_tys(def_id).collect();
 
         self.sema.tyck.sigs.insert(
             def_id,
@@ -2250,7 +2264,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn variable_recv(&mut self, def_id: DefId, replace_ty_args: ReplaceTyArgs) -> Option<TyId> {
         match self.sema.name_res.def::<DefVariable>(def_id).kind {
-            VariableKind::Global => return None,
+            VariableKind::Global => None,
             VariableKind::Local { of } => self.function_recv(of, replace_ty_args),
             VariableKind::Field { of } => Some(self.make_recv_ty(of, replace_ty_args)),
             VariableKind::ConstructorVar { of } => Some(self.make_recv_ty(of, replace_ty_args)),
@@ -2270,8 +2284,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn expr_recv(&mut self, expr_id: ExprId, replace_ty_args: ReplaceTyArgs) -> Option<TyId> {
         match self.sema.name_res.exprs[expr_id].kind {
-            ExprCtxKind::EnumSemanticTyValue(_) => return None,
-            ExprCtxKind::AnnotationParam(_) => return None,
+            ExprCtxKind::EnumSemanticTyValue(_) => None,
+            ExprCtxKind::AnnotationParam(_) => None,
 
             ExprCtxKind::AnnotationArg { annotation_id, .. } => {
                 self.annotation_recv(annotation_id, replace_ty_args)

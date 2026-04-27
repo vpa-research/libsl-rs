@@ -1,6 +1,6 @@
 //! Name resolution.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::mem;
 use std::ops::{Index, IndexMut};
 
@@ -12,8 +12,8 @@ use crate::loc::Loc;
 use crate::sema::def::{
     Def, DefAction, DefAnnotation, DefAutomaton, DefEnum, DefFunction, DefId, DefImport, DefKind,
     DefKindProject, DefPred, DefSemanticTy, DefState, DefStruct, DefTyAlias, DefTyVariable,
-    DefVariable, FunctionBodyUser, FunctionKind, ParamKind, PredKind, SemanticTyValue,
-    TyVariableKind, VariableKind,
+    DefVariable, FunctionBody, FunctionBodyUser, FunctionKind, ParamKind, PredKind,
+    SemanticTyValue, TyVariableKind, VariableKind,
 };
 use crate::sema::{Result, Sema};
 use crate::{AnnotationId, DeclId, ExprId, FileId, PredId, StmtId, TyExprId, ast};
@@ -879,6 +879,31 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         Ok(def_id)
     }
 
+    fn add_ctor_fn(&mut self, scope_id: ScopeId, def_id: DefId) -> DefId {
+        let fn_def_id = self
+            .add_def(
+                scope_id,
+                Ns::Function,
+                self.sema.name_res.defs[def_id].name.clone(),
+                self.sema.name_res.defs[def_id].loc.clone(),
+                DefFunction::new(
+                    FunctionKind::Proc {
+                        of: None,
+                        pure: true,
+                    },
+                    false,
+                    FunctionBody::Constructor { of: def_id },
+                )
+                .into(),
+            )
+            .unwrap();
+
+        let param_scope_id = self.add_param_scope(fn_def_id, scope_id);
+        self.def_mut::<DefFunction>(fn_def_id).param_scope_id = param_scope_id;
+
+        fn_def_id
+    }
+
     fn record_member_function(
         &mut self,
         ctx: DeclCtx,
@@ -991,11 +1016,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             }
 
             ast::DeclKind::Struct(decl) => {
+                let name = decl.ty_name.ty_name.to_string();
+
                 let Ok(def_id) = self.add_decl_def(
                     decl_id,
                     outer_scope_id,
                     Ns::Ty,
-                    decl.ty_name.ty_name.to_string(),
+                    name.clone(),
                     decl.ty_name.ty_name.loc.clone(),
                     DefStruct::new(decl_id).into(),
                 ) else {
@@ -1010,6 +1037,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 for &member_decl_id in &decl.decls {
                     self.process_decl_symbol(DeclCtx::Struct(def_id), member_decl_id);
                 }
+
+                self.def_mut::<DefStruct>(def_id).ctor_def_id =
+                    self.add_ctor_fn(outer_scope_id, def_id);
             }
 
             ast::DeclKind::Enum(decl) => {
@@ -1448,6 +1478,38 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         import_scope.defs.insert(key.clone(), new_def_id);
                     }
                 }
+
+                for (name, imported_overloads) in &imported_scope.functions {
+                    let overloads = import_scope.functions.entry(name.clone()).or_default();
+                    let mut resolved_overloads = overloads
+                        .iter()
+                        .copied()
+                        .map(|def_id| NameRes::resolve_import_in(&self.sema.name_res.defs, def_id))
+                        .collect::<HashSet<_>>();
+
+                    for &overload in imported_overloads {
+                        let resolved_def_id =
+                            NameRes::resolve_import_in(&self.sema.name_res.defs, overload);
+
+                        if !resolved_overloads.insert(resolved_def_id) {
+                            continue;
+                        }
+
+                        let new_def_id = self.sema.name_res.defs.insert_with_key(|id| Def {
+                            id,
+                            loc: import_loc.clone(),
+                            name: name.clone(),
+                            scope_id: import_scope_id,
+                            kind: DefKind::Import(DefImport::new_resolved(
+                                import_decl_id,
+                                overload,
+                                resolved_def_id,
+                            )),
+                        });
+
+                        overloads.push(new_def_id);
+                    }
+                }
             }
         }
     }
@@ -1782,6 +1844,41 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         for &member_decl_id in &decl.decls {
             self.process_decl(DeclCtx::Struct(def_id), member_decl_id);
         }
+
+        let fields = self.def::<DefStruct>(def_id).fields.clone();
+        let ctor_def_id = self.def::<DefStruct>(def_id).ctor_def_id;
+        let ctor_param_scope_id = self.def::<DefFunction>(ctor_def_id).param_scope_id;
+
+        self.sema
+            .name_res
+            .generics
+            .insert(ctor_def_id, self.sema.name_res.generics[def_id].clone());
+
+        for (idx, field) in fields.into_iter().enumerate() {
+            // if we have problems here, we should've already reported them when we registered the
+            // field, which is why we use the non-reporting `add_def` version.
+            let Ok(param_def_id) = self.sema.name_res.add_def(
+                ctor_param_scope_id,
+                Ns::Var,
+                self.sema.name_res.defs[field].name.clone(),
+                self.sema.name_res.defs[field].loc.clone(),
+                DefVariable::new(
+                    None,
+                    VariableKind::Param {
+                        of: ctor_def_id,
+                        kind: ParamKind::Explicit { idx },
+                    },
+                    false,
+                )
+                .into(),
+            ) else {
+                continue;
+            };
+
+            self.def_mut::<DefFunction>(ctor_def_id)
+                .params
+                .push(param_def_id);
+        }
     }
 
     fn process_decl_enum(&mut self, _ctx: DeclCtx, decl_id: DeclId, decl: &'ast ast::DeclEnum) {
@@ -1863,7 +1960,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 )
                 .into(),
             ) else {
-                return;
+                continue;
             };
 
             self.def_mut::<DefVariable>(param_def_id).annotations =

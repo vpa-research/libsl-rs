@@ -515,6 +515,7 @@ pub struct DefStruct {
     pub fields: Vec<DefId>,
     pub instance_methods: Vec<DefId>,
     pub static_methods: Vec<DefId>,
+    pub ctor_def_id: DefId,
 }
 
 impl DefStruct {
@@ -526,6 +527,7 @@ impl DefStruct {
             fields: Default::default(),
             instance_methods: Default::default(),
             static_methods: Default::default(),
+            ctor_def_id: Default::default(),
         }
     }
 }

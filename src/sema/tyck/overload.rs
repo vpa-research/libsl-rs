@@ -279,6 +279,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 .get(name)
         {
             candidates.extend(overloads.clone().into_iter().filter_map(|def_id| {
+                let def_id = self.sema.name_res.resolve_import(def_id);
                 let provider = DefFnSigProvider(def_id);
 
                 self.is_function_applicable(&provider, criteria, recv, args, ty_args)
@@ -291,6 +292,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .get(name)
         {
             candidates.extend(overloads.clone().into_iter().filter_map(|def_id| {
+                let def_id = self.sema.name_res.resolve_import(def_id);
                 let provider = DefFnSigProvider(def_id);
 
                 self.is_function_applicable(&provider, criteria, recv, args, ty_args)
@@ -326,6 +328,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 ScopeKind::Prelude | ScopeKind::Import(_) | ScopeKind::File(_) => {
                     if let Some(overloads) = scope.functions.get(name) {
                         candidates.extend(overloads.clone().into_iter().filter_map(|def_id| {
+                            let def_id = self.sema.name_res.resolve_import(def_id);
                             let provider = DefFnSigProvider(def_id);
 
                             self.is_function_applicable(&provider, &criteria, recv, args, ty_args)
@@ -334,7 +337,6 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     }
                 }
 
-                // FIXME: the two scopes should probably be treated differently...
                 ScopeKind::Instance(def_id) | ScopeKind::Member(def_id) => {
                     self.find_method_candidates(
                         &mut candidates,

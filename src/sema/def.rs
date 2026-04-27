@@ -719,29 +719,27 @@ pub enum ParamKind {
 
 #[derive(Debug, Clone)]
 pub struct DefFunction {
-    pub decl_id: Option<DeclId>,
     pub annotations: Vec<AnnotationId>,
     pub kind: FunctionKind,
     pub is_method: bool,
     pub param_scope_id: ScopeId,
     pub params: Vec<DefId>,
-    pub body_scope_id: ScopeId,
-    pub result_def_id: DefId,
-    pub this_def_id: Option<DefId>,
+    pub body: FunctionBody,
 }
 
 impl DefFunction {
-    pub fn new(decl_id: Option<DeclId>, kind: FunctionKind, is_method: bool) -> Self {
+    pub fn new(
+        kind: FunctionKind,
+        is_method: bool,
+        body: FunctionBody,
+    ) -> Self {
         Self {
-            decl_id,
             annotations: Default::default(),
             kind,
             is_method,
             param_scope_id: Default::default(),
             params: Default::default(),
-            body_scope_id: Default::default(),
-            result_def_id: Default::default(),
-            this_def_id: Default::default(),
+            body,
         }
     }
 }
@@ -764,7 +762,7 @@ pub enum FunctionKind {
     Destructor { of: DefId },
 }
 
-impl FunctionKind{
+impl FunctionKind {
     pub fn of(&self) -> Option<DefId> {
         match *self {
             Self::Fun { of, .. } => of,
@@ -773,6 +771,66 @@ impl FunctionKind{
             Self::Destructor { of, .. } => Some(of),
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub enum FunctionBody {
+    User(FunctionBodyUser),
+    Constructor { of: DefId },
+    Builtin(FunctionBuiltin),
+}
+
+impl FunctionBody {
+    pub fn as_user(&self) -> Option<&FunctionBodyUser> {
+        match self {
+            Self::User(body) => Some(body),
+            _ => None,
+        }
+    }
+
+    pub fn as_user_mut(&mut self) -> Option<&mut FunctionBodyUser> {
+        match self {
+            Self::User(body) => Some(body),
+            _ => None,
+        }
+    }
+}
+
+impl From<FunctionBodyUser> for FunctionBody {
+    fn from(body: FunctionBodyUser) -> Self {
+        Self::User(body)
+    }
+}
+
+impl From<FunctionBuiltin> for FunctionBody {
+    fn from(builtin: FunctionBuiltin) -> Self {
+        Self::Builtin(builtin)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionBodyUser {
+    pub decl_id: DeclId,
+    pub body_scope_id: ScopeId,
+    pub result_def_id: DefId,
+    pub this_def_id: Option<DefId>,
+}
+
+impl FunctionBodyUser {
+    pub fn new(decl_id: DeclId) -> Self {
+        Self {
+            decl_id,
+            body_scope_id: Default::default(),
+            result_def_id: Default::default(),
+            this_def_id: Default::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum FunctionBuiltin {
+    ArrayLength,
+    ArraySlice,
 }
 
 #[derive(Debug, Clone)]

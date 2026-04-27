@@ -1870,8 +1870,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     ) {
         let def = self.sema.name_res.def::<DefFunction>(def_id);
         let recv = def.kind.of();
-        let result_def_id = def.result_def_id;
-        let this_def_id = def.this_def_id;
+        let result_def_id = def.body.as_user().unwrap().result_def_id;
+        let this_def_id = def.body.as_user().unwrap().this_def_id;
         let ret = self.tyck_ret_ty_expr(ret);
         self.tyck_params(
             def_id,

@@ -12,12 +12,13 @@ use crate::loc::Loc;
 use crate::sema::def::{
     Def, DefAction, DefAnnotation, DefAutomaton, DefEnum, DefFunction, DefId, DefImport, DefKind,
     DefKindProject, DefPred, DefSemanticTy, DefState, DefStruct, DefTyAlias, DefTyVariable,
-    DefVariable, FunctionKind, ParamKind, PredKind, SemanticTyValue, TyVariableKind, VariableKind,
+    DefVariable, FunctionBodyUser, FunctionKind, ParamKind, PredKind, SemanticTyValue,
+    TyVariableKind, VariableKind,
 };
 use crate::sema::{Result, Sema};
 use crate::{AnnotationId, DeclId, ExprId, FileId, PredId, StmtId, TyExprId, ast};
 
-use super::def::DefKindTag;
+use super::def::{DefKindTag, FunctionBuiltin};
 
 new_key_type! {
     pub struct ScopeId;
@@ -685,6 +686,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         &mut self,
         scope_id: ScopeId,
         name: String,
+        builtin: FunctionBuiltin,
         kind: FunctionKind,
         generics: &[(&str, Variance)],
         params: &[&str],
@@ -695,7 +697,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 Ns::Function,
                 name,
                 Loc::Synthetic,
-                DefFunction::new(None, kind, false).into(),
+                DefFunction::new(kind, false, builtin.into()).into(),
             )
             .unwrap();
         let param_scope_id = self.add_param_scope(def_id, scope_id);
@@ -755,6 +757,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.sema.name_res.prelude_defs.array_methods.length = self.register_builtin_function(
             instance_scope_id,
             "length".into(),
+            FunctionBuiltin::ArrayLength,
             FunctionKind::Proc {
                 of: Some(def_id),
                 pure: true,
@@ -766,6 +769,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.sema.name_res.prelude_defs.array_methods.slice = self.register_builtin_function(
             instance_scope_id,
             "slice".into(),
+            FunctionBuiltin::ArraySlice,
             FunctionKind::Proc {
                 of: Some(def_id),
                 pure: true,
@@ -1132,11 +1136,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     decl.name.to_string(),
                     decl.name.loc.clone(),
                     DefFunction::new(
-                        Some(decl_id),
                         FunctionKind::Fun {
                             of: ctx.outer_def_id(),
                         },
                         decl.is_method,
+                        FunctionBodyUser::new(decl_id).into(),
                     )
                     .into(),
                 ) else {
@@ -1266,11 +1270,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         .map(|name| name.loc.clone())
                         .unwrap_or_else(|| decl.kw_loc.clone()),
                     DefFunction::new(
-                        Some(decl_id),
                         FunctionKind::Constructor {
                             of: outer_def_id.unwrap(),
                         },
                         decl.is_method,
+                        FunctionBodyUser::new(decl_id).into(),
                     )
                     .into(),
                 ) else {
@@ -1297,11 +1301,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         .map(|name| name.loc.clone())
                         .unwrap_or_else(|| decl.kw_loc.clone()),
                     DefFunction::new(
-                        Some(decl_id),
                         FunctionKind::Destructor {
                             of: outer_def_id.unwrap(),
                         },
                         decl.is_method,
+                        FunctionBodyUser::new(decl_id).into(),
                     )
                     .into(),
                 ) else {
@@ -1327,7 +1331,6 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     decl.name.to_string(),
                     decl.name.loc.clone(),
                     DefFunction::new(
-                        Some(decl_id),
                         FunctionKind::Proc {
                             of: match ctx {
                                 DeclCtx::Global(_) => None,
@@ -1339,6 +1342,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                             pure: decl.is_pure,
                         },
                         decl.is_method,
+                        FunctionBodyUser::new(decl_id).into(),
                     )
                     .into(),
                 ) else {
@@ -1574,7 +1578,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         param_scope_id: ScopeId,
         params: &[ast::FunctionParam],
     ) {
-        self.def_mut::<DefFunction>(def_id).result_def_id = self
+        self.def_mut::<DefFunction>(def_id)
+            .body
+            .as_user_mut()
+            .unwrap()
+            .result_def_id = self
             .add_def(
                 param_scope_id,
                 Ns::Var,
@@ -1593,7 +1601,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .unwrap();
 
         if define_this {
-            self.def_mut::<DefFunction>(def_id).this_def_id = Some(
+            self.def_mut::<DefFunction>(def_id)
+                .body
+                .as_user_mut()
+                .unwrap()
+                .this_def_id = Some(
                 self.add_def(
                     param_scope_id,
                     Ns::Var,
@@ -1654,7 +1666,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             ScopeKind::Block { func: func_def_id },
         ));
 
-        self.def_mut::<DefFunction>(func_def_id).body_scope_id = scope_id;
+        self.def_mut::<DefFunction>(func_def_id)
+            .body
+            .as_user_mut()
+            .unwrap()
+            .body_scope_id = scope_id;
 
         for contract in &body.contracts {
             self.process_contract(func_def_id, contract);
@@ -2077,7 +2093,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 // Phase 3, contracts and predicates.
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn process_contract(&mut self, func_def_id: DefId, contract: &'ast ast::Contract) {
-        let scope_id = self.def::<DefFunction>(func_def_id).body_scope_id;
+        let scope_id = self
+            .def::<DefFunction>(func_def_id)
+            .body
+            .as_user()
+            .unwrap()
+            .body_scope_id;
 
         match contract {
             ast::Contract::Requires(contract) => {
@@ -2199,7 +2220,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         pred_id: PredId,
         pred: &'ast ast::PredNamed,
     ) {
-        let body_scope_id = self.def::<DefFunction>(func_def_id).body_scope_id;
+        let body_scope_id = self
+            .def::<DefFunction>(func_def_id)
+            .body
+            .as_user()
+            .unwrap()
+            .body_scope_id;
         let def_id = self.add_def(
             body_scope_id,
             Ns::Contract,

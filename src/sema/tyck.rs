@@ -2297,20 +2297,31 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn make_recv_ty(&mut self, def_id: DefId, replace_ty_args: ReplaceTyArgs) -> TyId {
+    fn make_recv_ty_with_map(
+        &mut self,
+        def_id: DefId,
+        replace_ty_args: ReplaceTyArgs,
+    ) -> (TyId, SparseSecondaryMap<TyId, TyId>) {
         let generics = self.def_generic_tys(def_id).collect::<Vec<_>>();
 
-        let ty_args = match replace_ty_args {
+        let (ty_args, param_map) = match replace_ty_args {
             ReplaceTyArgs::Yes(loc) => {
                 let param_map = self.make_fresh_vars_for_ty_params(&generics, loc);
 
-                generics.into_iter().map(|ty_id| param_map[ty_id]).collect()
+                (
+                    generics.into_iter().map(|ty_id| param_map[ty_id]).collect(),
+                    param_map,
+                )
             }
 
-            ReplaceTyArgs::No => generics,
+            ReplaceTyArgs::No => (generics, Default::default()),
         };
 
-        self.sema.tyck.add_ctor_ty(def_id, ty_args)
+        (self.sema.tyck.add_ctor_ty(def_id, ty_args), param_map)
+    }
+
+    fn make_recv_ty(&mut self, def_id: DefId, replace_ty_args: ReplaceTyArgs) -> TyId {
+        self.make_recv_ty_with_map(def_id, replace_ty_args).0
     }
 
     fn tyck_annotation(&mut self, annotation_id: AnnotationId) {
@@ -2912,11 +2923,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.check_arg_arity(&expr.loc, args.len(), self.fn_sig(def_id).params.len());
 
         let sig = self.fn_sig(def_id).clone();
-        let ty_param_map = self.make_fresh_vars_for_ty_params(&sig.generics, &expr.loc);
-
-        for (&param, &arg) in iter::zip(&sig.generics, &ty_args) {
-            let _ = self.constr_eq(arg, ty_param_map[param], ConstrProvenance::Expr(expr.id));
-        }
+        let mut ty_param_map = self.make_fresh_vars_for_ty_params(&sig.generics, &expr.loc);
 
         match (recv, sig.recv) {
             (Receiver::None, None) => {}
@@ -2924,11 +2931,17 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             (Receiver::Implicit(_), None) => {}
 
             (Receiver::Implicit(ty_id) | Receiver::Explicit(ty_id), Some(recv)) => {
-                let expected = self.make_recv_ty(recv, ReplaceTyArgs::Yes(&Loc::Synthetic));
+                let (expected, map) =
+                    self.make_recv_ty_with_map(recv, ReplaceTyArgs::Yes(&expr.loc));
                 let _ = self.constr_sub(ty_id, expected, ConstrProvenance::Expr(expr.id));
+                ty_param_map.extend(map);
             }
 
             _ => unreachable!(),
+        }
+
+        for (&param, &arg) in iter::zip(&sig.generics, &ty_args) {
+            let _ = self.constr_eq(arg, ty_param_map[param], ConstrProvenance::Expr(expr.id));
         }
 
         for (&param, &arg) in iter::zip(&sig.params, &args) {

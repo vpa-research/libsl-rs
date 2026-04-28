@@ -538,7 +538,7 @@ impl Sema<'_> {
     }
 }
 
-enum DeclCtx {
+enum DeclCtx<'a> {
     Global(FileId),
     Struct(DefId),
 
@@ -549,11 +549,11 @@ enum DeclCtx {
 
     FuncBody {
         def_id: DefId,
-        scope_id: ScopeId,
+        scope_id: &'a mut ScopeId,
     },
 }
 
-impl DeclCtx {
+impl DeclCtx<'_> {
     fn outer_def_id(&self) -> Option<DefId> {
         match *self {
             DeclCtx::Global(_) => None,
@@ -571,7 +571,10 @@ impl DeclCtx {
                 (Some(def_id), sema.name_res.def_member_scopes[def_id])
             }
 
-            DeclCtx::FuncBody { def_id, scope_id } => (Some(def_id), scope_id),
+            DeclCtx::FuncBody {
+                def_id,
+                ref scope_id,
+            } => (Some(def_id), **scope_id),
         }
     }
 
@@ -783,6 +786,21 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         );
     }
 
+    fn report_multiple_definition(&mut self, loc: Loc, prev_def_id: DefId, name: String) {
+        let prev_def = &self.sema.name_res.defs[prev_def_id];
+        self.result = Err(());
+        self.diag.emit(
+            Diag::err()
+                .at(loc.clone())
+                .with_msg(format!("the name `{name}` is defined multiple times"))
+                .with_label(Label::primary(loc).with_msg("defined here"))
+                .with_label(
+                    Label::secondary(prev_def.loc.clone()).with_msg("previously defined here"),
+                )
+                .build(),
+        );
+    }
+
     fn add_def(
         &mut self,
         scope_id: ScopeId,
@@ -800,20 +818,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             Ok(()) => (def_id, true),
 
             Err((prev_def_id, name)) => {
-                let prev_def = &self.sema.name_res.defs[prev_def_id];
-                self.result = Err(());
-
-                self.diag.emit(
-                    Diag::err()
-                        .at(loc.clone())
-                        .with_msg(format!("the name `{name}` is defined multiple times"))
-                        .with_label(Label::primary(loc).with_msg("defined here"))
-                        .with_label(
-                            Label::secondary(prev_def.loc.clone())
-                                .with_msg("previously defined here"),
-                        )
-                        .build(),
-                );
+                self.report_multiple_definition(loc, prev_def_id, name);
 
                 (def_id, false)
             }
@@ -911,7 +916,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn record_member_function(
         &mut self,
-        ctx: DeclCtx,
+        ctx: DeclCtx<'_>,
         is_static: bool,
         _is_method: bool,
         def_id: DefId,
@@ -948,7 +953,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn process_decl_symbol(&mut self, ctx: DeclCtx, decl_id: DeclId) {
+    fn process_decl_symbol(&mut self, ctx: DeclCtx<'_>, decl_id: DeclId) {
         let decl = &self.sema.libsl.decls[decl_id];
         let (outer_def_id, outer_scope_id) = ctx.outer(self.sema);
 
@@ -1743,15 +1748,17 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             self.process_contract(func_def_id, contract);
         }
 
+        let mut current_scope_id = scope_id;
+
         for &stmt_id in &body.stmts {
-            self.process_stmt(func_def_id, scope_id, stmt_id);
+            self.process_stmt(func_def_id, &mut current_scope_id, stmt_id);
         }
     }
 }
 
 // Phase 3, declarations.
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
-    fn process_decl(&mut self, ctx: DeclCtx, decl_id: DeclId) {
+    fn process_decl(&mut self, ctx: DeclCtx<'_>, decl_id: DeclId) {
         let decl = &self.sema.libsl.decls[decl_id];
 
         match &decl.kind {
@@ -1778,7 +1785,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn process_decl_semantic_ty(
         &mut self,
-        _ctx: DeclCtx,
+        _ctx: DeclCtx<'_>,
         decl_id: DeclId,
         decl: &'ast ast::DeclSemanticTy,
     ) {
@@ -1814,7 +1821,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn process_decl_ty_alias(
         &mut self,
-        _ctx: DeclCtx,
+        _ctx: DeclCtx<'_>,
         decl_id: DeclId,
         decl: &'ast ast::DeclTyAlias,
     ) {
@@ -1828,7 +1835,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.process_ty_expr(param_scope_id, decl.ty_expr);
     }
 
-    fn process_decl_struct(&mut self, _ctx: DeclCtx, decl_id: DeclId, decl: &'ast ast::DeclStruct) {
+    fn process_decl_struct(
+        &mut self,
+        _ctx: DeclCtx<'_>,
+        decl_id: DeclId,
+        decl: &'ast ast::DeclStruct,
+    ) {
         let def_id = self.sema.name_res.decl_defs[decl_id];
         let param_scope_id = self.def::<DefStruct>(def_id).param_scope_id;
 
@@ -1888,7 +1900,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn process_decl_enum(&mut self, _ctx: DeclCtx, decl_id: DeclId, decl: &'ast ast::DeclEnum) {
+    fn process_decl_enum(&mut self, _ctx: DeclCtx<'_>, decl_id: DeclId, decl: &'ast ast::DeclEnum) {
         let def_id = self.sema.name_res.decl_defs[decl_id];
         let param_scope_id = self.def::<DefEnum>(def_id).param_scope_id;
 
@@ -1899,7 +1911,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn process_decl_annotation(
         &mut self,
-        _ctx: DeclCtx,
+        _ctx: DeclCtx<'_>,
         decl_id: DeclId,
         decl: &'ast ast::DeclAnnotation,
     ) {
@@ -1943,7 +1955,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn process_decl_action(&mut self, _ctx: DeclCtx, decl_id: DeclId, decl: &'ast ast::DeclAction) {
+    fn process_decl_action(
+        &mut self,
+        _ctx: DeclCtx<'_>,
+        decl_id: DeclId,
+        decl: &'ast ast::DeclAction,
+    ) {
         let def_id = self.sema.name_res.decl_defs[decl_id];
         let param_scope_id = self.def::<DefAction>(def_id).param_scope_id;
 
@@ -1984,7 +2001,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn process_decl_automaton(
         &mut self,
-        _ctx: DeclCtx,
+        _ctx: DeclCtx<'_>,
         decl_id: DeclId,
         decl: &'ast ast::DeclAutomaton,
     ) {
@@ -2022,7 +2039,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn process_decl_function(
         &mut self,
-        ctx: DeclCtx,
+        ctx: DeclCtx<'_>,
         decl_id: DeclId,
         decl: &'ast ast::DeclFunction,
     ) {
@@ -2053,38 +2070,41 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn process_decl_variable(
         &mut self,
-        ctx: DeclCtx,
+        ctx: DeclCtx<'_>,
         decl_id: DeclId,
         decl: &'ast ast::DeclVariable,
     ) {
         let (_, scope_id) = ctx.outer(self.sema);
 
-        match ctx {
+        let (def_id, needs_registering) = match ctx {
             DeclCtx::Global(_) | DeclCtx::Struct(_) | DeclCtx::Automaton { .. } => {
                 // already registered in phase 1.
+                (self.sema.name_res.decl_defs[decl_id], false)
             }
 
             DeclCtx::FuncBody {
                 def_id: func_def_id,
                 ..
             } => {
-                let _ = self.add_decl_def(
-                    decl_id,
+                let def_id = self.sema.name_res.defs.insert_with_key(|id| Def {
+                    id,
+                    loc: decl.name.loc.clone(),
+                    name: decl.name.to_string(),
                     scope_id,
-                    Ns::Var,
-                    decl.name.to_string(),
-                    decl.name.loc.clone(),
-                    DefVariable::new(
+                    kind: DefVariable::new(
                         Some(decl_id),
                         VariableKind::Local { of: func_def_id },
                         decl.kind.is_var(),
                     )
                     .into(),
-                );
-            }
-        }
+                });
 
-        let def_id = self.sema.name_res.decl_defs[decl_id];
+                self.sema.name_res.decl_defs.insert(decl_id, def_id);
+
+                (def_id, true)
+            }
+        };
+
         self.sema
             .name_res
             .def_mut::<DefVariable>(def_id)
@@ -2103,19 +2123,53 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 expr_id,
             );
         }
+
+        if needs_registering {
+            let DeclCtx::FuncBody {
+                def_id: func_def_id,
+                scope_id,
+            } = ctx
+            else {
+                unreachable!()
+            };
+
+            *scope_id = self.sema.name_res.scopes.insert(Scope::new(
+                Some(*scope_id),
+                ScopeKind::Block { func: func_def_id },
+            ));
+
+            if let Err((prev_def_id, name)) = self.sema.name_res.add_def_to_scope(
+                *scope_id,
+                Ns::Var,
+                decl.name.to_string(),
+                def_id,
+            ) {
+                self.report_multiple_definition(decl.name.loc.clone(), prev_def_id, name);
+            }
+        }
     }
 
-    fn process_decl_state(&mut self, _ctx: DeclCtx, _decl_id: DeclId, _decl: &'ast ast::DeclState) {
+    fn process_decl_state(
+        &mut self,
+        _ctx: DeclCtx<'_>,
+        _decl_id: DeclId,
+        _decl: &'ast ast::DeclState,
+    ) {
         // do nothing.
     }
 
-    fn process_decl_shift(&mut self, _ctx: DeclCtx, _decl_id: DeclId, _decl: &'ast ast::DeclShift) {
+    fn process_decl_shift(
+        &mut self,
+        _ctx: DeclCtx<'_>,
+        _decl_id: DeclId,
+        _decl: &'ast ast::DeclShift,
+    ) {
         // do nothing.
     }
 
     fn process_decl_constructor(
         &mut self,
-        ctx: DeclCtx,
+        ctx: DeclCtx<'_>,
         decl_id: DeclId,
         decl: &'ast ast::DeclConstructor,
     ) {
@@ -2143,7 +2197,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn process_decl_destructor(
         &mut self,
-        ctx: DeclCtx,
+        ctx: DeclCtx<'_>,
         decl_id: DeclId,
         decl: &'ast ast::DeclDestructor,
     ) {
@@ -2169,7 +2223,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn process_decl_proc(&mut self, ctx: DeclCtx, decl_id: DeclId, decl: &'ast ast::DeclProc) {
+    fn process_decl_proc(&mut self, ctx: DeclCtx<'_>, decl_id: DeclId, decl: &'ast ast::DeclProc) {
         let def_id = self.sema.name_res.decl_defs[decl_id];
         let param_scope_id = self.def::<DefFunction>(def_id).param_scope_id;
 
@@ -2225,9 +2279,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         scope_id: ScopeId,
         contract: &'ast ast::ContractRequires,
     ) {
+        let mut current_scope_id = scope_id;
+
         self.process_pred(
             func_def_id,
-            scope_id,
+            &mut current_scope_id,
             PredKind::ContractRequires,
             contract.pred,
         );
@@ -2239,9 +2295,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         scope_id: ScopeId,
         contract: &'ast ast::ContractEnsures,
     ) {
+        let mut current_scope_id = scope_id;
+
         self.process_pred(
             func_def_id,
-            scope_id,
+            &mut current_scope_id,
             PredKind::ContractEnsures,
             contract.pred,
         );
@@ -2267,7 +2325,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn process_pred(
         &mut self,
         func_def_id: DefId,
-        scope_id: ScopeId,
+        scope_id: &mut ScopeId,
         kind: PredKind,
         pred_id: PredId,
     ) {
@@ -2301,25 +2359,25 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn process_pred_block(
         &mut self,
         func_def_id: DefId,
-        scope_id: ScopeId,
+        scope_id: &mut ScopeId,
         _kind: PredKind,
         _pred_id: PredId,
         pred: &'ast ast::PredBlock,
     ) {
-        let scope_id = self.sema.name_res.scopes.insert(Scope::new(
-            Some(scope_id),
+        let mut scope_id = self.sema.name_res.scopes.insert(Scope::new(
+            Some(*scope_id),
             ScopeKind::Block { func: func_def_id },
         ));
 
         for &pred_id in &pred.preds {
-            self.process_pred(func_def_id, scope_id, PredKind::Nested, pred_id);
+            self.process_pred(func_def_id, &mut scope_id, PredKind::Nested, pred_id);
         }
     }
 
     fn process_pred_named(
         &mut self,
         func_def_id: DefId,
-        scope_id: ScopeId,
+        scope_id: &mut ScopeId,
         kind: PredKind,
         pred_id: PredId,
         pred: &'ast ast::PredNamed,
@@ -2347,7 +2405,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn process_pred_var(
         &mut self,
         func_def_id: DefId,
-        scope_id: ScopeId,
+        scope_id: &mut ScopeId,
         _kind: PredKind,
         _pred_id: PredId,
         decl_id: DeclId,
@@ -2364,52 +2422,57 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn process_pred_if(
         &mut self,
         func_def_id: DefId,
-        scope_id: ScopeId,
+        scope_id: &mut ScopeId,
         _kind: PredKind,
         _pred_id: PredId,
         pred: &'ast ast::PredIf,
     ) {
         self.process_expr(
             ExprCtx {
-                scope_id,
+                scope_id: *scope_id,
                 kind: ExprCtxKind::FunctionBody(func_def_id),
             },
             pred.cond,
         );
 
-        let then_scope_id = self.sema.name_res.scopes.insert(Scope::new(
-            Some(scope_id),
+        let mut then_scope_id = self.sema.name_res.scopes.insert(Scope::new(
+            Some(*scope_id),
             ScopeKind::Block { func: func_def_id },
         ));
 
         self.process_pred(
             func_def_id,
-            then_scope_id,
+            &mut then_scope_id,
             PredKind::Nested,
             pred.then_branch,
         );
 
         if let Some(else_pred_id) = pred.else_branch {
-            let else_scope_id = self.sema.name_res.scopes.insert(Scope::new(
-                Some(scope_id),
+            let mut else_scope_id = self.sema.name_res.scopes.insert(Scope::new(
+                Some(*scope_id),
                 ScopeKind::Block { func: func_def_id },
             ));
 
-            self.process_pred(func_def_id, else_scope_id, PredKind::Nested, else_pred_id);
+            self.process_pred(
+                func_def_id,
+                &mut else_scope_id,
+                PredKind::Nested,
+                else_pred_id,
+            );
         }
     }
 
     fn process_pred_expr(
         &mut self,
         func_def_id: DefId,
-        scope_id: ScopeId,
+        scope_id: &mut ScopeId,
         _kind: PredKind,
         _pred_id: PredId,
         expr_id: ExprId,
     ) {
         self.process_expr(
             ExprCtx {
-                scope_id,
+                scope_id: *scope_id,
                 kind: ExprCtxKind::FunctionBody(func_def_id),
             },
             expr_id,
@@ -2419,7 +2482,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
 // Phase 3, statements.
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
-    fn process_stmt(&mut self, func_def_id: DefId, scope_id: ScopeId, stmt_id: StmtId) {
+    fn process_stmt(&mut self, func_def_id: DefId, scope_id: &mut ScopeId, stmt_id: StmtId) {
         let stmt = &self.sema.libsl.stmts[stmt_id];
 
         self.sema.name_res.stmts.insert(
@@ -2455,7 +2518,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn process_stmt_decl(
         &mut self,
         func_def_id: DefId,
-        scope_id: ScopeId,
+        scope_id: &mut ScopeId,
         _stmt_id: StmtId,
         decl_id: DeclId,
     ) {
@@ -2471,35 +2534,35 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn process_stmt_if(
         &mut self,
         func_def_id: DefId,
-        scope_id: ScopeId,
+        scope_id: &mut ScopeId,
         _stmt_id: StmtId,
         stmt: &'ast ast::StmtIf,
     ) {
         self.process_expr(
             ExprCtx {
-                scope_id,
+                scope_id: *scope_id,
                 kind: ExprCtxKind::FunctionBody(func_def_id),
             },
             stmt.cond,
         );
 
-        let then_scope_id = self.sema.name_res.scopes.insert(Scope::new(
-            Some(scope_id),
+        let mut then_scope_id = self.sema.name_res.scopes.insert(Scope::new(
+            Some(*scope_id),
             ScopeKind::Block { func: func_def_id },
         ));
 
         for &then_stmt_id in &stmt.then_branch {
-            self.process_stmt(func_def_id, then_scope_id, then_stmt_id);
+            self.process_stmt(func_def_id, &mut then_scope_id, then_stmt_id);
         }
 
         if !stmt.else_branch.is_empty() {
-            let else_scope_id = self.sema.name_res.scopes.insert(Scope::new(
-                Some(scope_id),
+            let mut else_scope_id = self.sema.name_res.scopes.insert(Scope::new(
+                Some(*scope_id),
                 ScopeKind::Block { func: func_def_id },
             ));
 
             for &else_stmt_id in &stmt.else_branch {
-                self.process_stmt(func_def_id, else_scope_id, else_stmt_id);
+                self.process_stmt(func_def_id, &mut else_scope_id, else_stmt_id);
             }
         }
     }
@@ -2507,12 +2570,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn process_stmt_assign(
         &mut self,
         func_def_id: DefId,
-        scope_id: ScopeId,
+        scope_id: &mut ScopeId,
         _stmt_id: StmtId,
         stmt: &'ast ast::StmtAssign,
     ) {
         let ctx = ExprCtx {
-            scope_id,
+            scope_id: *scope_id,
             kind: ExprCtxKind::FunctionBody(func_def_id),
         };
 
@@ -2523,7 +2586,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn process_stmt_cancel(
         &mut self,
         _func_def_id: DefId,
-        _scope_id: ScopeId,
+        _scope_id: &mut ScopeId,
         _stmt_id: StmtId,
         _stmt: &'ast ast::StmtCancel,
     ) {
@@ -2533,13 +2596,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn process_stmt_expr(
         &mut self,
         func_def_id: DefId,
-        scope_id: ScopeId,
+        scope_id: &mut ScopeId,
         _stmt_id: StmtId,
         expr_id: ExprId,
     ) {
         self.process_expr(
             ExprCtx {
-                scope_id,
+                scope_id: *scope_id,
                 kind: ExprCtxKind::FunctionBody(func_def_id),
             },
             expr_id,

@@ -1612,7 +1612,7 @@ impl ConstrKind {
             }
 
             Self::Sub(lhs, rhs) => {
-                write!(f, "`{}` <; `{}`", sema.format_ty(lhs), sema.format_ty(rhs))
+                write!(f, "`{}` <: `{}`", sema.format_ty(lhs), sema.format_ty(rhs))
             }
 
             Self::Coerce(lhs, rhs) => {
@@ -1765,6 +1765,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     pub fn fresh_var(&mut self, provenance: VarProvenance) -> TyId {
         let idx = self.sema.tyck.var_provenances.len();
         self.sema.tyck.var_provenances.push(provenance);
+
+        if trace_enabled() {
+            eprintln!(
+                "adding fresh var #{idx}: {}",
+                self.constrs.display_var(self.sema, idx),
+            );
+        }
 
         self.sema.tyck.add_ty(Ty::Var(idx))
     }

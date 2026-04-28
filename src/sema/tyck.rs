@@ -872,7 +872,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                             )
                             .into(),
                         )
-                        .unwrap()
+                        .0
                 })
                 .collect();
 

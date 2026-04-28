@@ -232,6 +232,13 @@ impl<'ast, D: DiagCtx> Visitor<'ast, AccessMode> for ProcChecker<'ast, '_, '_, D
                 return ControlFlow::Continue(());
             }
 
+            ast::ExprKind::Deref(_) => {
+                self.pass.record_err(make_err(
+                    expr.loc.clone(),
+                    "pointer dereference expressions",
+                ));
+            }
+
             ast::ExprKind::Index(e) => {
                 e.base.walk(self, ctx)?;
                 e.index.walk(self, AccessMode::Read)?;

@@ -1972,6 +1972,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             ast::ExprKind::Name(e) => self.tyck_expr_name(expr, e, ctx),
             ast::ExprKind::Prev(e) => self.tyck_expr_prev(expr, e, ctx),
             ast::ExprKind::Field(e) => self.tyck_expr_field(expr, e, ctx),
+            ast::ExprKind::Deref(e) => self.tyck_expr_deref(expr, e, ctx),
             ast::ExprKind::Index(e) => self.tyck_expr_index(expr, e, ctx),
             ast::ExprKind::HasConcept(e) => self.tyck_expr_has_concept(expr, e, ctx),
             ast::ExprKind::Cast(e) => self.tyck_expr_cast(expr, e, ctx),
@@ -3321,6 +3322,18 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
+    fn tyck_expr_deref(&mut self, expr: &'ast ast::Expr, e: &'ast ast::ExprDeref, ctx: ExprCkCtx) {
+        let elem_ty = self.fresh_var(VarProvenance::Element { of: expr.id });
+        let ptr_ty = self
+            .sema
+            .tyck
+            .add_ctor_ty(self.sema.name_res.prelude_defs.pointer, vec![elem_ty]);
+        self.tyck_expr(e.base, ctx.nested(Some(ptr_ty)));
+
+        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, elem_ty);
+        self.sema.tyck.exprs.insert(expr.id, ty_id);
+    }
+
     fn tyck_expr_index(&mut self, expr: &'ast ast::Expr, e: &'ast ast::ExprIndex, ctx: ExprCkCtx) {
         let elem_ty = self.fresh_var(VarProvenance::Element { of: expr.id });
         let array_ty = self
@@ -3328,7 +3341,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .tyck
             .add_ctor_ty(self.sema.name_res.prelude_defs.array, vec![elem_ty]);
         self.tyck_expr(e.base, ctx.nested(Some(array_ty)));
-        self.tyck_expr(e.index, ctx.nested(Some(self.sema.tyck.builtin.int32)));
+        self.tyck_expr(e.index, ctx.nested(Some(self.sema.tyck.builtin.unsigned64)));
 
         let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, elem_ty);
         self.sema.tyck.exprs.insert(expr.id, ty_id);

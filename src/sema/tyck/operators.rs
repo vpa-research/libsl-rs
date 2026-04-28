@@ -5,7 +5,7 @@ use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
 use crate::sema::Sema;
 use crate::sema::def::DefKindTag;
-use crate::sema::ty::{ConstructedTy, IntCtor, Ty, TyId};
+use crate::sema::ty::{IntCtor, TyId};
 use crate::sema::tyck::constraints::ConstrProvenance;
 use crate::sema::tyck::overload::{ApplicabilityCriteria, FnSigProvider, OverloadDiagProvider};
 use crate::sema::tyck::{BuiltinTys, FnSig, Pass};
@@ -55,11 +55,13 @@ pub enum OpOverload {
     EqChar,
     EqString,
     EqEnum,
+    EqPointer,
     NeNumeric(NumericCmpOpOverload),
     NeBool,
     NeChar,
     NeString,
     NeEnum,
+    NePointer,
     InSet,
     InArray,
     NotInSet,
@@ -424,6 +426,20 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     P::concrete(op, loc, OpOverload::EqBool, vec![bool, bool], bool),
                     P::concrete(op, loc, OpOverload::EqChar, vec![char, char], bool),
                     P::concrete(op, loc, OpOverload::EqString, vec![string, string], bool),
+                    P::generic(
+                        self.sema,
+                        op,
+                        loc,
+                        OpOverload::EqPointer,
+                        ["T"],
+                        |sema, [t]| {
+                            let ptr = sema
+                                .tyck
+                                .add_ctor_ty(sema.name_res.prelude_defs.pointer, vec![t]);
+
+                            (vec![ptr, ptr], bool)
+                        },
+                    ),
                 ]);
 
                 result.extend_from_slice(self.enum_eq_overloads.get_or_insert_with(|| {
@@ -439,6 +455,20 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     P::concrete(op, loc, OpOverload::NeBool, vec![bool, bool], bool),
                     P::concrete(op, loc, OpOverload::NeChar, vec![char, char], bool),
                     P::concrete(op, loc, OpOverload::NeString, vec![string, string], bool),
+                    P::generic(
+                        self.sema,
+                        op,
+                        loc,
+                        OpOverload::NePointer,
+                        ["T"],
+                        |sema, [t]| {
+                            let ptr = sema
+                                .tyck
+                                .add_ctor_ty(sema.name_res.prelude_defs.pointer, vec![t]);
+
+                            (vec![ptr, ptr], bool)
+                        },
+                    ),
                 ]);
 
                 result.extend_from_slice(self.enum_ne_overloads.get_or_insert_with(|| {
@@ -450,10 +480,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
             ast::BinOp::In => vec![
                 P::generic(self.sema, op, loc, OpOverload::InSet, ["T"], |sema, [t]| {
-                    let set = sema.tyck.add_ty(Ty::Ctor(ConstructedTy {
-                        ctor: sema.name_res.prelude_defs.set,
-                        args: vec![t],
-                    }));
+                    let set = sema
+                        .tyck
+                        .add_ctor_ty(sema.name_res.prelude_defs.set, vec![t]);
 
                     (vec![t, set], bool)
                 }),
@@ -464,10 +493,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     OpOverload::InArray,
                     ["T"],
                     |sema, [t]| {
-                        let array = sema.tyck.add_ty(Ty::Ctor(ConstructedTy {
-                            ctor: sema.name_res.prelude_defs.array,
-                            args: vec![t],
-                        }));
+                        let array = sema
+                            .tyck
+                            .add_ctor_ty(sema.name_res.prelude_defs.array, vec![t]);
 
                         (vec![t, array], bool)
                     },
@@ -482,10 +510,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     OpOverload::NotInSet,
                     ["T"],
                     |sema, [t]| {
-                        let set = sema.tyck.add_ty(Ty::Ctor(ConstructedTy {
-                            ctor: sema.name_res.prelude_defs.set,
-                            args: vec![t],
-                        }));
+                        let set = sema
+                            .tyck
+                            .add_ctor_ty(sema.name_res.prelude_defs.set, vec![t]);
 
                         (vec![t, set], bool)
                     },
@@ -497,10 +524,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     OpOverload::NotInArray,
                     ["T"],
                     |sema, [t]| {
-                        let array = sema.tyck.add_ty(Ty::Ctor(ConstructedTy {
-                            ctor: sema.name_res.prelude_defs.array,
-                            args: vec![t],
-                        }));
+                        let array = sema
+                            .tyck
+                            .add_ctor_ty(sema.name_res.prelude_defs.array, vec![t]);
 
                         (vec![t, array], bool)
                     },

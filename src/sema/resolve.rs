@@ -2669,6 +2669,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
             ast::ExprKind::Field(expr) => self.process_expr_field(ctx, expr_id, expr),
 
+            ast::ExprKind::Deref(expr) => self.process_expr_deref(ctx, expr_id, expr),
+
             ast::ExprKind::Index(expr) => self.process_expr_index(ctx, expr_id, expr),
 
             ast::ExprKind::HasConcept(expr) => self.process_expr_has_concept(ctx, expr_id, expr),
@@ -2856,6 +2858,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.process_expr(ctx.clone(), expr.base);
 
         // the field is resolved during tyck.
+    }
+
+    fn process_expr_deref(&mut self, ctx: ExprCtx, _expr_id: ExprId, expr: &'ast ast::ExprDeref) {
+        self.process_expr(ctx.clone(), expr.base);
     }
 
     fn process_expr_index(&mut self, ctx: ExprCtx, _expr_id: ExprId, expr: &'ast ast::ExprIndex) {

@@ -612,7 +612,11 @@ make_display_struct!(DeclSemanticTyDisplay { d } for ast::DeclSemanticTy);
 impl Display for DeclSemanticTyDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for &annotation_id in &self.d.annotations {
-            writeln!(f, "{}", self.libsl.annotations[annotation_id].display(self.libsl))?;
+            writeln!(
+                f,
+                "{}",
+                self.libsl.annotations[annotation_id].display(self.libsl)
+            )?;
         }
 
         write!(
@@ -653,7 +657,11 @@ make_display_struct!(DeclTyAliasDisplay { d } for ast::DeclTyAlias);
 impl Display for DeclTyAliasDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for &annotation_id in &self.d.annotations {
-            writeln!(f, "{}", self.libsl.annotations[annotation_id].display(self.libsl))?;
+            writeln!(
+                f,
+                "{}",
+                self.libsl.annotations[annotation_id].display(self.libsl)
+            )?;
         }
 
         write!(
@@ -670,7 +678,11 @@ make_display_struct!(DeclStructDisplay { d } for ast::DeclStruct);
 impl Display for DeclStructDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for &annotation_id in &self.d.annotations {
-            writeln!(f, "{}", self.libsl.annotations[annotation_id].display(self.libsl))?;
+            writeln!(
+                f,
+                "{}",
+                self.libsl.annotations[annotation_id].display(self.libsl)
+            )?;
         }
 
         write!(f, "type {}", self.d.ty_name.display(self.libsl))?;
@@ -736,7 +748,11 @@ make_display_struct!(DeclEnumDisplay { d } for ast::DeclEnum);
 impl Display for DeclEnumDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for &annotation_id in &self.d.annotations {
-            writeln!(f, "{}", self.libsl.annotations[annotation_id].display(self.libsl))?;
+            writeln!(
+                f,
+                "{}",
+                self.libsl.annotations[annotation_id].display(self.libsl)
+            )?;
         }
 
         write!(f, "enum {} ", self.d.ty_name.display(self.libsl))?;
@@ -798,7 +814,11 @@ make_display_struct!(DeclActionDisplay { d } for ast::DeclAction);
 impl Display for DeclActionDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for &annotation_id in &self.d.annotations {
-            writeln!(f, "{}", self.libsl.annotations[annotation_id].display(self.libsl))?;
+            writeln!(
+                f,
+                "{}",
+                self.libsl.annotations[annotation_id].display(self.libsl)
+            )?;
         }
 
         write!(f, "define action ")?;
@@ -823,7 +843,11 @@ impl Display for DeclActionDisplay<'_> {
             self.d.params.iter().map(|param| {
                 move |f: &mut dyn fmt::Write| {
                     for &annotation_id in &param.annotations {
-                        writeln!(f, "{}", self.libsl.annotations[annotation_id].display(self.libsl))?;
+                        writeln!(
+                            f,
+                            "{}",
+                            self.libsl.annotations[annotation_id].display(self.libsl)
+                        )?;
                     }
 
                     write!(
@@ -864,7 +888,11 @@ make_display_struct!(DeclAutomatonDisplay { d } for ast::DeclAutomaton);
 impl Display for DeclAutomatonDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for &annotation_id in &self.d.annotations {
-            writeln!(f, "{}", self.libsl.annotations[annotation_id].display(self.libsl))?;
+            writeln!(
+                f,
+                "{}",
+                self.libsl.annotations[annotation_id].display(self.libsl)
+            )?;
         }
 
         write!(f, "automaton ")?;
@@ -956,7 +984,11 @@ make_display_struct!(DeclFunctionDisplay { d } for ast::DeclFunction);
 impl Display for DeclFunctionDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for &annotation_id in &self.d.annotations {
-            writeln!(f, "{}", self.libsl.annotations[annotation_id].display(self.libsl))?;
+            writeln!(
+                f,
+                "{}",
+                self.libsl.annotations[annotation_id].display(self.libsl)
+            )?;
         }
 
         if self.d.is_static {
@@ -1061,7 +1093,11 @@ pub struct DeclVariableDisplay<'a> {
 impl Display for DeclVariableDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for &annotation_id in &self.d.annotations {
-            writeln!(f, "{}", self.libsl.annotations[annotation_id].display(self.libsl))?;
+            writeln!(
+                f,
+                "{}",
+                self.libsl.annotations[annotation_id].display(self.libsl)
+            )?;
         }
 
         match self.d.kind {
@@ -1168,7 +1204,11 @@ make_display_struct!(DeclConstructorDisplay { d } for ast::DeclConstructor);
 impl Display for DeclConstructorDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for &annotation_id in &self.d.annotations {
-            writeln!(f, "{}", self.libsl.annotations[annotation_id].display(self.libsl))?;
+            writeln!(
+                f,
+                "{}",
+                self.libsl.annotations[annotation_id].display(self.libsl)
+            )?;
         }
 
         write!(f, "constructor")?;
@@ -1227,7 +1267,11 @@ make_display_struct!(DeclDestructorDisplay { d } for ast::DeclDestructor);
 impl Display for DeclDestructorDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for &annotation_id in &self.d.annotations {
-            writeln!(f, "{}", self.libsl.annotations[annotation_id].display(self.libsl))?;
+            writeln!(
+                f,
+                "{}",
+                self.libsl.annotations[annotation_id].display(self.libsl)
+            )?;
         }
 
         write!(f, "destructor")?;
@@ -1286,7 +1330,11 @@ make_display_struct!(DeclProcDisplay { d } for ast::DeclProc);
 impl Display for DeclProcDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for &annotation_id in &self.d.annotations {
-            writeln!(f, "{}", self.libsl.annotations[annotation_id].display(self.libsl))?;
+            writeln!(
+                f,
+                "{}",
+                self.libsl.annotations[annotation_id].display(self.libsl)
+            )?;
         }
 
         write!(f, "proc ")?;
@@ -1365,7 +1413,11 @@ make_display_struct!(FunctionParamDisplay { p } for ast::FunctionParam);
 impl Display for FunctionParamDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for &annotation_id in &self.p.annotations {
-            writeln!(f, "{}", self.libsl.annotations[annotation_id].display(self.libsl))?;
+            writeln!(
+                f,
+                "{}",
+                self.libsl.annotations[annotation_id].display(self.libsl)
+            )?;
         }
 
         write!(
@@ -1907,6 +1959,7 @@ make_display_struct!(
         ast::ExprKind::Name(e) => e.precedence(),
         ast::ExprKind::Prev(e) => e.precedence(),
         ast::ExprKind::Field(e) => e.precedence(),
+        ast::ExprKind::Deref(e) => e.precedence(),
         ast::ExprKind::Index(e) => e.precedence(),
         ast::ExprKind::HasConcept(e) => e.precedence(),
         ast::ExprKind::Cast(e) => e.precedence(),
@@ -1931,6 +1984,7 @@ impl Display for ExprDisplay<'_> {
             ast::ExprKind::Name(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
             ast::ExprKind::Prev(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
             ast::ExprKind::Field(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
+            ast::ExprKind::Deref(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
             ast::ExprKind::Index(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
             ast::ExprKind::HasConcept(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
             ast::ExprKind::Cast(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
@@ -2180,6 +2234,23 @@ impl Display for ExprFieldDisplay<'_> {
                 "{lhs}.{field}",
                 lhs = self.libsl.exprs[self.e.base].display_prec(self.libsl, self.e.precedence()),
                 field = self.e.field,
+            )
+        })
+    }
+}
+
+make_display_struct!(
+    ExprDerefDisplay { e } for ast::ExprDeref
+    where precedence: ExprPrec = ExprPrec::Atomic
+);
+
+impl Display for ExprDerefDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        display_parens(f, self.e.precedence(), self.prec, |f| {
+            write!(
+                f,
+                "{lhs}.*",
+                lhs = self.libsl.exprs[self.e.base].display_prec(self.libsl, self.e.precedence()),
             )
         })
     }

@@ -1609,6 +1609,9 @@ pub enum ExprKind {
     /// A field access expression.
     Field(ExprField),
 
+    /// A pointer dereference expression.
+    Deref(ExprDeref),
+
     /// An index access expression.
     Index(ExprIndex),
 
@@ -1679,6 +1682,12 @@ impl From<ExprPrev> for ExprKind {
 impl From<ExprField> for ExprKind {
     fn from(expr: ExprField) -> Self {
         Self::Field(expr)
+    }
+}
+
+impl From<ExprDeref> for ExprKind {
+    fn from(expr: ExprDeref) -> Self {
+        Self::Deref(expr)
     }
 }
 
@@ -1837,6 +1846,14 @@ pub struct ExprField {
 }
 
 impl WithLibSl for ExprField {}
+
+/// A pointer dereference expression.
+#[derive(Walkable, Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
+pub struct ExprDeref {
+    /// The base part of the expression (preceding the dot).
+    pub base: ExprId,
+}
 
 /// An index access expression,
 #[derive(Walkable, Debug, Clone)]

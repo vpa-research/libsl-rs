@@ -17,64 +17,7 @@ use antlr_rust::{InputStream, Parser};
 
 use crate::grammar::lexer::LibSLLexer;
 use crate::grammar::parser::{
-    ActionCallExprContextAll, ActionDeclContextAll, ActionParamContextAll, AddBinOpContextAll,
-    AnnotationArgContextAll, AnnotationContextAll, AnnotationDeclContextAll,
-    AnnotationParamContextAll, ArrayLitExprContextAll, AssignOpContextAll, AssignStmtContextAll,
-    AssigneeContextAll, AssigneeFieldContext, AssigneeIndexContext, AssigneeNameContext,
-    AssignsContractContextAll, AtomicExprArrayLitContextAttrs, AtomicExprContextAll,
-    AtomicExprNameContext, AtomicExprPrimitiveLitContext, AtomicExprSetLitContextAttrs,
-    AtomicExprSignedNumLitContext, AtomicExprSignedNumLitContextAttrs, AutomatonDeclContextAll,
-    AutomatonDefDeclConstructorContextAttrs, AutomatonDefDeclContextAll,
-    AutomatonDefDeclDestructorContextAttrs, AutomatonDefDeclFunctionContextAttrs,
-    AutomatonDefDeclProcContextAttrs, AutomatonDefDeclShiftContextAttrs,
-    AutomatonDefDeclStateContextAttrs, AutomatonDefDeclVariableContextAttrs, BitShiftOpContextAll,
-    BlockContextAll, BlockLoneStmtContextAttrs, BlockPredicateContextAll, CancelStmtContextAll,
-    ConstructorArgContextAll, ConstructorDeclContextAll, ConstructorDeclContextAttrs,
-    ConstructorVariableContextAll, ContractAssignsContextAttrs, ContractContextAll,
-    ContractEnsuresContextAttrs, ContractPredicateBlockContextAttrs, ContractPredicateContextAll,
-    ContractPredicateExprContextAttrs, ContractPredicateIfContextAttrs,
-    ContractRequiresContextAttrs, DestructorDeclContextAll, DestructorDeclContextAttrs,
-    EnsuresContractContextAll, EnumDeclContextAll, EnumDeclVariantContextAll,
-    EnumSemanticTypeValueContextAll, ExprActionCallContextAttrs, ExprAdditiveContext,
-    ExprAndContext, ExprArrayLitContextAttrs, ExprBitAndContext, ExprBitOrContext,
-    ExprBitXorContext, ExprCastContext, ExprContextAll, ExprFieldContext, ExprHasConceptContext,
-    ExprIndexContext, ExprInstantiationContextAttrs, ExprMultiplicativeContext, ExprNameContext,
-    ExprOrContext, ExprPredicateBlockContextAttrs, ExprPredicateContextAll,
-    ExprPredicateExprContextAttrs, ExprPrevContext, ExprPrimitiveLitContext,
-    ExprPrimitiveLitContextAttrs, ExprProcCallQualifiedContext, ExprProcCallUnqualifiedContext,
-    ExprRelationalContext, ExprSetLitContextAttrs, ExprShiftContext, ExprTypeComparisonContext,
-    ExprUnaryContext, FileContextAll, FileContextAttrs, FullNameContextAll, FunctionBodyContextAll,
-    FunctionDeclContextAll, FunctionDefBracedContextAttrs, FunctionDefContextAll,
-    FunctionModifierContextAll, FunctionParamContextAll, FunctionSignatureContextAll,
-    GenericContextAll, GenericsContextAll, GlobalDeclActionContextAttrs,
-    GlobalDeclAnnotationContextAttrs, GlobalDeclAutomatonContextAttrs, GlobalDeclContextAll,
-    GlobalDeclEnumContextAttrs, GlobalDeclFunctionContextAttrs, GlobalDeclImportContextAttrs,
-    GlobalDeclIncludeContextAttrs, GlobalDeclProcContextAttrs,
-    GlobalDeclSemanticTypeSectionContextAttrs, GlobalDeclStructContextAttrs,
-    GlobalDeclTypeAliasContextAttrs, GlobalDeclVariableContextAttrs, HeaderContextAll,
-    IdentContextAll, IfPredicateContextAll, IfStmtContextAll, ImportDeclContextAll,
-    ImportDeclContextAttrs, IncludeDeclContextAll, IncludeDeclContextAttrs,
-    InstantiationExprContextAll, LibSLParser, LibSLParserContextType, MulBinOpContextAll,
-    NameTypeExprContextAll, PathBareContextAttrs, PathContextAll, PathStringLitContextAttrs,
-    PointerTypeExprContextAll, PredicateBlockContextAttrs, PredicateContextAll,
-    PredicateExprContextAttrs, PredicateIfContextAttrs, PredicateNamedContext,
-    PredicateNamedContextAttrs, PredicateVariableDeclContextAttrs, PrimitiveLitCharContextAttrs,
-    PrimitiveLitContextAll, PrimitiveLitFloatContextAttrs, PrimitiveLitIntContextAttrs,
-    PrimitiveLitStringLitContextAttrs, ProcDeclContextAll, ProcModifierContextAll,
-    QualifiedTypeNameContextAll, RelOpContextAll, RequiresContractContextAll,
-    SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs, SemanticTypeDefContextAll,
-    SetLitExprContextAll, ShiftByContextAll, ShiftDeclContextAll, ShiftSourceStateContextAll,
-    ShiftSourceStateShorthandContextAttrs, SignContextAll, SignedIntLitContextAll,
-    SignedIntLitContextAttrs, SignedNumLitContextAll, SignedNumLitFloatContextAttrs,
-    SignedNumLitIntContextAttrs, StateDeclContextAll, StateKindContextAll, StmtAssignContextAttrs,
-    StmtCancelContextAttrs, StmtContextAll, StmtExprContext, StmtIfContextAttrs,
-    StmtVariableDeclContext, StmtVariableDeclContextAttrs, StructDeclContextAll,
-    StructDefDeclContextAll, StructDefDeclFunctionContextAttrs, StructDefDeclProcContextAttrs,
-    StructDefDeclVariableContextAttrs, TypeAliasDeclContextAll, TypeArgContextAll,
-    TypeArgSpecContextAll, TypeArgTypeExprContextAttrs, TypeConstraintContextAll,
-    TypeExprContextAll, TypeExprIntersectionContext, TypeExprNameContextAttrs,
-    TypeExprPointerContextAttrs, TypeExprPrimitiveLitContext, TypeExprUnionContext, UnOpContextAll,
-    VariableDeclContextAll, VariableKindContextAll, VarianceSpecContextAll, WhereClauseContextAll,
+    ActionCallExprContextAll, ActionDeclContextAll, ActionParamContextAll, AddBinOpContextAll, AnnotationArgContextAll, AnnotationContextAll, AnnotationDeclContextAll, AnnotationParamContextAll, ArrayLitExprContextAll, AssignOpContextAll, AssignStmtContextAll, AssigneeContextAll, AssigneeFieldContext, AssigneeIndexContext, AssigneeNameContext, AssignsContractContextAll, AtomicExprArrayLitContextAttrs, AtomicExprContextAll, AtomicExprNameContext, AtomicExprPrimitiveLitContext, AtomicExprSetLitContextAttrs, AtomicExprSignedNumLitContext, AtomicExprSignedNumLitContextAttrs, AutomatonDeclContextAll, AutomatonDefDeclConstructorContextAttrs, AutomatonDefDeclContextAll, AutomatonDefDeclDestructorContextAttrs, AutomatonDefDeclFunctionContextAttrs, AutomatonDefDeclProcContextAttrs, AutomatonDefDeclShiftContextAttrs, AutomatonDefDeclStateContextAttrs, AutomatonDefDeclVariableContextAttrs, BitShiftOpContextAll, BlockContextAll, BlockLoneStmtContextAttrs, BlockPredicateContextAll, CancelStmtContextAll, ConstructorArgContextAll, ConstructorDeclContextAll, ConstructorDeclContextAttrs, ConstructorVariableContextAll, ContractAssignsContextAttrs, ContractContextAll, ContractEnsuresContextAttrs, ContractPredicateBlockContextAttrs, ContractPredicateContextAll, ContractPredicateExprContextAttrs, ContractPredicateIfContextAttrs, ContractRequiresContextAttrs, DestructorDeclContextAll, DestructorDeclContextAttrs, EnsuresContractContextAll, EnumDeclContextAll, EnumDeclVariantContextAll, EnumSemanticTypeValueContextAll, ExprActionCallContextAttrs, ExprAdditiveContext, ExprAndContext, ExprArrayLitContextAttrs, ExprBitAndContext, ExprBitOrContext, ExprBitXorContext, ExprCastContext, ExprContextAll, ExprDerefContext, ExprFieldContext, ExprHasConceptContext, ExprIndexContext, ExprInstantiationContextAttrs, ExprMultiplicativeContext, ExprNameContext, ExprOrContext, ExprPredicateBlockContextAttrs, ExprPredicateContextAll, ExprPredicateExprContextAttrs, ExprPrevContext, ExprPrimitiveLitContext, ExprPrimitiveLitContextAttrs, ExprProcCallQualifiedContext, ExprProcCallUnqualifiedContext, ExprRelationalContext, ExprSetLitContextAttrs, ExprShiftContext, ExprTypeComparisonContext, ExprUnaryContext, FileContextAll, FileContextAttrs, FullNameContextAll, FunctionBodyContextAll, FunctionDeclContextAll, FunctionDefBracedContextAttrs, FunctionDefContextAll, FunctionModifierContextAll, FunctionParamContextAll, FunctionSignatureContextAll, GenericContextAll, GenericsContextAll, GlobalDeclActionContextAttrs, GlobalDeclAnnotationContextAttrs, GlobalDeclAutomatonContextAttrs, GlobalDeclContextAll, GlobalDeclEnumContextAttrs, GlobalDeclFunctionContextAttrs, GlobalDeclImportContextAttrs, GlobalDeclIncludeContextAttrs, GlobalDeclProcContextAttrs, GlobalDeclSemanticTypeSectionContextAttrs, GlobalDeclStructContextAttrs, GlobalDeclTypeAliasContextAttrs, GlobalDeclVariableContextAttrs, HeaderContextAll, IdentContextAll, IfPredicateContextAll, IfStmtContextAll, ImportDeclContextAll, ImportDeclContextAttrs, IncludeDeclContextAll, IncludeDeclContextAttrs, InstantiationExprContextAll, LibSLParser, LibSLParserContextType, MulBinOpContextAll, NameTypeExprContextAll, PathBareContextAttrs, PathContextAll, PathStringLitContextAttrs, PointerTypeExprContextAll, PredicateBlockContextAttrs, PredicateContextAll, PredicateExprContextAttrs, PredicateIfContextAttrs, PredicateNamedContext, PredicateNamedContextAttrs, PredicateVariableDeclContextAttrs, PrimitiveLitCharContextAttrs, PrimitiveLitContextAll, PrimitiveLitFloatContextAttrs, PrimitiveLitIntContextAttrs, PrimitiveLitStringLitContextAttrs, ProcDeclContextAll, ProcModifierContextAll, QualifiedTypeNameContextAll, RelOpContextAll, RequiresContractContextAll, SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs, SemanticTypeDefContextAll, SetLitExprContextAll, ShiftByContextAll, ShiftDeclContextAll, ShiftSourceStateContextAll, ShiftSourceStateShorthandContextAttrs, SignContextAll, SignedIntLitContextAll, SignedIntLitContextAttrs, SignedNumLitContextAll, SignedNumLitFloatContextAttrs, SignedNumLitIntContextAttrs, StateDeclContextAll, StateKindContextAll, StmtAssignContextAttrs, StmtCancelContextAttrs, StmtContextAll, StmtExprContext, StmtIfContextAttrs, StmtVariableDeclContext, StmtVariableDeclContextAttrs, StructDeclContextAll, StructDefDeclContextAll, StructDefDeclFunctionContextAttrs, StructDefDeclProcContextAttrs, StructDefDeclVariableContextAttrs, TypeAliasDeclContextAll, TypeArgContextAll, TypeArgSpecContextAll, TypeArgTypeExprContextAttrs, TypeConstraintContextAll, TypeExprContextAll, TypeExprIntersectionContext, TypeExprNameContextAttrs, TypeExprPointerContextAttrs, TypeExprPrimitiveLitContext, TypeExprUnionContext, UnOpContextAll, VariableDeclContextAll, VariableKindContextAll, VarianceSpecContextAll, WhereClauseContextAll
 };
 use crate::loc::{Loc, Span};
 use crate::{AnnotationId, DeclId, ExprId, FileId, LibSl, PredId, StmtId, TyExprId, ast, grammar};
@@ -2168,6 +2111,8 @@ impl<'a> AstConstructor<'a> {
 
             ExprContextAll::ExprFieldContext(ctx) => self.process_expr_field(ctx),
 
+            ExprContextAll::ExprDerefContext(ctx) => self.process_expr_deref(ctx),
+
             ExprContextAll::ExprIndexContext(ctx) => self.process_expr_index(ctx),
 
             ExprContextAll::ExprUnaryContext(ctx) => self.process_expr_unary(ctx),
@@ -2608,6 +2553,17 @@ impl<'a> AstConstructor<'a> {
             id,
             loc,
             kind: ast::ExprField { base, field }.into(),
+        }))
+    }
+
+    fn process_expr_deref(&mut self, ctx: &ExprDerefContext<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let base = self.process_expr(ctx.base.as_ref().unwrap())?;
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprDeref { base }.into(),
         }))
     }
 

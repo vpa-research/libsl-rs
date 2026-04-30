@@ -19,6 +19,8 @@ use crate::sema::tyck::{Pass, TyCk};
 use crate::sema::{Result, Sema};
 use crate::{ExprId, trace_enabled};
 
+use super::TyCkCtx;
+
 new_key_type! {
     pub struct ConstrId;
 }
@@ -382,6 +384,8 @@ impl ConstrSet {
             ConstrProvenance::SubBound { idx } => self.var_loc(sema, idx),
             ConstrProvenance::EqBound { idx } => self.var_loc(sema, idx),
             ConstrProvenance::Solution { idx, .. } => self.var_loc(sema, idx),
+            ConstrProvenance::None => &Loc::Synthetic,
+            ConstrProvenance::Other { ref loc, .. } => loc,
         }
     }
 
@@ -477,6 +481,12 @@ impl ConstrSet {
                     "inferred from {kind} bounds on {}",
                     self.display_var(sema, idx)
                 ));
+            }
+
+            ConstrProvenance::None => {}
+
+            ConstrProvenance::Other { ref msg, .. } => {
+                d.notes.push(msg.clone());
             }
         }
     }
@@ -1577,6 +1587,13 @@ pub enum ConstrProvenance {
 
     /// Represents a solution derived from subtyping bounds.
     Solution { idx: usize, kind: SubtypeBoundKind },
+
+    /// No provenance.
+    None,
+
+    /// A custom provenance.
+    // TODO: make this a trait object.
+    Other { loc: Loc, msg: String },
 }
 
 #[derive(Debug, Clone)]
@@ -1718,8 +1735,8 @@ impl VarConstr {
 
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     pub fn constr_coerce(&mut self, lhs: TyId, rhs: TyId, provenance: ConstrProvenance) -> Result {
-        let result = self.constrs.add(
-            self.sema,
+        let result = self.ctx.constrs.add(
+            self.ctx.sema,
             self.diag,
             Constr {
                 provenance,
@@ -1733,8 +1750,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     pub fn constr_sub(&mut self, lhs: TyId, rhs: TyId, provenance: ConstrProvenance) -> Result {
-        let result = self.constrs.add(
-            self.sema,
+        let result = self.ctx.constrs.add(
+            self.ctx.sema,
             self.diag,
             Constr {
                 provenance,
@@ -1748,8 +1765,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     pub fn constr_eq(&mut self, lhs: TyId, rhs: TyId, provenance: ConstrProvenance) -> Result {
-        let result = self.constrs.add(
-            self.sema,
+        let result = self.ctx.constrs.add(
+            self.ctx.sema,
             self.diag,
             Constr {
                 provenance,
@@ -1761,7 +1778,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         result
     }
+}
 
+impl TyCkCtx<'_, '_> {
     pub fn fresh_var(&mut self, provenance: VarProvenance) -> TyId {
         let idx = self.sema.tyck.var_provenances.len();
         self.sema.tyck.var_provenances.push(provenance);

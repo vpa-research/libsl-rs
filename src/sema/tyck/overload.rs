@@ -10,12 +10,10 @@ use crate::sema::def::{DefFunction, DefId, FunctionKind};
 use crate::sema::resolve::ScopeKind;
 use crate::sema::ty::{Ty, TyId};
 use crate::sema::tyck::constraints::{Constr, ConstrKind, ConstrProvenance};
-use crate::sema::tyck::{Pass, ReplaceTyArgs};
+use crate::sema::tyck::{FnSig, Pass, ReplaceTyArgs, TyCkCtx};
 use crate::sema::{Result, Sema};
 use crate::util::format_sep_list;
 use crate::{ExprId, WithLibSl, trace_enabled};
-
-use super::FnSig;
 
 #[derive(Debug, Clone)]
 pub enum Receiver {
@@ -91,9 +89,9 @@ impl FnSigProvider for DefFnSigProvider {
 }
 
 pub trait OverloadDiagProvider<F: FnSigProvider> {
-    fn empty_candidate_set<D: DiagCtx>(&self, pass: &Pass<'_, '_, D>) -> Diag;
+    fn empty_candidate_set(&self, ctx: &TyCkCtx<'_, '_>) -> Diag;
 
-    fn ambiguity<D: DiagCtx>(&self, pass: &Pass<'_, '_, D>, ambiguities: &[&F]) -> Diag;
+    fn ambiguity(&self, ctx: &TyCkCtx<'_, '_>, ambiguities: &[&F]) -> Diag;
 }
 
 struct CallOverloadDiagProvider<'a> {
@@ -105,8 +103,8 @@ struct CallOverloadDiagProvider<'a> {
 }
 
 impl CallOverloadDiagProvider<'_> {
-    fn display_call_sig<D: DiagCtx>(&self, pass: &Pass<'_, '_, D>) -> impl Display {
-        let format_ty = |ty_id| pass.sema.format_ty(pass.repr(ty_id));
+    fn display_call_sig(&self, ctx: &TyCkCtx<'_, '_>) -> impl Display {
+        let format_ty = |ty_id| ctx.sema.format_ty(ctx.repr(ty_id));
 
         fmt::from_fn(move |f| {
             match self.recv {
@@ -141,7 +139,7 @@ impl CallOverloadDiagProvider<'_> {
 }
 
 impl OverloadDiagProvider<DefFnSigProvider> for CallOverloadDiagProvider<'_> {
-    fn empty_candidate_set<D: DiagCtx>(&self, pass: &Pass<'_, '_, D>) -> Diag {
+    fn empty_candidate_set(&self, ctx: &TyCkCtx<'_, '_>) -> Diag {
         Diag::err()
             .at(self.loc.clone())
             .with_msg(format!(
@@ -151,26 +149,22 @@ impl OverloadDiagProvider<DefFnSigProvider> for CallOverloadDiagProvider<'_> {
             .with_label(Label::primary(self.loc.clone()))
             .with_note(format!(
                 "this call has signature {}",
-                self.display_call_sig(pass),
+                self.display_call_sig(ctx),
             ))
             .build()
     }
 
-    fn ambiguity<D: DiagCtx>(
-        &self,
-        pass: &Pass<'_, '_, D>,
-        ambiguities: &[&DefFnSigProvider],
-    ) -> Diag {
+    fn ambiguity(&self, ctx: &TyCkCtx<'_, '_>, ambiguities: &[&DefFnSigProvider]) -> Diag {
         let mut possible_candidates = "the following candidates are possible:".to_owned();
 
         for candidate in ambiguities {
             let _ = write!(
                 possible_candidates,
                 "\n- {} defined at {}",
-                pass.sema.format_def_signature(candidate.0),
-                pass.sema.name_res.defs[candidate.0]
+                ctx.sema.format_def_signature(candidate.0),
+                ctx.sema.name_res.defs[candidate.0]
                     .loc
-                    .with_libsl(pass.sema.libsl),
+                    .with_libsl(ctx.sema.libsl),
             );
         }
 
@@ -188,7 +182,7 @@ impl OverloadDiagProvider<DefFnSigProvider> for CallOverloadDiagProvider<'_> {
             .with_note(possible_candidates)
             .with_note(format!(
                 "this call has signature {}",
-                self.display_call_sig(pass),
+                self.display_call_sig(ctx),
             ))
             .build()
     }
@@ -268,34 +262,36 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         args: &[TyId],
         ty_args: &[TyId],
     ) {
-        let Some(&member_scope_id) = self.sema.name_res.def_member_scopes.get(def_id) else {
+        let Some(&member_scope_id) = self.ctx.sema.name_res.def_member_scopes.get(def_id) else {
             return;
         };
 
         if recv.is_some()
-            && let Some(&instance_scope_id) = self.sema.name_res.def_instance_scopes.get(def_id)
-            && let Some(overloads) = self.sema.name_res.scopes[instance_scope_id]
+            && let Some(&instance_scope_id) = self.ctx.sema.name_res.def_instance_scopes.get(def_id)
+            && let Some(overloads) = self.ctx.sema.name_res.scopes[instance_scope_id]
                 .functions
                 .get(name)
         {
             candidates.extend(overloads.clone().into_iter().filter_map(|def_id| {
-                let def_id = self.sema.name_res.resolve_import(def_id);
+                let def_id = self.ctx.sema.name_res.resolve_import(def_id);
                 let provider = DefFnSigProvider(def_id);
 
-                self.is_function_applicable(&provider, criteria, recv, args, ty_args)
+                self.ctx
+                    .is_function_applicable(&provider, criteria, recv, args, ty_args)
                     .then_some(provider)
             }));
         }
 
-        if let Some(overloads) = self.sema.name_res.scopes[member_scope_id]
+        if let Some(overloads) = self.ctx.sema.name_res.scopes[member_scope_id]
             .functions
             .get(name)
         {
             candidates.extend(overloads.clone().into_iter().filter_map(|def_id| {
-                let def_id = self.sema.name_res.resolve_import(def_id);
+                let def_id = self.ctx.sema.name_res.resolve_import(def_id);
                 let provider = DefFnSigProvider(def_id);
 
-                self.is_function_applicable(&provider, criteria, recv, args, ty_args)
+                self.ctx
+                    .is_function_applicable(&provider, criteria, recv, args, ty_args)
                     .then_some(provider)
             }));
         }
@@ -311,11 +307,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         ty_args: &[TyId],
     ) -> Result<DefId> {
         let mut candidates = vec![];
-        let mut next_scope_id = Some(self.sema.name_res.exprs[expr_id].scope_id);
+        let mut next_scope_id = Some(self.ctx.sema.name_res.exprs[expr_id].scope_id);
         let criteria = ApplicabilityCriteria::for_proc_call();
 
         while let Some(scope_id) = next_scope_id {
-            let scope = &self.sema.name_res.scopes[scope_id];
+            let scope = &self.ctx.sema.name_res.scopes[scope_id];
             next_scope_id = scope.parent;
 
             match &scope.kind {
@@ -328,10 +324,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 ScopeKind::Prelude | ScopeKind::Import(_) | ScopeKind::File(_) => {
                     if let Some(overloads) = scope.functions.get(name) {
                         candidates.extend(overloads.clone().into_iter().filter_map(|def_id| {
-                            let def_id = self.sema.name_res.resolve_import(def_id);
+                            let def_id = self.ctx.sema.name_res.resolve_import(def_id);
                             let provider = DefFnSigProvider(def_id);
 
-                            self.is_function_applicable(&provider, &criteria, recv, args, ty_args)
+                            self.ctx
+                                .is_function_applicable(&provider, &criteria, recv, args, ty_args)
                                 .then_some(provider)
                         }));
                     }
@@ -378,7 +375,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         let recv = Receiver::Explicit(recv_ty_id);
         let mut candidates = vec![];
 
-        match &self.sema.tyck.tys[recv_ty_id] {
+        match &self.ctx.sema.tyck.tys[recv_ty_id] {
             Ty::Error => unreachable!(),
 
             Ty::Ctor(t) => {
@@ -411,6 +408,20 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .map(|candidate| candidate.0)
     }
 
+    pub fn select_overload<'a, F: FnSigProvider>(
+        &mut self,
+        candidates: &'a [F],
+        diag_provider: &impl OverloadDiagProvider<F>,
+    ) -> Result<&'a F> {
+        self.ctx
+            .select_overload(self.diag, candidates, diag_provider)
+            .inspect_err(|()| {
+                self.result = Err(());
+            })
+    }
+}
+
+impl TyCkCtx<'_, '_> {
     pub fn is_function_applicable(
         &mut self,
         candidate: &impl FnSigProvider,
@@ -426,7 +437,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             if trace_enabled() {
                 eprintln!(
                     "checking applicability of {}",
-                    self.sema.format_signature(&sig)
+                    self.sema.format_signature(None, &sig)
                 );
             }
 
@@ -588,12 +599,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     pub fn select_overload<'a, F: FnSigProvider>(
         &mut self,
+        diag: &mut impl DiagCtx,
         candidates: &'a [F],
         diag_provider: &impl OverloadDiagProvider<F>,
     ) -> Result<&'a F> {
         if candidates.is_empty() {
-            self.result = Err(());
-            self.diag.emit(diag_provider.empty_candidate_set(self));
+            diag.emit(diag_provider.empty_candidate_set(self));
 
             return Err(());
         }
@@ -638,8 +649,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         if !ambiguities.is_empty() {
             ambiguities.insert(0, best);
-            self.result = Err(());
-            self.diag.emit(diag_provider.ambiguity(self, &ambiguities));
+            diag.emit(diag_provider.ambiguity(self, &ambiguities));
 
             return Err(());
         }

@@ -8,7 +8,7 @@ use crate::sema::def::DefKindTag;
 use crate::sema::ty::{IntCtor, TyId};
 use crate::sema::tyck::constraints::ConstrProvenance;
 use crate::sema::tyck::overload::{ApplicabilityCriteria, FnSigProvider, OverloadDiagProvider};
-use crate::sema::tyck::{BuiltinTys, FnSig, Pass};
+use crate::sema::tyck::{BuiltinTys, FnSig, Pass, TyCkCtx};
 use crate::util::format_list;
 
 #[derive(Debug, Clone)]
@@ -187,13 +187,13 @@ where
         }
     }
 
-    fn label_operand_tys<D: DiagCtx>(&self, pass: &Pass<'_, '_, D>, diag: &mut Diag) {
+    fn label_operand_tys(&self, ctx: &TyCkCtx<'_, '_>, diag: &mut Diag) {
         for (idx, &arg_ty) in self.arg_tys.iter().enumerate() {
             diag.labels
                 .push(
-                    Label::secondary((self.arg_loc)(pass.sema, idx)).with_msg(format_args!(
+                    Label::secondary((self.arg_loc)(ctx.sema, idx)).with_msg(format_args!(
                         "this operand has type `{}`",
-                        pass.sema.format_ty(pass.repr(arg_ty)),
+                        ctx.sema.format_ty(ctx.repr(arg_ty)),
                     )),
                 );
         }
@@ -204,7 +204,7 @@ impl<O: Op, F> OverloadDiagProvider<OpFnSigProvider<O>> for OpOverloadDiagProvid
 where
     F: Fn(&Sema<'_>, usize) -> Loc,
 {
-    fn empty_candidate_set<D: DiagCtx>(&self, pass: &Pass<'_, '_, D>) -> Diag {
+    fn empty_candidate_set(&self, ctx: &TyCkCtx<'_, '_>) -> Diag {
         let mut diag = Diag::err()
             .at(self.loc.clone())
             .with_msg(format!(
@@ -213,21 +213,17 @@ where
                 format_list(self.arg_tys, |f, &ty_id| write!(
                     f,
                     "`{}`",
-                    pass.sema.format_ty(pass.repr(ty_id)),
+                    ctx.sema.format_ty(ctx.repr(ty_id)),
                 ))
             ))
             .with_label(Label::primary(self.loc.clone()))
             .build();
-        self.label_operand_tys(pass, &mut diag);
+        self.label_operand_tys(ctx, &mut diag);
 
         diag
     }
 
-    fn ambiguity<D: DiagCtx>(
-        &self,
-        pass: &Pass<'_, '_, D>,
-        ambiguities: &[&OpFnSigProvider<O>],
-    ) -> Diag {
+    fn ambiguity(&self, ctx: &TyCkCtx<'_, '_>, ambiguities: &[&OpFnSigProvider<O>]) -> Diag {
         let mut possible_candidates = "the following candidates are possible:".to_owned();
 
         for &candidate in ambiguities {
@@ -237,7 +233,7 @@ where
                 format_list(&candidate.sig.params, |f, &ty_id| write!(
                     f,
                     "`{}`",
-                    pass.sema.format_ty(pass.repr(ty_id)),
+                    ctx.sema.format_ty(ctx.repr(ty_id)),
                 )),
             );
 
@@ -248,7 +244,7 @@ where
                     format_list(&candidate.sig.generics, |f, &ty_id| write!(
                         f,
                         "`{}`",
-                        pass.sema.format_ty(pass.repr(ty_id)),
+                        ctx.sema.format_ty(ctx.repr(ty_id)),
                     )),
                 );
             }
@@ -264,7 +260,7 @@ where
             .with_label(Label::primary(self.loc.clone()))
             .with_note(possible_candidates)
             .build();
-        self.label_operand_tys(pass, &mut diag);
+        self.label_operand_tys(ctx, &mut diag);
 
         diag
     }
@@ -368,7 +364,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     ) -> Vec<UnOpFnSigProvider> {
         type P = UnOpFnSigProvider;
 
-        let b = &self.sema.tyck.builtin;
+        let b = &self.ctx.sema.tyck.builtin;
 
         match op {
             ast::UnOp::Plus => arith(op, loc, b, OpOverload::Plus),
@@ -387,7 +383,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         let b @ &BuiltinTys {
             bool, string, char, ..
-        } = &self.sema.tyck.builtin;
+        } = &self.ctx.sema.tyck.builtin;
 
         match op {
             ast::BinOp::Mul => arith(op, loc, b, OpOverload::Mul),
@@ -427,7 +423,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     P::concrete(op, loc, OpOverload::EqChar, vec![char, char], bool),
                     P::concrete(op, loc, OpOverload::EqString, vec![string, string], bool),
                     P::generic(
-                        self.sema,
+                        self.ctx.sema,
                         op,
                         loc,
                         OpOverload::EqPointer,
@@ -443,7 +439,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 ]);
 
                 result.extend_from_slice(self.enum_eq_overloads.get_or_insert_with(|| {
-                    enum_op_overloads(self.sema, op, loc, OpOverload::EqEnum, bool)
+                    enum_op_overloads(self.ctx.sema, op, loc, OpOverload::EqEnum, bool)
                 }));
 
                 result
@@ -456,7 +452,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     P::concrete(op, loc, OpOverload::NeChar, vec![char, char], bool),
                     P::concrete(op, loc, OpOverload::NeString, vec![string, string], bool),
                     P::generic(
-                        self.sema,
+                        self.ctx.sema,
                         op,
                         loc,
                         OpOverload::NePointer,
@@ -472,22 +468,29 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 ]);
 
                 result.extend_from_slice(self.enum_ne_overloads.get_or_insert_with(|| {
-                    enum_op_overloads(self.sema, op, loc, OpOverload::NeEnum, bool)
+                    enum_op_overloads(self.ctx.sema, op, loc, OpOverload::NeEnum, bool)
                 }));
 
                 result
             }
 
             ast::BinOp::In => vec![
-                P::generic(self.sema, op, loc, OpOverload::InSet, ["T"], |sema, [t]| {
-                    let set = sema
-                        .tyck
-                        .add_ctor_ty(sema.name_res.prelude_defs.set, vec![t]);
-
-                    (vec![t, set], bool)
-                }),
                 P::generic(
-                    self.sema,
+                    self.ctx.sema,
+                    op,
+                    loc,
+                    OpOverload::InSet,
+                    ["T"],
+                    |sema, [t]| {
+                        let set = sema
+                            .tyck
+                            .add_ctor_ty(sema.name_res.prelude_defs.set, vec![t]);
+
+                        (vec![t, set], bool)
+                    },
+                ),
+                P::generic(
+                    self.ctx.sema,
                     op,
                     loc,
                     OpOverload::InArray,
@@ -504,7 +507,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
             ast::BinOp::NotIn => vec![
                 P::generic(
-                    self.sema,
+                    self.ctx.sema,
                     op,
                     loc,
                     OpOverload::NotInSet,
@@ -518,7 +521,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     },
                 ),
                 P::generic(
-                    self.sema,
+                    self.ctx.sema,
                     op,
                     loc,
                     OpOverload::NotInArray,

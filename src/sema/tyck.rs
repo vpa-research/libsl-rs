@@ -22,7 +22,7 @@ use crate::sema::tyck::constraints::{ConstrProvenance, ConstrSet, VarProvenance}
 use crate::sema::tyck::operators::{Op, OpFnSigProvider, OpOverload, OpOverloadDiagProvider};
 use crate::sema::tyck::overload::Receiver;
 use crate::sema::{Result, Sema};
-use crate::util::format_list;
+use crate::util::{format_list, format_sep_list};
 use crate::{AnnotationId, DeclId, ExprId, PredId, StmtId, TyExprId, ast, trace_enabled};
 
 use self::constraints::SubtypeBoundKind;
@@ -641,21 +641,35 @@ impl Sema<'_> {
     pub fn format_def_signature(&self, def_id: DefId) -> impl Display {
         let sig = &self.tyck.sigs[def_id];
 
-        fmt::from_fn(move |f| {
-            // TODO: receiver.
-
-            write!(
-                f,
-                "{}{}",
-                self.name_res.defs[def_id].name,
-                self.format_signature(sig)
-            )
-        })
+        self.format_signature(Some(&self.name_res.defs[def_id].name), sig)
     }
 
-    /// Formats a function signature (without the receiver).
-    pub fn format_signature(&self, sig: &FnSig) -> impl Display {
+    /// Formats a function signature.
+    pub fn format_signature(&self, name: Option<&str>, sig: &FnSig) -> impl Display {
         fmt::from_fn(move |f| {
+            if let Some(recv) = sig.recv {
+                write!(f, "{}", self.name_res.defs[recv].name)?;
+                let generics = &self.name_res.generics[recv];
+
+                if !generics.is_empty() {
+                    write!(
+                        f,
+                        "<{}>",
+                        format_sep_list(generics, |f, &def_id| write!(
+                            f,
+                            "{}",
+                            self.name_res.defs[def_id].name
+                        ))
+                    )?;
+                }
+
+                write!(f, ".")?;
+            }
+
+            if let Some(name) = name {
+                write!(f, "{name}")?;
+            }
+
             if !sig.generics.is_empty() {
                 write!(f, "<")?;
 
@@ -693,11 +707,70 @@ impl Sema<'_> {
     }
 }
 
+pub struct TyCkCtx<'ast, 's> {
+    pub sema: &'s mut Sema<'ast>,
+    pub constrs: ConstrSet,
+}
+
+impl TyCkCtx<'_, '_> {
+    pub fn repr(&self, ty_id: TyId) -> TyId {
+        self.constrs.repr(ty_id)
+    }
+
+    pub fn make_fresh_vars_for_ty_params(
+        &mut self,
+        generics: &[TyId],
+        loc: &Loc,
+    ) -> SparseSecondaryMap<TyId, TyId> {
+        generics
+            .iter()
+            .map(|&generic| {
+                (
+                    generic,
+                    self.fresh_var(VarProvenance::Generic(generic, loc.clone())),
+                )
+            })
+            .collect::<SparseSecondaryMap<_, _>>()
+    }
+
+    pub fn make_recv_ty_with_map(
+        &mut self,
+        def_id: DefId,
+        replace_ty_args: ReplaceTyArgs,
+    ) -> (TyId, SparseSecondaryMap<TyId, TyId>) {
+        let generics = self.def_generic_tys(def_id).collect::<Vec<_>>();
+
+        let (ty_args, param_map) = match replace_ty_args {
+            ReplaceTyArgs::Yes(loc) => {
+                let param_map = self.make_fresh_vars_for_ty_params(&generics, loc);
+
+                (
+                    generics.into_iter().map(|ty_id| param_map[ty_id]).collect(),
+                    param_map,
+                )
+            }
+
+            ReplaceTyArgs::No => (generics, Default::default()),
+        };
+
+        (self.sema.tyck.add_ctor_ty(def_id, ty_args), param_map)
+    }
+
+    pub fn make_recv_ty(&mut self, def_id: DefId, replace_ty_args: ReplaceTyArgs) -> TyId {
+        self.make_recv_ty_with_map(def_id, replace_ty_args).0
+    }
+
+    pub fn def_generic_tys(&mut self, def_id: DefId) -> impl Iterator<Item = TyId> {
+        self.sema.name_res.generics[def_id]
+            .iter()
+            .map(|&def_id| self.sema.tyck.def_tys[def_id])
+    }
+}
+
 struct Pass<'ast, 's, D> {
-    sema: &'s mut Sema<'ast>,
+    ctx: TyCkCtx<'ast, 's>,
     diag: &'s mut D,
     result: Result,
-    constrs: ConstrSet,
 
     // memoized overloads of `==` and `!=` for enum values.
     enum_eq_overloads: Option<Vec<BinOpFnSigProvider>>,
@@ -707,10 +780,12 @@ struct Pass<'ast, 's, D> {
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn new(sema: &'s mut Sema<'ast>, diag: &'s mut D) -> Self {
         Self {
-            sema,
+            ctx: TyCkCtx {
+                sema,
+                constrs: Default::default(),
+            },
             diag,
             result: Ok(()),
-            constrs: Default::default(),
 
             enum_eq_overloads: None,
             enum_ne_overloads: None,
@@ -732,8 +807,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn init_builtin_tys(&mut self) {
-        let defs = &self.sema.name_res.prelude_defs;
-        let prelude_scope_id = self.sema.name_res.prelude_scope_id;
+        let defs = &self.ctx.sema.name_res.prelude_defs;
+        let prelude_scope_id = self.ctx.sema.name_res.prelude_scope_id;
 
         let builtins: &[(fn(&mut BuiltinTys) -> &mut TyId, DefId, BuiltinTyCtor)] = &[
             (
@@ -819,47 +894,57 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         ];
 
         for &(prelude, def_id, ref ctor) in builtins {
-            self.sema
+            self.ctx
+                .sema
                 .name_res
                 .defs
                 .update_def_kind(def_id, |_| ctor.clone().into());
-            let ty_id = self.sema.tyck.add_ty(Ty::Ctor(ConstructedTy {
+            let ty_id = self.ctx.sema.tyck.add_ty(Ty::Ctor(ConstructedTy {
                 ctor: def_id,
                 args: vec![],
             }));
 
-            self.sema.name_res.generics.insert(def_id, vec![]);
+            self.ctx.sema.name_res.generics.insert(def_id, vec![]);
             debug_assert!(ctor.ty_params().is_empty());
 
-            *prelude(&mut self.sema.tyck.builtin) = ty_id;
+            *prelude(&mut self.ctx.sema.tyck.builtin) = ty_id;
         }
 
-        self.sema.tyck.builtin.error = self.sema.tyck.add_ty(Ty::Error);
-        self.sema.tyck.builtin.null = self.sema.tyck.add_ty(Ty::Null);
+        self.ctx.sema.tyck.builtin.error = self.ctx.sema.tyck.add_ty(Ty::Error);
+        self.ctx.sema.tyck.builtin.null = self.ctx.sema.tyck.add_ty(Ty::Null);
 
         let ctors = &[
-            (self.sema.name_res.prelude_defs.array, BuiltinTyCtor::Array),
-            (self.sema.name_res.prelude_defs.set, BuiltinTyCtor::Set),
             (
-                self.sema.name_res.prelude_defs.pointer,
+                self.ctx.sema.name_res.prelude_defs.array,
+                BuiltinTyCtor::Array,
+            ),
+            (self.ctx.sema.name_res.prelude_defs.set, BuiltinTyCtor::Set),
+            (
+                self.ctx.sema.name_res.prelude_defs.pointer,
                 BuiltinTyCtor::Pointer,
             ),
         ];
 
         for (def_id, ctor) in ctors {
             let def_id = *def_id;
-            self.sema
+            self.ctx
+                .sema
                 .name_res
                 .defs
                 .update_def_kind(def_id, |_| ctor.clone().into());
 
-            let param_scope_id = self.sema.name_res.add_param_scope(def_id, prelude_scope_id);
+            let param_scope_id = self
+                .ctx
+                .sema
+                .name_res
+                .add_param_scope(def_id, prelude_scope_id);
             let generic_defs = ctor
                 .ty_params()
                 .iter()
                 .enumerate()
                 .map(|(idx, (name, variance))| {
-                    self.sema
+                    self.ctx
+                        .sema
                         .name_res
                         .add_def(
                             param_scope_id,
@@ -877,11 +962,15 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 .collect();
 
             for &generic in &generic_defs {
-                let ty_id = self.sema.tyck.make_param_for(&self.sema.name_res, generic);
-                self.sema.tyck.def_tys.insert(generic, ty_id);
+                let ty_id = self
+                    .ctx
+                    .sema
+                    .tyck
+                    .make_param_for(&self.ctx.sema.name_res, generic);
+                self.ctx.sema.tyck.def_tys.insert(generic, ty_id);
             }
 
-            self.sema.name_res.generics.insert(def_id, generic_defs);
+            self.ctx.sema.name_res.generics.insert(def_id, generic_defs);
         }
 
         self.register_intrinsic_annotation();
@@ -889,12 +978,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn register_intrinsic_annotation(&mut self) {
-        let def_id = self.sema.name_res.prelude_defs.intrinsic;
-        self.sema
+        let def_id = self.ctx.sema.name_res.prelude_defs.intrinsic;
+        self.ctx
+            .sema
             .tyck
             .required_annotation_params
             .insert(def_id, vec![]);
-        self.sema.tyck.annotation_arities.insert(def_id, 0..=0);
+        self.ctx.sema.tyck.annotation_arities.insert(def_id, 0..=0);
         self.register_fn_sig::<DefAnnotation>(def_id, None, |def| &def.params, None);
     }
 
@@ -907,37 +997,47 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         def_id: DefId,
         sig: impl FnOnce(&mut Sema<'_>, [TyId; GENERICS]) -> (Vec<TyId>, TyId),
     ) {
-        debug_assert_eq!(GENERICS, self.sema.name_res.generics[def_id].len());
+        debug_assert_eq!(GENERICS, self.ctx.sema.name_res.generics[def_id].len());
 
-        for &generic in &self.sema.name_res.generics[def_id] {
-            let ty_id = self.sema.tyck.make_param_for(&self.sema.name_res, generic);
-            self.sema.tyck.def_tys.insert(generic, ty_id);
+        for &generic in &self.ctx.sema.name_res.generics[def_id] {
+            let ty_id = self
+                .ctx
+                .sema
+                .tyck
+                .make_param_for(&self.ctx.sema.name_res, generic);
+            self.ctx.sema.tyck.def_tys.insert(generic, ty_id);
         }
 
-        let recv = self.sema.name_res.def::<DefFunction>(def_id).kind.of();
-        let param_defs = self.sema.name_res.def::<DefFunction>(def_id).params.clone();
-        let generics = self.def_generic_tys(def_id).collect::<Vec<TyId>>();
-        let (param_tys, ret) = sig(self.sema, generics.clone().try_into().unwrap());
+        let recv = self.ctx.sema.name_res.def::<DefFunction>(def_id).kind.of();
+        let param_defs = self
+            .ctx
+            .sema
+            .name_res
+            .def::<DefFunction>(def_id)
+            .params
+            .clone();
+        let generics = self.ctx.def_generic_tys(def_id).collect::<Vec<TyId>>();
+        let (param_tys, ret) = sig(self.ctx.sema, generics.clone().try_into().unwrap());
 
         for (&param_def, &param_ty) in iter::zip(&param_defs, &param_tys) {
-            self.sema.tyck.def_tys.insert(param_def, param_ty);
+            self.ctx.sema.tyck.def_tys.insert(param_def, param_ty);
         }
 
         self.register_fn_sig::<DefFunction>(def_id, recv, |def| &def.params, Some(ret));
     }
 
     fn register_builtin_array_methods(&mut self) {
-        let def_id = self.sema.name_res.prelude_defs.array;
-        let elem_ty = self.sema.tyck.def_tys[self.sema.name_res.generics[def_id][0]];
-        let unsigned64 = self.sema.tyck.builtin.unsigned64;
+        let def_id = self.ctx.sema.name_res.prelude_defs.array;
+        let elem_ty = self.ctx.sema.tyck.def_tys[self.ctx.sema.name_res.generics[def_id][0]];
+        let unsigned64 = self.ctx.sema.tyck.builtin.unsigned64;
 
         self.register_builtin_function(
-            self.sema.name_res.prelude_defs.array_methods.length,
+            self.ctx.sema.name_res.prelude_defs.array_methods.length,
             |_, []| (vec![], unsigned64),
         );
 
         self.register_builtin_function(
-            self.sema.name_res.prelude_defs.array_methods.slice,
+            self.ctx.sema.name_res.prelude_defs.array_methods.slice,
             |sema, []| {
                 (
                     vec![unsigned64, unsigned64],
@@ -948,7 +1048,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn int_ctor_ty(&self, ctor: &IntCtor) -> TyId {
-        let builtin = &self.sema.tyck.builtin;
+        let builtin = &self.ctx.sema.tyck.builtin;
 
         match ctor {
             IntCtor {
@@ -994,7 +1094,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn int_lit_ty(&self, lit: &ast::IntLit) -> TyId {
-        let builtin = &self.sema.tyck.builtin;
+        let builtin = &self.ctx.sema.tyck.builtin;
 
         match lit {
             ast::IntLit::I8(_) => builtin.int8,
@@ -1009,7 +1109,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn lit_ty(&self, lit: &ast::PrimitiveLit) -> TyId {
-        let builtin = &self.sema.tyck.builtin;
+        let builtin = &self.ctx.sema.tyck.builtin;
 
         match lit {
             ast::PrimitiveLit::Int(lit) => self.int_lit_ty(lit),
@@ -1038,26 +1138,26 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn repr(&self, ty_id: TyId) -> TyId {
-        self.constrs.repr(ty_id)
+        self.ctx.repr(ty_id)
     }
 
     fn solve_ty(&mut self, ty_id: TyId) -> Result<TyId> {
         if trace_enabled() {
-            eprintln!("solve_ty(`{}`)", self.sema.format_ty(ty_id));
+            eprintln!("solve_ty(`{}`)", self.ctx.sema.format_ty(ty_id));
         }
 
-        let vars = self.sema.tyck.var_occurrences[ty_id]
+        let vars = self.ctx.sema.tyck.var_occurrences[ty_id]
             .iter()
-            .map(|&ty_id| self.sema.tyck.tys[ty_id].as_var().unwrap())
+            .map(|&ty_id| self.ctx.sema.tyck.tys[ty_id].as_var().unwrap())
             .collect();
-        let result = self.constrs.solve(self.sema, self.diag, vars);
+        let result = self.ctx.constrs.solve(self.ctx.sema, self.diag, vars);
         self.result = self.result.and(result);
 
         result.map(|()| self.repr(ty_id))
     }
 
     fn fn_sig(&self, def_id: DefId) -> &FnSig {
-        &self.sema.tyck.sigs[def_id]
+        &self.ctx.sema.tyck.sigs[def_id]
     }
 
     fn check_ty_arg_arity(&mut self, loc: &Loc, expected: usize, actual: usize) -> bool {
@@ -1116,17 +1216,17 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     .at(enum_loc.clone())
                     .with_msg(format!(
                         "could not infer an underlying type for this enum: `{}` and `{}` are incompatible",
-                        self.sema.format_ty(prev_ty_id),
-                        self.sema.format_ty(ty_id),
+                        self.ctx.sema.format_ty(prev_ty_id),
+                        self.ctx.sema.format_ty(ty_id),
                     ))
                     .with_label(Label::primary(variant.value_loc.clone()).with_msg(format!(
                         "this expression has type `{}`",
-                        self.sema.format_ty(ty_id),
+                        self.ctx.sema.format_ty(ty_id),
                     )))
                     .with_label(Label::secondary(prev_variant.value_loc.clone()).with_msg(
                         format!(
                             "this expression has type `{}`",
-                            self.sema.format_ty(prev_ty_id)
+                            self.ctx.sema.format_ty(prev_ty_id)
                         ),
                     ))
                     .build(),
@@ -1145,27 +1245,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn make_fresh_vars_for_ty_params(
-        &mut self,
-        generics: &[TyId],
-        loc: &Loc,
-    ) -> SparseSecondaryMap<TyId, TyId> {
-        generics
-            .iter()
-            .map(|&generic| {
-                (
-                    generic,
-                    self.fresh_var(VarProvenance::Generic(generic, loc.clone())),
-                )
-            })
-            .collect::<SparseSecondaryMap<_, _>>()
-    }
-
     fn replace_with_reprs(&mut self) {
-        let mut exprs = mem::take(&mut self.sema.tyck.exprs);
-        let mut ty_exprs = mem::take(&mut self.sema.tyck.ty_exprs);
-        let mut def_tys = mem::take(&mut self.sema.tyck.def_tys);
-        let mut call_targets = mem::take(&mut self.sema.tyck.call_targets);
+        let mut exprs = mem::take(&mut self.ctx.sema.tyck.exprs);
+        let mut ty_exprs = mem::take(&mut self.ctx.sema.tyck.ty_exprs);
+        let mut def_tys = mem::take(&mut self.ctx.sema.tyck.def_tys);
+        let mut call_targets = mem::take(&mut self.ctx.sema.tyck.call_targets);
 
         let ty_ids = exprs
             .values_mut()
@@ -1180,16 +1264,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             *ty_id = self.repr(*ty_id);
         }
 
-        self.sema.tyck.exprs = exprs;
-        self.sema.tyck.ty_exprs = ty_exprs;
-        self.sema.tyck.def_tys = def_tys;
-        self.sema.tyck.call_targets = call_targets;
-    }
-
-    fn def_generic_tys(&mut self, def_id: DefId) -> impl Iterator<Item = TyId> {
-        self.sema.name_res.generics[def_id]
-            .iter()
-            .map(|&def_id| self.sema.tyck.def_tys[def_id])
+        self.ctx.sema.tyck.exprs = exprs;
+        self.ctx.sema.tyck.ty_exprs = ty_exprs;
+        self.ctx.sema.tyck.def_tys = def_tys;
+        self.ctx.sema.tyck.call_targets = call_targets;
     }
 }
 
@@ -1197,7 +1275,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 // expressions.
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn early_tyck_decls(&mut self) {
-        for file in self.sema.libsl.files.values() {
+        for file in self.ctx.sema.libsl.files.values() {
             for &decl_id in &file.decls {
                 self.early_tyck_decl(decl_id);
             }
@@ -1205,7 +1283,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn early_tyck_decl(&mut self, decl_id: DeclId) {
-        let decl = &self.sema.libsl.decls[decl_id];
+        let decl = &self.ctx.sema.libsl.decls[decl_id];
 
         match &decl.kind {
             ast::DeclKind::Dummy => unreachable!(),
@@ -1237,12 +1315,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn early_tyck_decl_ty_alias(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclTyAlias) {
-        let def_id = self.sema.name_res.decl_defs[decl.id];
+        let def_id = self.ctx.sema.name_res.decl_defs[decl.id];
         self.register_parametrized_entity(def_id, &d.ty_name.generics);
     }
 
     fn early_tyck_decl_struct(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclStruct) {
-        let def_id = self.sema.name_res.decl_defs[decl.id];
+        let def_id = self.ctx.sema.name_res.decl_defs[decl.id];
         self.register_parametrized_entity(def_id, &d.ty_name.generics);
 
         for &decl_id in &d.decls {
@@ -1251,7 +1329,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn early_tyck_decl_enum(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclEnum) {
-        let def_id = self.sema.name_res.decl_defs[decl.id];
+        let def_id = self.ctx.sema.name_res.decl_defs[decl.id];
         self.register_parametrized_entity(def_id, &d.ty_name.generics);
     }
 
@@ -1264,12 +1342,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn early_tyck_decl_action(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAction) {
-        let def_id = self.sema.name_res.decl_defs[decl.id];
+        let def_id = self.ctx.sema.name_res.decl_defs[decl.id];
         self.register_parametrized_entity(def_id, &d.generics);
     }
 
     fn early_tyck_decl_automaton(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAutomaton) {
-        let def_id = self.sema.name_res.decl_defs[decl.id];
+        let def_id = self.ctx.sema.name_res.decl_defs[decl.id];
         self.register_parametrized_entity(def_id, &d.name.generics);
 
         for &decl_id in iter::chain(&d.constructor_variables, &d.decls) {
@@ -1278,7 +1356,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn early_tyck_decl_function(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclFunction) {
-        let def_id = self.sema.name_res.decl_defs[decl.id];
+        let def_id = self.ctx.sema.name_res.decl_defs[decl.id];
         self.register_parametrized_entity(def_id, &d.generics);
     }
 
@@ -1311,23 +1389,27 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn early_tyck_decl_proc(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclProc) {
-        let def_id = self.sema.name_res.decl_defs[decl.id];
+        let def_id = self.ctx.sema.name_res.decl_defs[decl.id];
         self.register_parametrized_entity(def_id, &d.generics);
     }
 
     fn register_parametrized_entity(&mut self, def_id: DefId, generic_decls: &[ast::Generic]) {
-        let generics = &self.sema.name_res.generics[def_id];
+        let generics = &self.ctx.sema.name_res.generics[def_id];
         debug_assert_eq!(generics.len(), generic_decls.len());
 
         for &generic in generics {
-            let ty_id = self.sema.tyck.make_param_for(&self.sema.name_res, generic);
-            self.sema.tyck.def_tys.insert(generic, ty_id);
+            let ty_id = self
+                .ctx
+                .sema
+                .tyck
+                .make_param_for(&self.ctx.sema.name_res, generic);
+            self.ctx.sema.tyck.def_tys.insert(generic, ty_id);
         }
     }
 
     fn check_elided_variable_ty(&mut self, decl_id: DeclId) -> Result {
-        let def_id = self.sema.name_res.decl_defs[decl_id];
-        let def = self.sema.name_res.def::<DefVariable>(def_id);
+        let def_id = self.ctx.sema.name_res.decl_defs[decl_id];
+        let def = self.ctx.sema.name_res.def::<DefVariable>(def_id);
 
         let what = match def.kind {
             VariableKind::Global => "global variable",
@@ -1337,7 +1419,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             VariableKind::Param { .. } => unreachable!(),
         };
 
-        let Def { name, loc, .. } = &self.sema.name_res.defs[def_id];
+        let Def { name, loc, .. } = &self.ctx.sema.name_res.defs[def_id];
 
         self.result = Err(());
         self.diag.emit(
@@ -1356,12 +1438,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 // variables and functions.
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn tyck_decls(&mut self, ty_aliases: &mut Vec<DeclId>) {
-        for file in self.sema.libsl.files.values() {
+        for file in self.ctx.sema.libsl.files.values() {
             for &decl_id in &file.decls {
                 self.tyck_decl(decl_id);
 
                 if matches!(
-                    self.sema.libsl.decls[decl_id].kind,
+                    self.ctx.sema.libsl.decls[decl_id].kind,
                     ast::DeclKind::TyAlias(_)
                 ) {
                     ty_aliases.push(decl_id);
@@ -1371,7 +1453,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_decl(&mut self, decl_id: DeclId) {
-        let decl = &self.sema.libsl.decls[decl_id];
+        let decl = &self.ctx.sema.libsl.decls[decl_id];
 
         match &decl.kind {
             ast::DeclKind::Dummy => unreachable!(),
@@ -1403,15 +1485,22 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_decl_struct(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclStruct) {
-        let def_id = self.sema.name_res.decl_defs[decl.id];
-        let ctor_def_id = self.sema.name_res.def::<DefStruct>(def_id).ctor_def_id;
+        let def_id = self.ctx.sema.name_res.decl_defs[decl.id];
+        let ctor_def_id = self.ctx.sema.name_res.def::<DefStruct>(def_id).ctor_def_id;
 
         for &decl_id in &d.decls {
             self.tyck_decl(decl_id);
         }
 
-        let fields = self.sema.name_res.def::<DefStruct>(def_id).fields.clone();
+        let fields = self
+            .ctx
+            .sema
+            .name_res
+            .def::<DefStruct>(def_id)
+            .fields
+            .clone();
         let ctor_params = self
+            .ctx
             .sema
             .name_res
             .def::<DefFunction>(ctor_def_id)
@@ -1419,24 +1508,25 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .clone();
 
         for (field, param) in iter::zip(fields, ctor_params) {
-            let ty_id = self.sema.tyck.def_tys[field];
-            self.sema.tyck.def_tys.insert(param, ty_id);
+            let ty_id = self.ctx.sema.tyck.def_tys[field];
+            self.ctx.sema.tyck.def_tys.insert(param, ty_id);
         }
 
-        let generics = self.def_generic_tys(def_id).collect();
-        let ret_ty_id = self.sema.tyck.add_ctor_ty(def_id, generics);
+        let generics = self.ctx.def_generic_tys(def_id).collect();
+        let ret_ty_id = self.ctx.sema.tyck.add_ctor_ty(def_id, generics);
         self.register_fn_sig::<DefFunction>(ctor_def_id, None, |def| &def.params, Some(ret_ty_id));
     }
 
     fn tyck_decl_enum(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclEnum) {
-        let def_id = self.sema.name_res.decl_defs[decl.id];
+        let def_id = self.ctx.sema.name_res.decl_defs[decl.id];
         let mut common_ty: Option<(IntCtor, &ast::EnumVariant)> = None;
         let mut error_reported = false;
 
         for variant in &d.variants {
             let ty_id = self.int_lit_ty(&variant.value);
-            let ctor = self.sema.tyck.tys[ty_id].as_constructed().unwrap().ctor;
+            let ctor = self.ctx.sema.tyck.tys[ty_id].as_constructed().unwrap().ctor;
             let ctor = self
+                .ctx
                 .sema
                 .name_res
                 .def::<BuiltinTyCtor>(ctor)
@@ -1462,21 +1552,21 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
 
         let common_ty = common_ty.map_or_else(
-            || self.sema.tyck.builtin.int32,
+            || self.ctx.sema.tyck.builtin.int32,
             |(ctor, _)| self.int_ctor_ty(&ctor),
         );
 
-        self.sema.tyck.underlying_tys.insert(def_id, common_ty);
+        self.ctx.sema.tyck.underlying_tys.insert(def_id, common_ty);
         // FIXME: make enums non-generic!
-        let ty_id = self.sema.tyck.add_ctor_ty(def_id, vec![]);
+        let ty_id = self.ctx.sema.tyck.add_ctor_ty(def_id, vec![]);
 
-        for &variant in &self.sema.name_res.def::<DefEnum>(def_id).variants {
-            self.sema.tyck.def_tys.insert(variant, ty_id);
+        for &variant in &self.ctx.sema.name_res.def::<DefEnum>(def_id).variants {
+            self.ctx.sema.tyck.def_tys.insert(variant, ty_id);
         }
     }
 
     fn tyck_decl_annotation(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAnnotation) {
-        let def_id = self.sema.name_res.decl_defs[decl.id];
+        let def_id = self.ctx.sema.name_res.decl_defs[decl.id];
 
         self.tyck_params(
             def_id,
@@ -1527,19 +1617,21 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 (None, false) => {
                     // no default values yet — ok.
                     required_params
-                        .push(self.sema.name_res.def::<DefAnnotation>(def_id).params[idx]);
+                        .push(self.ctx.sema.name_res.def::<DefAnnotation>(def_id).params[idx]);
 
                     None
                 }
             };
         }
 
-        self.sema
+        self.ctx
+            .sema
             .tyck
             .required_annotation_params
             .insert(def_id, required_params);
 
-        self.sema
+        self.ctx
+            .sema
             .tyck
             .annotation_arities
             .insert(def_id, min_arity.unwrap_or(d.params.len())..=d.params.len());
@@ -1548,7 +1640,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_decl_action(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAction) {
-        let def_id = self.sema.name_res.decl_defs[decl.id];
+        let def_id = self.ctx.sema.name_res.decl_defs[decl.id];
 
         self.tyck_params(
             def_id,
@@ -1563,19 +1655,19 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_decl_automaton(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAutomaton) {
-        let def_id = self.sema.name_res.decl_defs[decl.id];
+        let def_id = self.ctx.sema.name_res.decl_defs[decl.id];
 
         for &decl_id in &d.constructor_variables {
             self.tyck_decl(decl_id);
         }
 
         let underlying = self.tyck_ty_expr(d.ty_expr);
-        self.sema.tyck.underlying_tys.insert(def_id, underlying);
+        self.ctx.sema.tyck.underlying_tys.insert(def_id, underlying);
 
-        let ty_params = self.def_generic_tys(def_id).collect::<Vec<_>>();
-        let ty_id = self.sema.tyck.add_ctor_ty(def_id, ty_params.clone());
+        let ty_params = self.ctx.def_generic_tys(def_id).collect::<Vec<_>>();
+        let ty_id = self.ctx.sema.tyck.add_ctor_ty(def_id, ty_params.clone());
 
-        self.sema.tyck.sigs.insert(
+        self.ctx.sema.tyck.sigs.insert(
             def_id,
             FnSig {
                 recv: None,
@@ -1591,7 +1683,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_decl_function(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclFunction) {
-        let def_id = self.sema.name_res.decl_defs[decl.id];
+        let def_id = self.ctx.sema.name_res.decl_defs[decl.id];
         self.tyck_fn_decl(
             def_id,
             d.params.iter().map(|param| param.ty_expr),
@@ -1600,19 +1692,19 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_decl_variable(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclVariable) {
-        let def_id = self.sema.name_res.decl_defs[decl.id];
+        let def_id = self.ctx.sema.name_res.decl_defs[decl.id];
 
         let ty_id = match d.ty_expr {
             Some(ty_expr) => self.tyck_ty_expr(ty_expr),
 
             None if self.check_elided_variable_ty(decl.id).is_ok() => {
-                self.fresh_var(VarProvenance::Var(def_id))
+                self.ctx.fresh_var(VarProvenance::Var(def_id))
             }
 
-            None => self.sema.tyck.builtin.error,
+            None => self.ctx.sema.tyck.builtin.error,
         };
 
-        self.sema.tyck.def_tys.insert(def_id, ty_id);
+        self.ctx.sema.tyck.def_tys.insert(def_id, ty_id);
     }
 
     fn tyck_decl_state(&mut self, _decl: &'ast ast::Decl, _d: &'ast ast::DeclState) {
@@ -1624,7 +1716,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_decl_constructor(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclConstructor) {
-        let def_id = self.sema.name_res.decl_defs[decl.id];
+        let def_id = self.ctx.sema.name_res.decl_defs[decl.id];
         self.tyck_fn_decl(
             def_id,
             d.params.iter().map(|param| param.ty_expr),
@@ -1633,7 +1725,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_decl_destructor(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclDestructor) {
-        let def_id = self.sema.name_res.decl_defs[decl.id];
+        let def_id = self.ctx.sema.name_res.decl_defs[decl.id];
         self.tyck_fn_decl(
             def_id,
             d.params.iter().map(|param| param.ty_expr),
@@ -1642,7 +1734,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_decl_proc(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclProc) {
-        let def_id = self.sema.name_res.decl_defs[decl.id];
+        let def_id = self.ctx.sema.name_res.decl_defs[decl.id];
         self.tyck_fn_decl(
             def_id,
             d.params.iter().map(|param| param.ty_expr),
@@ -1651,7 +1743,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_ty_expr(&mut self, ty_expr_id: TyExprId) -> TyId {
-        let ty_expr = &self.sema.libsl.ty_exprs[ty_expr_id];
+        let ty_expr = &self.ctx.sema.libsl.ty_exprs[ty_expr_id];
 
         match &ty_expr.kind {
             ast::TyExprKind::Dummy => unreachable!(),
@@ -1662,7 +1754,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             ast::TyExprKind::Union(t) => self.tyck_ty_expr_union(ty_expr, t),
         }
 
-        self.sema.tyck.ty_exprs[ty_expr_id]
+        self.ctx.sema.tyck.ty_exprs[ty_expr_id]
     }
 
     fn tyck_ty_expr_primitive_lit(
@@ -1671,7 +1763,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         t: &'ast ast::TyExprPrimitiveLit,
     ) {
         let ty_id = self.lit_ty(&t.lit);
-        self.sema.tyck.ty_exprs.insert(ty_expr.id, ty_id);
+        self.ctx.sema.tyck.ty_exprs.insert(ty_expr.id, ty_id);
     }
 
     fn tyck_ty_expr_name(&mut self, ty_expr: &'ast ast::TyExpr, t: &'ast ast::TyExprName) {
@@ -1683,10 +1775,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .map(|arg| self.tyck_ty_arg(arg))
             .collect::<Vec<_>>();
 
-        let def_id = self.sema.name_res.ty_expr_names[ty_expr.id];
-        let def_id = self.sema.name_res.resolve_import(def_id);
+        let def_id = self.ctx.sema.name_res.ty_expr_names[ty_expr.id];
+        let def_id = self.ctx.sema.name_res.resolve_import(def_id);
 
-        match &self.sema.name_res.defs[def_id].kind {
+        match &self.ctx.sema.name_res.defs[def_id].kind {
             DefKind::Dummy => unreachable!(),
             DefKind::Import(_) => unreachable!(),
             DefKind::BuiltinCtor(_) => {}
@@ -1712,20 +1804,21 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         if !self.check_ty_arg_arity(
             &ty_expr.loc,
-            self.sema.name_res.generics[def_id].len(),
+            self.ctx.sema.name_res.generics[def_id].len(),
             ty_args.len(),
         ) {
-            self.sema
+            self.ctx
+                .sema
                 .tyck
                 .ty_exprs
-                .insert(ty_expr.id, self.sema.tyck.builtin.error);
+                .insert(ty_expr.id, self.ctx.sema.tyck.builtin.error);
 
             return;
         }
 
         // TODO: constraints.
-        let ty_id = self.sema.tyck.add_ctor_ty(def_id, ty_args);
-        self.sema.tyck.ty_exprs.insert(ty_expr.id, ty_id);
+        let ty_id = self.ctx.sema.tyck.add_ctor_ty(def_id, ty_args);
+        self.ctx.sema.tyck.ty_exprs.insert(ty_expr.id, ty_id);
     }
 
     fn tyck_ty_expr_name_alias(
@@ -1735,28 +1828,29 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         ty_args: Vec<TyId>,
         def_id: DefId,
     ) {
-        let def = self.sema.name_res.def::<DefTyAlias>(def_id);
+        let def = self.ctx.sema.name_res.def::<DefTyAlias>(def_id);
 
         // if this method is called during type alias type-checking, we recurse here.
         let ty_alias_ty_id = self.tyck_ty_alias(def.decl_id);
 
         if !self.check_ty_arg_arity(
             &ty_expr.loc,
-            self.sema.name_res.generics[def_id].len(),
+            self.ctx.sema.name_res.generics[def_id].len(),
             ty_args.len(),
         ) {
-            self.sema
+            self.ctx
+                .sema
                 .tyck
                 .ty_exprs
-                .insert(ty_expr.id, self.sema.tyck.builtin.error);
+                .insert(ty_expr.id, self.ctx.sema.tyck.builtin.error);
 
             return;
         }
 
         let ty_param_map =
-            iter::zip(self.def_generic_tys(def_id), ty_args.iter().copied()).collect();
-        let ty_id = self.sema.tyck.subst(ty_alias_ty_id, &ty_param_map);
-        self.sema.tyck.ty_exprs.insert(ty_expr.id, ty_id);
+            iter::zip(self.ctx.def_generic_tys(def_id), ty_args.iter().copied()).collect();
+        let ty_id = self.ctx.sema.tyck.subst(ty_alias_ty_id, &ty_param_map);
+        self.ctx.sema.tyck.ty_exprs.insert(ty_expr.id, ty_id);
     }
 
     fn tyck_ty_expr_name_ty_var(
@@ -1778,25 +1872,27 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     .build(),
             );
 
-            self.sema
+            self.ctx
+                .sema
                 .tyck
                 .ty_exprs
-                .insert(ty_expr.id, self.sema.tyck.builtin.error);
+                .insert(ty_expr.id, self.ctx.sema.tyck.builtin.error);
 
             return;
         }
 
-        let ty_id = self.sema.tyck.def_tys[def_id];
-        self.sema.tyck.ty_exprs.insert(ty_expr.id, ty_id);
+        let ty_id = self.ctx.sema.tyck.def_tys[def_id];
+        self.ctx.sema.tyck.ty_exprs.insert(ty_expr.id, ty_id);
     }
 
     fn tyck_ty_expr_pointer(&mut self, ty_expr: &'ast ast::TyExpr, t: &'ast ast::TyExprPointer) {
         let base = self.tyck_ty_expr(t.base);
         let ty_id = self
+            .ctx
             .sema
             .tyck
-            .add_ctor_ty(self.sema.name_res.prelude_defs.pointer, vec![base]);
-        self.sema.tyck.ty_exprs.insert(ty_expr.id, ty_id);
+            .add_ctor_ty(self.ctx.sema.name_res.prelude_defs.pointer, vec![base]);
+        self.ctx.sema.tyck.ty_exprs.insert(ty_expr.id, ty_id);
     }
 
     fn tyck_ty_expr_intersection(
@@ -1809,14 +1905,14 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn tyck_ty_expr_union(&mut self, ty_expr: &'ast ast::TyExpr, t: &'ast ast::TyExprUnion) {
         let elems = &[self.tyck_ty_expr(t.lhs), self.tyck_ty_expr(t.rhs)];
-        let ty_id = self.sema.tyck.ty_union(elems);
-        self.sema.tyck.ty_exprs.insert(ty_expr.id, ty_id);
+        let ty_id = self.ctx.sema.tyck.ty_union(elems);
+        self.ctx.sema.tyck.ty_exprs.insert(ty_expr.id, ty_id);
     }
 
     fn tyck_ret_ty_expr(&mut self, ret_ty_expr: Option<TyExprId>) -> TyId {
         match ret_ty_expr {
             Some(ty_expr_id) => self.tyck_ty_expr(ty_expr_id),
-            None => self.sema.tyck.builtin.void,
+            None => self.ctx.sema.tyck.builtin.void,
         }
     }
 
@@ -1829,22 +1925,22 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         this_def_id: Option<DefId>,
     ) {
         if let Some((result_def_id, ret_ty_id)) = result {
-            self.sema.tyck.def_tys.insert(result_def_id, ret_ty_id);
+            self.ctx.sema.tyck.def_tys.insert(result_def_id, ret_ty_id);
         }
 
         if let Some(this_def_id) = this_def_id {
             let this_ty = self.function_recv(def_id, ReplaceTyArgs::No).unwrap();
-            self.sema.tyck.def_tys.insert(this_def_id, this_ty);
+            self.ctx.sema.tyck.def_tys.insert(this_def_id, this_ty);
         }
 
         let param_tys = param_ty_exprs
             .map(|ty_expr_id| self.tyck_ty_expr(ty_expr_id))
             .collect::<Vec<_>>();
 
-        let def: &T = self.sema.name_res.def(def_id);
+        let def: &T = self.ctx.sema.name_res.def(def_id);
 
         for (&param_def_id, ty_id) in iter::zip(param_defs(def), param_tys) {
-            self.sema.tyck.def_tys.insert(param_def_id, ty_id);
+            self.ctx.sema.tyck.def_tys.insert(param_def_id, ty_id);
         }
     }
 
@@ -1855,17 +1951,17 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         params: impl FnOnce(&T) -> &[DefId],
         ret: Option<TyId>,
     ) {
-        let def = self.sema.name_res.def(def_id);
+        let def = self.ctx.sema.name_res.def(def_id);
         let params = params(def);
 
         let params = params
             .iter()
-            .map(|&param| self.sema.tyck.def_tys[param])
+            .map(|&param| self.ctx.sema.tyck.def_tys[param])
             .collect();
 
-        let generics = self.def_generic_tys(def_id).collect();
+        let generics = self.ctx.def_generic_tys(def_id).collect();
 
-        self.sema.tyck.sigs.insert(
+        self.ctx.sema.tyck.sigs.insert(
             def_id,
             FnSig {
                 recv,
@@ -1882,7 +1978,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         param_ty_exprs: impl Iterator<Item = TyExprId>,
         ret: Option<TyExprId>,
     ) {
-        let def = self.sema.name_res.def::<DefFunction>(def_id);
+        let def = self.ctx.sema.name_res.def::<DefFunction>(def_id);
         let recv = def.kind.of();
         let result_def_id = def.body.as_user().unwrap().result_def_id;
         let this_def_id = def.body.as_user().unwrap().this_def_id;
@@ -1907,18 +2003,18 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_ty_alias(&mut self, decl_id: DeclId) -> TyId {
-        let def_id = self.sema.name_res.decl_defs[decl_id];
+        let def_id = self.ctx.sema.name_res.decl_defs[decl_id];
 
-        if let Some(&ty_id) = self.sema.tyck.underlying_tys.get(def_id) {
+        if let Some(&ty_id) = self.ctx.sema.tyck.underlying_tys.get(def_id) {
             return ty_id;
         }
 
-        let decl = &self.sema.libsl.decls[decl_id];
+        let decl = &self.ctx.sema.libsl.decls[decl_id];
         let ast::DeclKind::TyAlias(d) = &decl.kind else {
             unreachable!()
         };
         let ty_id = self.tyck_ty_expr(d.ty_expr);
-        self.sema.tyck.underlying_tys.insert(def_id, ty_id);
+        self.ctx.sema.tyck.underlying_tys.insert(def_id, ty_id);
 
         ty_id
     }
@@ -1927,7 +2023,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 // The main type-checking phase.
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn tyck_decl_bodies(&mut self) {
-        for file in self.sema.libsl.files.values() {
+        for file in self.ctx.sema.libsl.files.values() {
             for &decl_id in &file.decls {
                 self.tyck_decl_body(decl_id);
             }
@@ -1935,7 +2031,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_decl_body(&mut self, decl_id: DeclId) {
-        let decl = &self.sema.libsl.decls[decl_id];
+        let decl = &self.ctx.sema.libsl.decls[decl_id];
 
         match &decl.kind {
             ast::DeclKind::Dummy => unreachable!(),
@@ -1959,7 +2055,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_expr(&mut self, expr_id: ExprId, ctx: ExprCkCtx) -> TyId {
-        let expr = &self.sema.libsl.exprs[expr_id];
+        let expr = &self.ctx.sema.libsl.exprs[expr_id];
 
         match &expr.kind {
             ast::ExprKind::Dummy => unreachable!(),
@@ -1981,7 +2077,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             ast::ExprKind::Binary(e) => self.tyck_expr_binary(expr, e, ctx),
         }
 
-        self.sema.tyck.exprs[expr_id]
+        self.ctx.sema.tyck.exprs[expr_id]
     }
 
     fn check_ty(
@@ -1994,7 +2090,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             if self.constr_coerce(actual, expected, provenance).is_ok() {
                 self.repr(expected)
             } else {
-                self.sema.tyck.builtin.error
+                self.ctx.sema.tyck.builtin.error
             }
         } else {
             actual
@@ -2028,32 +2124,41 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         mut candidates: Vec<OpFnSigProvider<O>>,
     ) {
         candidates.retain(|candidate| {
-            self.is_function_applicable(candidate, &Default::default(), &Receiver::None, args, &[])
+            self.ctx.is_function_applicable(
+                candidate,
+                &Default::default(),
+                &Receiver::None,
+                args,
+                &[],
+            )
         });
 
         let Ok(overload) = self.select_overload(
             &candidates,
             &OpOverloadDiagProvider::new(op, &expr.loc, args, arg_loc),
         ) else {
-            self.sema
+            self.ctx
+                .sema
                 .tyck
                 .exprs
-                .insert(expr.id, self.sema.tyck.builtin.error);
+                .insert(expr.id, self.ctx.sema.tyck.builtin.error);
 
             return;
         };
 
         let sig = overload.fn_sig();
-        let ty_param_map = self.make_fresh_vars_for_ty_params(&sig.generics, &expr.loc);
+        let ty_param_map = self
+            .ctx
+            .make_fresh_vars_for_ty_params(&sig.generics, &expr.loc);
 
         for (&param, &arg) in iter::zip(&sig.params, args) {
-            let param = self.sema.tyck.subst(param, &ty_param_map);
+            let param = self.ctx.sema.tyck.subst(param, &ty_param_map);
             let _ = self.constr_coerce(arg, param, ConstrProvenance::Expr(expr.id));
         }
 
-        let ret = self.sema.tyck.subst(sig.ret.unwrap(), &ty_param_map);
+        let ret = self.ctx.sema.tyck.subst(sig.ret.unwrap(), &ty_param_map);
         let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, ret);
-        self.sema.tyck.exprs.insert(expr.id, ty_id);
+        self.ctx.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
     fn make_missing_args_err(loc: Loc, missing_args: &[String]) -> Diag {
@@ -2077,24 +2182,24 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn make_wrong_field_base_ty_err(&self, loc: Loc, base_expr: ExprId, base_ty: TyId) -> Diag {
-        let base_loc = self.sema.libsl.exprs[base_expr].loc.clone();
+        let base_loc = self.ctx.sema.libsl.exprs[base_expr].loc.clone();
 
         Diag::err()
             .at(loc)
             .with_msg(format_args!(
                 "cannot access a field of `{}`",
-                self.sema.format_ty(base_ty),
+                self.ctx.sema.format_ty(base_ty),
             ))
             .with_label(Label::primary(base_loc).with_msg(format_args!(
                 "this expression has type `{}`, which has no fields",
-                self.sema.format_ty(base_ty),
+                self.ctx.sema.format_ty(base_ty),
             )))
             .build()
     }
 
     fn try_resolve_expr_name(&self, mut scope_id: ScopeId, name: &str) -> Option<ResolvedName> {
         loop {
-            let scope = &self.sema.name_res.scopes[scope_id];
+            let scope = &self.ctx.sema.name_res.scopes[scope_id];
 
             let kind = match scope.kind {
                 ScopeKind::Instance(_) => ResolvedNameKind::ImplicitField,
@@ -2102,13 +2207,14 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             };
 
             if let Some(def_id) = self
+                .ctx
                 .sema
                 .name_res
                 .try_resolve_local(scope_id, Ns::Var, name)
             {
                 return Some(ResolvedName {
                     kind,
-                    def_id: self.sema.name_res.resolve_import(def_id),
+                    def_id: self.ctx.sema.name_res.resolve_import(def_id),
                 });
             }
 
@@ -2133,9 +2239,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
 
         if search_tys
-            && let Some(def_id) = self.sema.name_res.try_resolve(scope_id, Ns::Ty, &name)
-            && let def_id = self.sema.name_res.resolve_import(def_id)
-            && let Some(&scope_id) = self.sema.name_res.def_member_scopes.get(def_id)
+            && let Some(def_id) = self.ctx.sema.name_res.try_resolve(scope_id, Ns::Ty, &name)
+            && let def_id = self.ctx.sema.name_res.resolve_import(def_id)
+            && let Some(&scope_id) = self.ctx.sema.name_res.def_member_scopes.get(def_id)
         {
             return Ok(ResolvedName {
                 kind: ResolvedNameKind::MemberScope(scope_id),
@@ -2151,15 +2257,15 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn check_assignable(&mut self, stmt: &'ast ast::Stmt, lhs: ExprId) {
-        let assignment = &self.sema.tyck.assignments[stmt.id];
+        let assignment = &self.ctx.sema.tyck.assignments[stmt.id];
 
         match *assignment {
             AssignmentKind::Var(def_id) | AssignmentKind::Field { def_id, .. } => {
-                let def = self.sema.name_res.def::<DefVariable>(def_id);
+                let def = self.ctx.sema.name_res.def::<DefVariable>(def_id);
 
                 if !def.mutable {
-                    let loc = &self.sema.libsl.exprs[lhs].loc;
-                    let var_loc = self.sema.name_res.defs[def_id].loc.clone();
+                    let loc = &self.ctx.sema.libsl.exprs[lhs].loc;
+                    let var_loc = self.ctx.sema.name_res.defs[def_id].loc.clone();
                     let var_kind = if matches!(assignment, AssignmentKind::Var(_)) {
                         "variable"
                     } else {
@@ -2194,7 +2300,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     ) -> SparseSecondaryMap<TyId, TyId> {
         generics
             .iter()
-            .map(|&def_id| self.sema.tyck.def_tys[def_id])
+            .map(|&def_id| self.ctx.sema.tyck.def_tys[def_id])
             .zip(args.iter().copied())
             .collect()
     }
@@ -2204,7 +2310,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         def_id: DefId,
         replace_ty_args: ReplaceTyArgs,
     ) -> Option<TyId> {
-        match &self.sema.name_res.defs[def_id].kind {
+        match &self.ctx.sema.name_res.defs[def_id].kind {
             DefKind::Dummy => unreachable!(),
             DefKind::Import(_) => None,
             DefKind::BuiltinCtor(_) => None,
@@ -2219,7 +2325,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             DefKind::Automaton(_) => None,
             DefKind::Function(_) => self.function_recv(def_id, replace_ty_args),
             DefKind::Variable(_) => self.variable_recv(def_id, replace_ty_args),
-            DefKind::State(def) => Some(self.make_recv_ty(def.automaton_def_id, replace_ty_args)),
+            DefKind::State(def) => {
+                Some(self.ctx.make_recv_ty(def.automaton_def_id, replace_ty_args))
+            }
 
             DefKind::TyVariable(def) => match def.kind {
                 TyVariableKind::TyParam { of, .. } => self.recv_inside_def(of, replace_ty_args),
@@ -2230,19 +2338,19 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn recv_inside_def(&mut self, def_id: DefId, replace_ty_args: ReplaceTyArgs) -> Option<TyId> {
-        match &self.sema.name_res.defs[def_id].kind {
+        match &self.ctx.sema.name_res.defs[def_id].kind {
             DefKind::Dummy => unreachable!(),
             DefKind::Import(_) => None,
             DefKind::BuiltinCtor(_) => None,
             DefKind::SemanticTy(_) => None,
             DefKind::SemanticTyEnumValue { .. } => None,
             DefKind::TyAlias(_) => None,
-            DefKind::Struct(_) => Some(self.make_recv_ty(def_id, replace_ty_args)),
+            DefKind::Struct(_) => Some(self.ctx.make_recv_ty(def_id, replace_ty_args)),
             DefKind::Enum(_) => None,
             DefKind::EnumVariant { .. } => None,
             DefKind::Annotation(_) => None,
             DefKind::Action(_) => None,
-            DefKind::Automaton(_) => Some(self.make_recv_ty(def_id, replace_ty_args)),
+            DefKind::Automaton(_) => Some(self.ctx.make_recv_ty(def_id, replace_ty_args)),
             DefKind::Function(_) => self.outer_recv_for_def(def_id, replace_ty_args),
             DefKind::Variable(_) => self.outer_recv_for_def(def_id, replace_ty_args),
             DefKind::State(_) => self.outer_recv_for_def(def_id, replace_ty_args),
@@ -2252,23 +2360,23 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn function_recv(&mut self, def_id: DefId, replace_ty_args: ReplaceTyArgs) -> Option<TyId> {
-        match self.sema.name_res.def::<DefFunction>(def_id).kind {
+        match self.ctx.sema.name_res.def::<DefFunction>(def_id).kind {
             FunctionKind::Fun { of } | FunctionKind::Proc { of, .. } => {
-                of.map(|of| self.make_recv_ty(of, replace_ty_args))
+                of.map(|of| self.ctx.make_recv_ty(of, replace_ty_args))
             }
 
             FunctionKind::Constructor { of } | FunctionKind::Destructor { of } => {
-                Some(self.make_recv_ty(of, replace_ty_args))
+                Some(self.ctx.make_recv_ty(of, replace_ty_args))
             }
         }
     }
 
     fn variable_recv(&mut self, def_id: DefId, replace_ty_args: ReplaceTyArgs) -> Option<TyId> {
-        match self.sema.name_res.def::<DefVariable>(def_id).kind {
+        match self.ctx.sema.name_res.def::<DefVariable>(def_id).kind {
             VariableKind::Global => None,
             VariableKind::Local { of } => self.function_recv(of, replace_ty_args),
-            VariableKind::Field { of } => Some(self.make_recv_ty(of, replace_ty_args)),
-            VariableKind::ConstructorVar { of } => Some(self.make_recv_ty(of, replace_ty_args)),
+            VariableKind::Field { of } => Some(self.ctx.make_recv_ty(of, replace_ty_args)),
+            VariableKind::ConstructorVar { of } => Some(self.ctx.make_recv_ty(of, replace_ty_args)),
             VariableKind::Param { of, .. } => self.function_recv(of, replace_ty_args),
         }
     }
@@ -2278,13 +2386,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         annotation_id: AnnotationId,
         replace_ty_args: ReplaceTyArgs,
     ) -> Option<TyId> {
-        match self.sema.name_res.annotations[annotation_id].entity {
+        match self.ctx.sema.name_res.annotations[annotation_id].entity {
             AnnotatedEntity::Def(def_id) => self.outer_recv_for_def(def_id, replace_ty_args),
         }
     }
 
     fn expr_recv(&mut self, expr_id: ExprId, replace_ty_args: ReplaceTyArgs) -> Option<TyId> {
-        match self.sema.name_res.exprs[expr_id].kind {
+        match self.ctx.sema.name_res.exprs[expr_id].kind {
             ExprCtxKind::EnumSemanticTyValue(_) => None,
             ExprCtxKind::AnnotationParam(_) => None,
 
@@ -2297,35 +2405,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn make_recv_ty_with_map(
-        &mut self,
-        def_id: DefId,
-        replace_ty_args: ReplaceTyArgs,
-    ) -> (TyId, SparseSecondaryMap<TyId, TyId>) {
-        let generics = self.def_generic_tys(def_id).collect::<Vec<_>>();
-
-        let (ty_args, param_map) = match replace_ty_args {
-            ReplaceTyArgs::Yes(loc) => {
-                let param_map = self.make_fresh_vars_for_ty_params(&generics, loc);
-
-                (
-                    generics.into_iter().map(|ty_id| param_map[ty_id]).collect(),
-                    param_map,
-                )
-            }
-
-            ReplaceTyArgs::No => (generics, Default::default()),
-        };
-
-        (self.sema.tyck.add_ctor_ty(def_id, ty_args), param_map)
-    }
-
-    fn make_recv_ty(&mut self, def_id: DefId, replace_ty_args: ReplaceTyArgs) -> TyId {
-        self.make_recv_ty_with_map(def_id, replace_ty_args).0
-    }
-
     fn tyck_annotation(&mut self, annotation_id: AnnotationId) {
-        let annotation = &self.sema.libsl.annotations[annotation_id];
+        let annotation = &self.ctx.sema.libsl.annotations[annotation_id];
         self.check_annotation_args(annotation);
     }
 
@@ -2341,7 +2422,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             Named(usize, Option<Diag>),
         }
 
-        let def_id = self.sema.name_res.annotations[annotation.id].def_id;
+        let def_id = self.ctx.sema.name_res.annotations[annotation.id].def_id;
         let mut args = SparseSecondaryMap::<DefId, usize>::new();
         let mut unnamed_after_named = UnnamedAfterNamed::Unnamed;
         let mut extraneous_args: Option<Diag> = None;
@@ -2352,7 +2433,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
             match &arg.name {
                 Some(name) => &name.loc,
-                None => &self.sema.libsl.exprs[arg.expr].loc,
+                None => &self.ctx.sema.libsl.exprs[arg.expr].loc,
             }
         };
 
@@ -2386,11 +2467,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             }
 
             if !erroneous {
-                let params = &self.sema.name_res.def::<DefAnnotation>(def_id).params;
+                let params = &self.ctx.sema.name_res.def::<DefAnnotation>(def_id).params;
 
                 // if the argument is unnamed, check that it's not extraneous.
                 if arg.name.is_none() && idx >= params.len() {
-                    let arity = self.sema.tyck.annotation_arities[def_id].clone();
+                    let arity = self.ctx.sema.tyck.annotation_arities[def_id].clone();
 
                     erroneous = true;
                     extraneous_args
@@ -2414,14 +2495,14 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 }
             }
 
-            let param_def_id = self.sema.name_res.annotations[annotation.id].args[idx];
+            let param_def_id = self.ctx.sema.name_res.annotations[annotation.id].args[idx];
 
             if erroneous {
                 self.tyck_expr(arg.expr, ExprCkCtx::empty());
             } else {
                 self.tyck_expr(
                     arg.expr,
-                    ExprCkCtx::expecting(self.sema.tyck.def_tys[param_def_id]),
+                    ExprCkCtx::expecting(self.ctx.sema.tyck.def_tys[param_def_id]),
                 );
             }
 
@@ -2445,7 +2526,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                                     .at(arg_loc(prev).clone())
                                     .with_msg(format_args!(
                                         "duplicate argument `{}`",
-                                        self.sema.name_res.defs[param_def_id].name,
+                                        self.ctx.sema.name_res.defs[param_def_id].name,
                                     ))
                                     .with_label(Label::primary(arg_loc(prev).clone()))
                                     .build()
@@ -2458,11 +2539,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
 
         // check that each parameter without a default value is provided an argument.
-        let missing_args = self.sema.tyck.required_annotation_params[def_id]
+        let missing_args = self.ctx.sema.tyck.required_annotation_params[def_id]
             .iter()
             .copied()
             .filter(|&param_def_id| !args.contains_key(param_def_id))
-            .map(|param_def_id| self.sema.name_res.defs[param_def_id].name.clone())
+            .map(|param_def_id| self.ctx.sema.name_res.defs[param_def_id].name.clone())
             .collect::<Vec<_>>();
 
         // emit collected diagnostics.
@@ -2525,14 +2606,15 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_decl_annotation_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclAnnotation) {
-        let def_id = self.sema.name_res.decl_defs[decl.id];
+        let def_id = self.ctx.sema.name_res.decl_defs[decl.id];
         let param_tys = self
+            .ctx
             .sema
             .name_res
             .def::<DefAnnotation>(def_id)
             .params
             .iter()
-            .map(|&param| self.sema.tyck.def_tys[param])
+            .map(|&param| self.ctx.sema.tyck.def_tys[param])
             .collect::<Vec<_>>();
 
         for (param, ty_id) in iter::zip(&d.params, param_tys) {
@@ -2574,8 +2656,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.tyck_annotations(&d.annotations);
 
         if let Some(expr_id) = d.init {
-            let def_id = self.sema.name_res.decl_defs[decl.id];
-            let ty_id = self.sema.tyck.def_tys[def_id];
+            let def_id = self.ctx.sema.name_res.decl_defs[decl.id];
+            let ty_id = self.ctx.sema.tyck.def_tys[def_id];
             self.tyck_expr(expr_id, ExprCkCtx::expecting(ty_id));
         }
     }
@@ -2629,7 +2711,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_function_body(&mut self, body: &'ast ast::FunctionBody) {
-        let first_var_idx = self.sema.tyck.var_provenances.len();
+        let first_var_idx = self.ctx.sema.tyck.var_provenances.len();
 
         for contract in &body.contracts {
             self.tyck_contract(contract);
@@ -2639,10 +2721,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             self.tyck_stmt(stmt_id);
         }
 
-        let vars = (first_var_idx..self.sema.tyck.var_provenances.len()).collect::<Vec<_>>();
+        let vars = (first_var_idx..self.ctx.sema.tyck.var_provenances.len()).collect::<Vec<_>>();
         self.result = self
             .result
-            .and(self.constrs.solve(self.sema, self.diag, vars));
+            .and(self.ctx.constrs.solve(self.ctx.sema, self.diag, vars));
     }
 
     fn tyck_contract(&mut self, contract: &'ast ast::Contract) {
@@ -2666,7 +2748,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_stmt(&mut self, stmt_id: StmtId) {
-        let stmt = &self.sema.libsl.stmts[stmt_id];
+        let stmt = &self.ctx.sema.libsl.stmts[stmt_id];
 
         match &stmt.kind {
             ast::StmtKind::Dummy => unreachable!(),
@@ -2683,7 +2765,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_stmt_if(&mut self, _stmt: &'ast ast::Stmt, s: &'ast ast::StmtIf) {
-        self.tyck_expr(s.cond, ExprCkCtx::expecting(self.sema.tyck.builtin.bool));
+        self.tyck_expr(
+            s.cond,
+            ExprCkCtx::expecting(self.ctx.sema.tyck.builtin.bool),
+        );
 
         for &stmt_id in iter::chain(&s.then_branch, &s.else_branch) {
             self.tyck_stmt(stmt_id);
@@ -2694,9 +2779,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         let lhs = self.tyck_expr(s.lhs, ExprCkCtx::empty());
         self.tyck_expr(s.rhs, ExprCkCtx::expecting(lhs));
 
-        let kind = match &self.sema.libsl.exprs[s.lhs].kind {
+        let kind = match &self.ctx.sema.libsl.exprs[s.lhs].kind {
             ast::ExprKind::Name(_) => {
-                let res = &self.sema.tyck.name_exprs[s.lhs];
+                let res = &self.ctx.sema.tyck.name_exprs[s.lhs];
 
                 match res.kind {
                     ResolvedNameKind::Var => AssignmentKind::Var(res.def_id),
@@ -2711,13 +2796,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             }
 
             ast::ExprKind::Field(_) => {
-                let resolved = &self.sema.tyck.field_exprs[s.lhs];
+                let resolved = &self.ctx.sema.tyck.field_exprs[s.lhs];
 
                 match resolved.base {
                     FieldExprBase::MemberScopeOf(_) => AssignmentKind::Var(resolved.field_def_id),
                     FieldExprBase::InstanceScopeOf(_) => AssignmentKind::Field {
                         implicit: false,
-                        def_id: self.sema.tyck.field_exprs[s.lhs].field_def_id,
+                        def_id: self.ctx.sema.tyck.field_exprs[s.lhs].field_def_id,
                     },
                 }
             }
@@ -2727,17 +2812,21 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             _ => unreachable!(),
         };
 
-        self.sema.tyck.assignments.insert(stmt.id, kind);
+        self.ctx.sema.tyck.assignments.insert(stmt.id, kind);
         self.check_assignable(stmt, s.lhs);
     }
 
     fn tyck_stmt_cancel(&mut self, stmt: &'ast ast::Stmt, _s: &'ast ast::StmtCancel) {
-        let enclosing_fn_def_id = self.sema.name_res.stmts[stmt.id].enclosing_fn;
-        let enclosing_fn = self.sema.name_res.def::<DefFunction>(enclosing_fn_def_id);
+        let enclosing_fn_def_id = self.ctx.sema.name_res.stmts[stmt.id].enclosing_fn;
+        let enclosing_fn = self
+            .ctx
+            .sema
+            .name_res
+            .def::<DefFunction>(enclosing_fn_def_id);
 
         if let FunctionKind::Fun { of } = enclosing_fn.kind
             && let Some(of) = of
-            && let DefKind::Automaton(_) = self.sema.name_res.defs[of].kind
+            && let DefKind::Automaton(_) = self.ctx.sema.name_res.defs[of].kind
         {
             // allowed.
         } else {
@@ -2757,7 +2846,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_pred(&mut self, pred_id: PredId) {
-        let pred = &self.sema.libsl.preds[pred_id];
+        let pred = &self.ctx.sema.libsl.preds[pred_id];
 
         match &pred.kind {
             ast::PredKind::Dummy => unreachable!(),
@@ -2784,7 +2873,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_pred_if(&mut self, _pred: &'ast ast::Pred, p: &'ast ast::PredIf) {
-        self.tyck_expr(p.cond, ExprCkCtx::expecting(self.sema.tyck.builtin.bool));
+        self.tyck_expr(
+            p.cond,
+            ExprCkCtx::expecting(self.ctx.sema.tyck.builtin.bool),
+        );
         self.tyck_pred(p.then_branch);
 
         if let Some(else_branch) = p.else_branch {
@@ -2793,7 +2885,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_pred_expr(&mut self, _pred: &'ast ast::Pred, expr_id: ExprId) {
-        self.tyck_expr(expr_id, ExprCkCtx::expecting(self.sema.tyck.builtin.bool));
+        self.tyck_expr(
+            expr_id,
+            ExprCkCtx::expecting(self.ctx.sema.tyck.builtin.bool),
+        );
     }
 
     fn tyck_expr_primitive_lit(
@@ -2804,7 +2899,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     ) {
         let ty_id = self.check_lit_ty(ConstrProvenance::Expr(expr.id), &e.lit, ctx.expected);
 
-        self.sema.tyck.exprs.insert(expr.id, ty_id);
+        self.ctx.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
     fn tyck_expr_array_lit(
@@ -2813,19 +2908,20 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         e: &'ast ast::ExprArrayLit,
         ctx: ExprCkCtx,
     ) {
-        let elem_ty_id = self.fresh_var(VarProvenance::Element { of: expr.id });
+        let elem_ty_id = self.ctx.fresh_var(VarProvenance::Element { of: expr.id });
 
         for &elem in &e.elems {
             self.tyck_expr(elem, ctx.nested(Some(elem_ty_id)));
         }
 
         let ty_id = self
+            .ctx
             .sema
             .tyck
-            .add_ctor_ty(self.sema.name_res.prelude_defs.array, vec![elem_ty_id]);
+            .add_ctor_ty(self.ctx.sema.name_res.prelude_defs.array, vec![elem_ty_id]);
         let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, ty_id);
 
-        self.sema.tyck.exprs.insert(expr.id, ty_id);
+        self.ctx.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
     fn tyck_expr_set_lit(
@@ -2834,19 +2930,20 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         e: &'ast ast::ExprSetLit,
         ctx: ExprCkCtx,
     ) {
-        let elem_ty_id = self.fresh_var(VarProvenance::Element { of: expr.id });
+        let elem_ty_id = self.ctx.fresh_var(VarProvenance::Element { of: expr.id });
 
         for &elem in &e.elems {
             self.tyck_expr(elem, ctx.nested(Some(elem_ty_id)));
         }
 
         let ty_id = self
+            .ctx
             .sema
             .tyck
-            .add_ctor_ty(self.sema.name_res.prelude_defs.set, vec![elem_ty_id]);
+            .add_ctor_ty(self.ctx.sema.name_res.prelude_defs.set, vec![elem_ty_id]);
         let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, ty_id);
 
-        self.sema.tyck.exprs.insert(expr.id, ty_id);
+        self.ctx.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
     fn tyck_expr_proc_call(
@@ -2855,10 +2952,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         e: &'ast ast::ExprProcCall,
         ctx: ExprCkCtx,
     ) {
-        self.sema
+        self.ctx
+            .sema
             .tyck
             .exprs
-            .insert(expr.id, self.sema.tyck.builtin.error);
+            .insert(expr.id, self.ctx.sema.tyck.builtin.error);
 
         let recv = e
             .recv
@@ -2888,11 +2986,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             return;
         };
 
-        if recv == Some(self.sema.tyck.builtin.error) {
-            self.sema
+        if recv == Some(self.ctx.sema.tyck.builtin.error) {
+            self.ctx
+                .sema
                 .tyck
                 .exprs
-                .insert(expr.id, self.sema.tyck.builtin.error);
+                .insert(expr.id, self.ctx.sema.tyck.builtin.error);
             return;
         }
 
@@ -2912,10 +3011,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             &args,
             &ty_args,
         ) else {
-            self.sema
+            self.ctx
+                .sema
                 .tyck
                 .exprs
-                .insert(expr.id, self.sema.tyck.builtin.error);
+                .insert(expr.id, self.ctx.sema.tyck.builtin.error);
             return;
         };
 
@@ -2923,7 +3023,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.check_arg_arity(&expr.loc, args.len(), self.fn_sig(def_id).params.len());
 
         let sig = self.fn_sig(def_id).clone();
-        let mut ty_param_map = self.make_fresh_vars_for_ty_params(&sig.generics, &expr.loc);
+        let mut ty_param_map = self
+            .ctx
+            .make_fresh_vars_for_ty_params(&sig.generics, &expr.loc);
 
         match (recv, sig.recv) {
             (Receiver::None, None) => {}
@@ -2931,8 +3033,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             (Receiver::Implicit(_), None) => {}
 
             (Receiver::Implicit(ty_id) | Receiver::Explicit(ty_id), Some(recv)) => {
-                let (expected, map) =
-                    self.make_recv_ty_with_map(recv, ReplaceTyArgs::Yes(&expr.loc));
+                let (expected, map) = self
+                    .ctx
+                    .make_recv_ty_with_map(recv, ReplaceTyArgs::Yes(&expr.loc));
                 let _ = self.constr_sub(ty_id, expected, ConstrProvenance::Expr(expr.id));
                 ty_param_map.extend(map);
             }
@@ -2945,13 +3048,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
 
         for (&param, &arg) in iter::zip(&sig.params, &args) {
-            let param = self.sema.tyck.subst(param, &ty_param_map);
+            let param = self.ctx.sema.tyck.subst(param, &ty_param_map);
             let _ = self.constr_coerce(arg, param, ConstrProvenance::Expr(expr.id));
         }
 
-        let ret = self.sema.tyck.subst(sig.ret.unwrap(), &ty_param_map);
+        let ret = self.ctx.sema.tyck.subst(sig.ret.unwrap(), &ty_param_map);
         let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, ret);
-        self.sema.tyck.exprs.insert(expr.id, ty_id);
+        self.ctx.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
     fn tyck_expr_action_call(
@@ -2976,26 +3079,28 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .map(|arg| self.tyck_expr(arg, ctx.nested(None)))
             .collect::<Vec<_>>();
 
-        let def_id = self.sema.name_res.expr_action_calls[expr.id];
+        let def_id = self.ctx.sema.name_res.expr_action_calls[expr.id];
 
         self.check_ty_arg_arity(&expr.loc, ty_args.len(), self.fn_sig(def_id).generics.len());
         self.check_arg_arity(&expr.loc, args.len(), self.fn_sig(def_id).params.len());
 
         let sig = self.fn_sig(def_id).clone();
-        let ty_param_map = self.make_fresh_vars_for_ty_params(&sig.generics, &expr.loc);
+        let ty_param_map = self
+            .ctx
+            .make_fresh_vars_for_ty_params(&sig.generics, &expr.loc);
 
         for (&param, &arg) in iter::zip(&sig.generics, &ty_args) {
             let _ = self.constr_eq(arg, ty_param_map[param], ConstrProvenance::Expr(expr.id));
         }
 
         for (&param, &arg) in iter::zip(&sig.params, &args) {
-            let param = self.sema.tyck.subst(param, &ty_param_map);
+            let param = self.ctx.sema.tyck.subst(param, &ty_param_map);
             let _ = self.constr_coerce(arg, param, ConstrProvenance::Expr(expr.id));
         }
 
-        let ret = self.sema.tyck.subst(sig.ret.unwrap(), &ty_param_map);
+        let ret = self.ctx.sema.tyck.subst(sig.ret.unwrap(), &ty_param_map);
         let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, ret);
-        self.sema.tyck.exprs.insert(expr.id, ty_id);
+        self.ctx.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
     fn tyck_expr_instantiate(
@@ -3004,7 +3109,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         e: &'ast ast::ExprInstantiate,
         ctx: ExprCkCtx,
     ) {
-        let automaton_def_id = self.sema.name_res.expr_instantiations[expr.id].automaton;
+        let automaton_def_id = self.ctx.sema.name_res.expr_instantiations[expr.id].automaton;
 
         let ty_args = e
             .generics
@@ -3038,7 +3143,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         Some(Err(ref mut diag)) => diag,
 
                         None => {
-                            let info = &self.sema.name_res.expr_instantiations[expr.id];
+                            let info = &self.ctx.sema.name_res.expr_instantiations[expr.id];
                             state = Some(Ok((arg, info.args[idx])));
 
                             continue;
@@ -3051,10 +3156,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 ast::ConstructorArg::Var(loc, _, expr_id) => {
                     use slotmap::sparse_secondary::Entry;
 
-                    let var_def_id = self.sema.name_res.expr_instantiations[expr.id].args[idx];
+                    let var_def_id = self.ctx.sema.name_res.expr_instantiations[expr.id].args[idx];
                     let ty_id = self.tyck_expr(
                         *expr_id,
-                        ctx.nested(Some(self.sema.tyck.def_tys[var_def_id])),
+                        ctx.nested(Some(self.ctx.sema.tyck.def_tys[var_def_id])),
                     );
 
                     match args.entry(var_def_id).unwrap() {
@@ -3087,7 +3192,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             }
         }
 
-        let def = self.sema.name_res.def::<DefAutomaton>(automaton_def_id);
+        let def = self.ctx.sema.name_res.def::<DefAutomaton>(automaton_def_id);
         let mut missing_args = vec![];
         let args = def
             .constructor_params
@@ -3102,7 +3207,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 }
 
                 None => {
-                    missing_args.push(self.sema.name_res.defs[def_id].name.clone());
+                    missing_args.push(self.ctx.sema.name_res.defs[def_id].name.clone());
 
                     Default::default()
                 }
@@ -3124,7 +3229,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                             .at(arg.loc().clone())
                             .with_msg(format_args!(
                                 "state `{}` is declared as final and cannot be initial",
-                                self.sema.name_res.defs[def_id].name,
+                                self.ctx.sema.name_res.defs[def_id].name,
                             ))
                             .with_label(Label::primary(arg.loc().clone()))
                             .build(),
@@ -3148,8 +3253,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             }
         }
 
-        let generics = self.def_generic_tys(automaton_def_id).collect::<Vec<_>>();
-        let ty_param_map = self.make_fresh_vars_for_ty_params(&generics, &expr.loc);
+        let generics = self
+            .ctx
+            .def_generic_tys(automaton_def_id)
+            .collect::<Vec<_>>();
+        let ty_param_map = self.ctx.make_fresh_vars_for_ty_params(&generics, &expr.loc);
 
         for (&param, &arg) in iter::zip(&generics, &ty_args) {
             let _ = self.constr_eq(arg, ty_param_map[param], ConstrProvenance::Expr(expr.id));
@@ -3157,56 +3265,59 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         for &(def_id, arg) in &args {
             let def_ty_id = self
+                .ctx
                 .sema
                 .tyck
-                .subst(self.sema.tyck.def_tys[def_id], &ty_param_map);
+                .subst(self.ctx.sema.tyck.def_tys[def_id], &ty_param_map);
             let _ = self.constr_coerce(arg, def_ty_id, ConstrProvenance::Expr(expr.id));
         }
 
         let ty_args = generics.iter().map(|ty_arg| self.repr(*ty_arg)).collect();
 
-        let ty_id = self.sema.tyck.add_ctor_ty(automaton_def_id, ty_args);
+        let ty_id = self.ctx.sema.tyck.add_ctor_ty(automaton_def_id, ty_args);
         let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, ty_id);
-        self.sema.tyck.exprs.insert(expr.id, ty_id);
+        self.ctx.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
     fn tyck_expr_name(&mut self, expr: &'ast ast::Expr, e: &'ast ast::ExprName, ctx: ExprCkCtx) {
-        let scope_id = self.sema.name_res.exprs[expr.id].scope_id;
+        let scope_id = self.ctx.sema.name_res.exprs[expr.id].scope_id;
 
         let Ok(res) = self.resolve_expr_name(scope_id, &e.name, ctx.is_field_base) else {
-            self.sema
+            self.ctx
+                .sema
                 .tyck
                 .exprs
-                .insert(expr.id, self.sema.tyck.builtin.error);
+                .insert(expr.id, self.ctx.sema.tyck.builtin.error);
 
             return;
         };
 
         let def_id = res.def_id;
-        self.sema.tyck.name_exprs.insert(expr.id, res);
+        self.ctx.sema.tyck.name_exprs.insert(expr.id, res);
 
         if matches!(
-            self.sema.tyck.name_exprs[expr.id].kind,
+            self.ctx.sema.tyck.name_exprs[expr.id].kind,
             ResolvedNameKind::MemberScope(_)
         ) {
-            self.sema
+            self.ctx
+                .sema
                 .tyck
                 .exprs
-                .insert(expr.id, self.sema.tyck.builtin.any);
+                .insert(expr.id, self.ctx.sema.tyck.builtin.any);
 
             return;
         }
 
-        let ty_id = self.sema.tyck.def_tys[def_id];
+        let ty_id = self.ctx.sema.tyck.def_tys[def_id];
         let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, ty_id);
-        self.sema.tyck.exprs.insert(expr.id, ty_id);
+        self.ctx.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
     fn tyck_expr_prev(&mut self, expr: &'ast ast::Expr, e: &'ast ast::ExprPrev, ctx: ExprCkCtx) {
         // TODO: ensure well-formedness.
         let ty_id = self.tyck_expr(e.base, ctx.nested(ctx.expected));
 
-        self.sema.tyck.exprs.insert(expr.id, ty_id);
+        self.ctx.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
     fn tyck_expr_field(&mut self, expr: &'ast ast::Expr, e: &'ast ast::ExprField, ctx: ExprCkCtx) {
@@ -3215,34 +3326,38 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             InstanceScope(DefId, TyId),
         }
 
-        self.sema
+        self.ctx
+            .sema
             .tyck
             .exprs
-            .insert(expr.id, self.sema.tyck.builtin.error);
+            .insert(expr.id, self.ctx.sema.tyck.builtin.error);
 
         let base = self.tyck_expr(e.base, ctx.field_base());
         let Ok(base) = self.solve_ty(base) else {
             return;
         };
 
-        let (base, scope_id, param_map) = match self.sema.tyck.name_exprs.get(e.base) {
+        let (base, scope_id, param_map) = match self.ctx.sema.tyck.name_exprs.get(e.base) {
             Some(&ResolvedName {
                 kind: ResolvedNameKind::MemberScope(scope_id),
                 def_id,
                 ..
             }) => (Base::MemberScope(def_id), scope_id, Default::default()),
 
-            _ => match &self.sema.tyck.tys[base] {
+            _ => match &self.ctx.sema.tyck.tys[base] {
                 Ty::Error => return,
 
-                Ty::Ctor(t) => match &self.sema.name_res.defs[t.ctor].kind {
+                Ty::Ctor(t) => match &self.ctx.sema.name_res.defs[t.ctor].kind {
                     DefKind::Dummy => unreachable!(),
                     DefKind::Import(_) => unreachable!(),
 
                     DefKind::Struct(_) | DefKind::Automaton(_) => (
                         Base::InstanceScope(t.ctor, base),
-                        self.sema.name_res.def_instance_scopes[t.ctor],
-                        self.ty_param_map_from_args(&self.sema.name_res.generics[t.ctor], &t.args),
+                        self.ctx.sema.name_res.def_instance_scopes[t.ctor],
+                        self.ty_param_map_from_args(
+                            &self.ctx.sema.name_res.generics[t.ctor],
+                            &t.args,
+                        ),
                     ),
 
                     _ => {
@@ -3259,7 +3374,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
                 Ty::Var(_) => unreachable!(
                     ".solve_ty() returned a non-solution `{}`",
-                    self.sema.format_ty(base),
+                    self.ctx.sema.format_ty(base),
                 ),
 
                 Ty::Param(_) | Ty::Null | Ty::Union(_) => {
@@ -3278,6 +3393,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         let field = e.field.to_string();
 
         let Some(def_id) = self
+            .ctx
             .sema
             .name_res
             .try_resolve_local(scope_id, Ns::Var, &field)
@@ -3288,22 +3404,24 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     .at(e.field.loc.clone())
                     .with_msg(format_args!(
                         "no member `{field}` found in `{}`",
-                        self.sema.name_res.defs[def_id].name
+                        self.ctx.sema.name_res.defs[def_id].name
                     ))
-                    .with_label(Label::primary(self.sema.libsl.exprs[e.base].loc.clone()))
+                    .with_label(Label::primary(
+                        self.ctx.sema.libsl.exprs[e.base].loc.clone(),
+                    ))
                     .build(),
 
                 Base::InstanceScope(_, base_ty_id) => Diag::err()
                     .at(e.field.loc.clone())
                     .with_msg(format_args!(
                         "type `{}` has no field named `{field}`",
-                        self.sema.format_ty(base_ty_id),
+                        self.ctx.sema.format_ty(base_ty_id),
                     ))
                     .with_label(
-                        Label::primary(self.sema.libsl.exprs[e.base].loc.clone()).with_msg(
+                        Label::primary(self.ctx.sema.libsl.exprs[e.base].loc.clone()).with_msg(
                             format_args!(
                                 "this expression has type `{}`",
-                                self.sema.format_ty(base_ty_id),
+                                self.ctx.sema.format_ty(base_ty_id),
                             ),
                         ),
                     )
@@ -3313,12 +3431,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             return;
         };
 
-        let def_id = self.sema.name_res.resolve_import(def_id);
-        let ty_id = self.sema.tyck.def_tys[def_id];
-        let ty_id = self.sema.tyck.subst(ty_id, &param_map);
+        let def_id = self.ctx.sema.name_res.resolve_import(def_id);
+        let ty_id = self.ctx.sema.tyck.def_tys[def_id];
+        let ty_id = self.ctx.sema.tyck.subst(ty_id, &param_map);
         let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, ty_id);
 
-        self.sema.tyck.field_exprs.insert(
+        self.ctx.sema.tyck.field_exprs.insert(
             expr.id,
             ResolvedFieldExpr {
                 field_def_id: def_id,
@@ -3332,32 +3450,37 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             },
         );
 
-        self.sema.tyck.exprs.insert(expr.id, ty_id);
+        self.ctx.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
     fn tyck_expr_deref(&mut self, expr: &'ast ast::Expr, e: &'ast ast::ExprDeref, ctx: ExprCkCtx) {
-        let elem_ty = self.fresh_var(VarProvenance::Element { of: expr.id });
+        let elem_ty = self.ctx.fresh_var(VarProvenance::Element { of: expr.id });
         let ptr_ty = self
+            .ctx
             .sema
             .tyck
-            .add_ctor_ty(self.sema.name_res.prelude_defs.pointer, vec![elem_ty]);
+            .add_ctor_ty(self.ctx.sema.name_res.prelude_defs.pointer, vec![elem_ty]);
         self.tyck_expr(e.base, ctx.nested(Some(ptr_ty)));
 
         let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, elem_ty);
-        self.sema.tyck.exprs.insert(expr.id, ty_id);
+        self.ctx.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
     fn tyck_expr_index(&mut self, expr: &'ast ast::Expr, e: &'ast ast::ExprIndex, ctx: ExprCkCtx) {
-        let elem_ty = self.fresh_var(VarProvenance::Element { of: expr.id });
+        let elem_ty = self.ctx.fresh_var(VarProvenance::Element { of: expr.id });
         let array_ty = self
+            .ctx
             .sema
             .tyck
-            .add_ctor_ty(self.sema.name_res.prelude_defs.array, vec![elem_ty]);
+            .add_ctor_ty(self.ctx.sema.name_res.prelude_defs.array, vec![elem_ty]);
         self.tyck_expr(e.base, ctx.nested(Some(array_ty)));
-        self.tyck_expr(e.index, ctx.nested(Some(self.sema.tyck.builtin.unsigned64)));
+        self.tyck_expr(
+            e.index,
+            ctx.nested(Some(self.ctx.sema.tyck.builtin.unsigned64)),
+        );
 
         let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, elem_ty);
-        self.sema.tyck.exprs.insert(expr.id, ty_id);
+        self.ctx.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
     fn tyck_expr_has_concept(
@@ -3373,7 +3496,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.tyck_expr(e.expr, ctx.nested(None));
         let ty_id = self.tyck_ty_expr(e.ty_expr);
         let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, ty_id);
-        self.sema.tyck.exprs.insert(expr.id, ty_id);
+        self.ctx.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
     fn tyck_expr_ty_compare(
@@ -3387,9 +3510,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         let ty_id = self.check_ty(
             ConstrProvenance::Expr(expr.id),
             ctx.expected,
-            self.sema.tyck.builtin.bool,
+            self.ctx.sema.tyck.builtin.bool,
         );
-        self.sema.tyck.exprs.insert(expr.id, ty_id);
+        self.ctx.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
     fn tyck_expr_unary(&mut self, expr: &'ast ast::Expr, e: &'ast ast::ExprUnary, ctx: ExprCkCtx) {

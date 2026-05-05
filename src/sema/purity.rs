@@ -27,7 +27,9 @@ impl Sema<'_> {
 fn make_err(loc: Loc, op_name: &str) -> Diag {
     Diag::err()
         .at(loc.clone())
-        .with_msg(format_args!("{op_name} are forbidden in a pure procedure"))
+        .with_msg(format_args!(
+            "{op_name} are not allowed in a pure procedure"
+        ))
         .with_label(Label::primary(loc))
         .build()
 }
@@ -48,13 +50,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn run(mut self) -> Result {
-        let _ = self.sema.libsl.files.values().try_for_each(|file| {
+        for file in self.sema.libsl.files.values() {
             for &decl_id in &file.decls {
-                self.visit_decl((), &self.sema.libsl.decls[decl_id])?;
+                let _ = self.visit_decl((), &self.sema.libsl.decls[decl_id]);
             }
-
-            ControlFlow::Continue(())
-        });
+        }
 
         self.result
     }
@@ -129,15 +129,8 @@ impl<'ast, D: DiagCtx> ProcChecker<'ast, '_, '_, D> {
                 let what = match self.pass.sema.name_res.def::<DefVariable>(res.def_id).kind {
                     VariableKind::Global => "global variables",
 
-                    // local variables can be used freely.
-                    VariableKind::Local { .. } => return,
-
-                    // same with parameters as long as it's not `this`.
-                    VariableKind::Param {
-                        kind: ParamKind::This,
-                        ..
-                    } => "`this`",
-                    VariableKind::Param { .. } => return,
+                    // local variables and parameters can be used freely.
+                    VariableKind::Local { .. } | VariableKind::Param { .. } => return,
 
                     VariableKind::Field { .. } | VariableKind::ConstructorVar { .. } => "fields",
                 };
@@ -150,13 +143,7 @@ impl<'ast, D: DiagCtx> ProcChecker<'ast, '_, '_, D> {
             }
 
             ResolvedNameKind::ImplicitField => {
-                self.pass.record_err(make_err(
-                    expr.loc.clone(),
-                    match mode {
-                        AccessMode::Read => "reads of fields of `this`",
-                        AccessMode::Write => "writes to fields of `this`",
-                    },
-                ));
+                // same as `this.$name`, which is allowed.
             }
 
             ResolvedNameKind::MemberScope(_) => {}

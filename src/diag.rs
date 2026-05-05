@@ -227,6 +227,12 @@ pub trait DiagCtx {
     fn emit(&mut self, diag: Diag);
 }
 
+impl<T: DiagCtx + ?Sized> DiagCtx for Box<T> {
+    fn emit(&mut self, diag: Diag) {
+        T::emit(self, diag)
+    }
+}
+
 /// A [DiagCtx] that ignores all diagnostics.
 #[derive(Debug, Clone, Copy)]
 pub struct DummyDiagCtx;

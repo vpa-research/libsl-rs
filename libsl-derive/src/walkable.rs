@@ -87,7 +87,7 @@ fn walk_field(ident: &Ident, field: &Field) -> TokenStream {
         }
     } else {
         quote_spanned! {span=>
-            crate::visit::Walkable::walk(#ident, visitor, ctx.clone())?;
+            crate::visit::Walkable::walk_self(#ident, visitor, ctx.clone())?;
         }
     }
 }

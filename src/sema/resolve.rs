@@ -281,9 +281,6 @@ pub struct NameRes {
     /// Entity definitions.
     pub defs: Defs,
 
-    /// Entity definitions by their tag.
-    pub defs_by_tag: HashMap<DefKindTag, Vec<DefId>>,
-
     /// Variable scopes.
     pub scopes: SlotMap<ScopeId, Scope>,
 

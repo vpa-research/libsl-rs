@@ -61,12 +61,19 @@ impl<T: FnSigProvider> FnSigProvider for &'_ T {
     }
 }
 
-struct DefFnSigProvider(DefId);
+pub struct DefFnSigProvider(DefId);
+
+impl DefFnSigProvider {
+    pub fn new(def_id: DefId) -> Self {
+        Self(def_id)
+    }
+}
 
 impl FnSigProvider for DefFnSigProvider {
     fn satisfies(&self, sema: &mut Sema<'_>, criteria: &ApplicabilityCriteria) -> bool {
         let &ApplicabilityCriteria { proc_only } = criteria;
 
+        #[allow(clippy::collapsible_if)]
         if proc_only {
             if !matches!(
                 sema.name_res.def::<DefFunction>(self.0).kind,

@@ -3019,6 +3019,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             return;
         };
 
+        self.ctx.sema.tyck.call_targets.insert(expr.id, (recv.clone(), def_id));
+
         self.check_ty_arg_arity(&expr.loc, ty_args.len(), self.fn_sig(def_id).generics.len());
         self.check_arg_arity(&expr.loc, args.len(), self.fn_sig(def_id).params.len());
 

@@ -2142,6 +2142,22 @@ pub enum IntLit {
     U64(u64),
 }
 
+impl IntLit {
+    /// Casts the value to `i64`.
+    pub fn to_i64(self) -> i64 {
+        match self {
+            Self::I8(v) => v as _,
+            Self::U8(v) => v as _,
+            Self::I16(v) => v as _,
+            Self::U16(v) => v as _,
+            Self::I32(v) => v as _,
+            Self::U32(v) => v as _,
+            Self::I64(v) => v,
+            Self::U64(v) => v as _,
+        }
+    }
+}
+
 impl From<i8> for IntLit {
     fn from(value: i8) -> Self {
         Self::I8(value)

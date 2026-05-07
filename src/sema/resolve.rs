@@ -1063,9 +1063,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
                 let param_scope_id = self.add_param_scope(def_id, outer_scope_id);
                 self.def_mut::<DefEnum>(def_id).param_scope_id = param_scope_id;
-
                 let member_scope_id = self.add_member_scope(def_id, param_scope_id);
-                self.def_mut::<DefEnum>(def_id).member_scope_id = member_scope_id;
 
                 for (idx, variant) in decl.variants.iter().enumerate() {
                     let variant_def_id = self
@@ -1196,7 +1194,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
                     DeclCtx::Struct(def_id) => (
                         ctx.outer_instance(self.sema).unwrap().1,
-                        VariableKind::Field { of: def_id },
+                        VariableKind::Field {
+                            of: def_id,
+                            idx: self.def::<DefStruct>(def_id).fields.len(),
+                        },
                     ),
 
                     DeclCtx::Automaton {
@@ -1204,7 +1205,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         is_constructor_var: true,
                     } => (
                         ctx.outer_instance(self.sema).unwrap().1,
-                        VariableKind::ConstructorVar { of: def_id },
+                        VariableKind::ConstructorVar {
+                            of: def_id,
+                            idx: self.def::<DefAutomaton>(def_id).constructor_params.len(),
+                        },
                     ),
 
                     DeclCtx::Automaton {
@@ -1212,7 +1216,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         is_constructor_var: false,
                     } => (
                         ctx.outer_instance(self.sema).unwrap().1,
-                        VariableKind::Field { of: def_id },
+                        VariableKind::Field {
+                            of: def_id,
+                            idx: self.def::<DefAutomaton>(def_id).fields.len(),
+                        },
                     ),
 
                     DeclCtx::FuncBody { .. } => unreachable!(),

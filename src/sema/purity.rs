@@ -4,7 +4,7 @@ use std::ops::ControlFlow;
 
 use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
-use crate::sema::def::{DefFunction, FunctionKind, ParamKind};
+use crate::sema::def::{DefFunction, FunctionKind};
 use crate::sema::def::{DefVariable, VariableKind};
 use crate::sema::tyck::ResolvedNameKind;
 use crate::sema::{Result, Sema};

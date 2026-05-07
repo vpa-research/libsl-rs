@@ -2374,9 +2374,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn variable_recv(&mut self, def_id: DefId, replace_ty_args: ReplaceTyArgs) -> Option<TyId> {
         match self.ctx.sema.name_res.def::<DefVariable>(def_id).kind {
             VariableKind::Global => None,
-            VariableKind::Local { of } => self.function_recv(of, replace_ty_args),
-            VariableKind::Field { of } => Some(self.ctx.make_recv_ty(of, replace_ty_args)),
-            VariableKind::ConstructorVar { of } => Some(self.ctx.make_recv_ty(of, replace_ty_args)),
+            VariableKind::Local { of, .. } => self.function_recv(of, replace_ty_args),
+            VariableKind::Field { of, .. } => Some(self.ctx.make_recv_ty(of, replace_ty_args)),
+            VariableKind::ConstructorVar { of, .. } => {
+                Some(self.ctx.make_recv_ty(of, replace_ty_args))
+            }
             VariableKind::Param { of, .. } => self.function_recv(of, replace_ty_args),
         }
     }
@@ -3019,7 +3021,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             return;
         };
 
-        self.ctx.sema.tyck.call_targets.insert(expr.id, (recv.clone(), def_id));
+        self.ctx
+            .sema
+            .tyck
+            .call_targets
+            .insert(expr.id, (recv.clone(), def_id));
 
         self.check_ty_arg_arity(&expr.loc, ty_args.len(), self.fn_sig(def_id).generics.len());
         self.check_arg_arity(&expr.loc, args.len(), self.fn_sig(def_id).params.len());

@@ -547,7 +547,6 @@ pub struct DefEnum {
     pub decl_id: DeclId,
     pub annotations: Vec<AnnotationId>,
     pub param_scope_id: ScopeId,
-    pub member_scope_id: ScopeId,
     pub variants: Vec<DefId>,
 }
 
@@ -557,7 +556,6 @@ impl DefEnum {
             decl_id,
             annotations: Default::default(),
             param_scope_id: Default::default(),
-            member_scope_id: Default::default(),
             variants: Default::default(),
         }
     }
@@ -707,8 +705,8 @@ impl DefKindProject for DefVariable {
 pub enum VariableKind {
     Global,
     Local { of: DefId },
-    Field { of: DefId },
-    ConstructorVar { of: DefId },
+    Field { of: DefId, idx: usize },
+    ConstructorVar { of: DefId, idx: usize },
     Param { of: DefId, kind: ParamKind },
 }
 

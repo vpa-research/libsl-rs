@@ -12,7 +12,7 @@ use crate::loc::Loc;
 use crate::sema::def::{
     Def, DefAction, DefAnnotation, DefAutomaton, DefEnum, DefFunction, DefId, DefImport, DefKind,
     DefKindProject, DefPred, DefSemanticTy, DefState, DefStruct, DefTyAlias, DefTyVariable,
-    DefVariable, FunctionBody, FunctionBodyUser, FunctionKind, ParamKind, PredKind,
+    DefVariable, FunctionBody, FunctionBodyUser, FunctionKind, LocalKind, ParamKind, PredKind,
     SemanticTyValue, TyVariableKind, VariableKind,
 };
 use crate::sema::{Result, Sema};
@@ -62,13 +62,21 @@ impl Scope {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct FileScope {
     pub file_id: FileId,
     pub import_scope: ScopeId,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BlockKind {
+    Body(DefId),
+    Stmt(StmtId),
+    Pred(PredId),
+    Var(DeclId),
+}
+
+#[derive(Debug, Default, Clone)]
 pub enum ScopeKind {
     #[default]
     Dummy,
@@ -81,6 +89,7 @@ pub enum ScopeKind {
     Params(DefId),
     Block {
         func: DefId,
+        kind: BlockKind,
     },
 }
 
@@ -535,6 +544,11 @@ impl Sema<'_> {
     }
 }
 
+enum DeclNode {
+    Stmt(StmtId),
+    Pred(PredId),
+}
+
 enum DeclCtx<'a> {
     Global(FileId),
     Struct(DefId),
@@ -571,6 +585,7 @@ impl DeclCtx<'_> {
             DeclCtx::FuncBody {
                 def_id,
                 ref scope_id,
+                ..
             } => (Some(def_id), **scope_id),
         }
     }
@@ -1739,7 +1754,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         let param_scope_id = self.def::<DefFunction>(func_def_id).param_scope_id;
         let scope_id = self.sema.name_res.scopes.insert(Scope::new(
             Some(param_scope_id),
-            ScopeKind::Block { func: func_def_id },
+            ScopeKind::Block {
+                func: func_def_id,
+                kind: BlockKind::Body(func_def_id),
+            },
         ));
 
         self.def_mut::<DefFunction>(func_def_id)
@@ -2090,6 +2108,29 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 def_id: func_def_id,
                 ..
             } => {
+                let ScopeKind::Block {
+                    kind: block_kind, ..
+                } = &self.sema.name_res.scopes[scope_id].kind
+                else {
+                    unreachable!("a local variable is defined in a non-block scope");
+                };
+
+                let local_kind = match *block_kind {
+                    BlockKind::Body(_) | BlockKind::Stmt(_) => LocalKind::Stmt,
+                    BlockKind::Pred(_) => LocalKind::Contract,
+
+                    BlockKind::Var(decl_id) => {
+                        let VariableKind::Local { kind, .. } = self
+                            .def::<DefVariable>(self.sema.name_res.decl_defs[decl_id])
+                            .kind
+                        else {
+                            unreachable!();
+                        };
+
+                        kind
+                    }
+                };
+
                 let def_id = self.sema.name_res.defs.insert_with_key(|id| Def {
                     id,
                     loc: decl.name.loc.clone(),
@@ -2097,7 +2138,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     scope_id,
                     kind: DefVariable::new(
                         Some(decl_id),
-                        VariableKind::Local { of: func_def_id },
+                        VariableKind::Local {
+                            of: func_def_id,
+                            kind: local_kind,
+                        },
                         decl.kind.is_var(),
                     )
                     .into(),
@@ -2139,7 +2183,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
             *scope_id = self.sema.name_res.scopes.insert(Scope::new(
                 Some(*scope_id),
-                ScopeKind::Block { func: func_def_id },
+                ScopeKind::Block {
+                    func: func_def_id,
+                    kind: BlockKind::Var(decl_id),
+                },
             ));
 
             if let Err((prev_def_id, name)) = self.sema.name_res.add_def_to_scope(
@@ -2365,12 +2412,15 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         func_def_id: DefId,
         scope_id: &mut ScopeId,
         _kind: PredKind,
-        _pred_id: PredId,
+        pred_id: PredId,
         pred: &'ast ast::PredBlock,
     ) {
         let mut scope_id = self.sema.name_res.scopes.insert(Scope::new(
             Some(*scope_id),
-            ScopeKind::Block { func: func_def_id },
+            ScopeKind::Block {
+                func: func_def_id,
+                kind: BlockKind::Pred(pred_id),
+            },
         ));
 
         for &pred_id in &pred.preds {
@@ -2428,7 +2478,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         func_def_id: DefId,
         scope_id: &mut ScopeId,
         _kind: PredKind,
-        _pred_id: PredId,
+        pred_id: PredId,
         pred: &'ast ast::PredIf,
     ) {
         self.process_expr(
@@ -2441,7 +2491,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         let mut then_scope_id = self.sema.name_res.scopes.insert(Scope::new(
             Some(*scope_id),
-            ScopeKind::Block { func: func_def_id },
+            ScopeKind::Block {
+                func: func_def_id,
+                kind: BlockKind::Pred(pred_id),
+            },
         ));
 
         self.process_pred(
@@ -2454,7 +2507,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         if let Some(else_pred_id) = pred.else_branch {
             let mut else_scope_id = self.sema.name_res.scopes.insert(Scope::new(
                 Some(*scope_id),
-                ScopeKind::Block { func: func_def_id },
+                ScopeKind::Block {
+                    func: func_def_id,
+                    kind: BlockKind::Pred(pred_id),
+                },
             ));
 
             self.process_pred(
@@ -2539,7 +2595,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         &mut self,
         func_def_id: DefId,
         scope_id: &mut ScopeId,
-        _stmt_id: StmtId,
+        stmt_id: StmtId,
         stmt: &'ast ast::StmtIf,
     ) {
         self.process_expr(
@@ -2552,7 +2608,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         let mut then_scope_id = self.sema.name_res.scopes.insert(Scope::new(
             Some(*scope_id),
-            ScopeKind::Block { func: func_def_id },
+            ScopeKind::Block {
+                func: func_def_id,
+                kind: BlockKind::Stmt(stmt_id),
+            },
         ));
 
         for &then_stmt_id in &stmt.then_branch {
@@ -2562,7 +2621,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         if !stmt.else_branch.is_empty() {
             let mut else_scope_id = self.sema.name_res.scopes.insert(Scope::new(
                 Some(*scope_id),
-                ScopeKind::Block { func: func_def_id },
+                ScopeKind::Block {
+                    func: func_def_id,
+                    kind: BlockKind::Stmt(stmt_id),
+                },
             ));
 
             for &else_stmt_id in &stmt.else_branch {

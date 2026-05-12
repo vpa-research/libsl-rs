@@ -704,10 +704,19 @@ impl DefKindProject for DefVariable {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VariableKind {
     Global,
-    Local { of: DefId },
+    Local { of: DefId, kind: LocalKind },
     Field { of: DefId, idx: usize },
     ConstructorVar { of: DefId, idx: usize },
     Param { of: DefId, kind: ParamKind },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocalKind {
+    /// Defined in a statement in a function body.
+    Stmt,
+
+    /// A local variable of a contract.
+    Contract,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

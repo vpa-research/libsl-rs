@@ -11,10 +11,11 @@ use crate::ast::Variance;
 use crate::diag::{Diag, DiagCtx, Label};
 use crate::loc::Loc;
 use crate::sema::def::{
-    Def, DefAction, DefAnnotation, DefAutomaton, DefFunction, DefId, DefKind, DefVariable,
-    FunctionKind, TyVariableKind, VariableKind,
+    Def, DefAction, DefAnnotation, DefAutomaton, DefEnum, DefFunction, DefId, DefKind,
+    DefKindProject, DefStruct, DefTyAlias, DefTyVariable, DefVariable, LocalKind, TyVariableKind,
+    VariableKind,
 };
-use crate::sema::resolve::{AnnotatedEntity, ExprCtxKind, Ns, ScopeId, ScopeKind};
+use crate::sema::resolve::{AnnotatedEntity, ExprCtxKind, NameRes, Ns, ScopeId, ScopeKind};
 use crate::sema::ty::{
     BuiltinTyCtor, ConstructedTy, FloatCtor, IntCtor, IntWidth, Ty, TyId, TyUnion,
 };
@@ -28,8 +29,7 @@ use crate::{AnnotationId, DeclId, ExprId, PredId, StmtId, TyExprId, ast, trace_e
 use self::constraints::SubtypeBoundKind;
 use self::operators::BinOpFnSigProvider;
 
-use super::def::{DefEnum, DefKindProject, DefStruct, DefTyAlias, DefTyVariable};
-use super::resolve::NameRes;
+use super::def::FunctionKind;
 
 pub mod constraints;
 pub mod operators;
@@ -2656,11 +2656,37 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn tyck_decl_variable_body(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclVariable) {
         self.tyck_annotations(&d.annotations);
+        let def_id = self.ctx.sema.name_res.decl_defs[decl.id];
 
         if let Some(expr_id) = d.init {
-            let def_id = self.ctx.sema.name_res.decl_defs[decl.id];
             let ty_id = self.ctx.sema.tyck.def_tys[def_id];
             self.tyck_expr(expr_id, ExprCkCtx::expecting(ty_id));
+        } else {
+            let what = match self.ctx.sema.name_res.def::<DefVariable>(def_id).kind {
+                VariableKind::Global => None,
+                VariableKind::Local {
+                    kind: LocalKind::Stmt,
+                    ..
+                } => None,
+                VariableKind::Local {
+                    kind: LocalKind::Contract,
+                    ..
+                } => Some("a contract variable"),
+                VariableKind::Field { .. } => Some("a field"),
+                VariableKind::ConstructorVar { .. } => None,
+                VariableKind::Param { .. } => None,
+            };
+
+            if let Some(what) = what {
+                self.result = Err(());
+                self.diag.emit(
+                    Diag::err()
+                        .at(decl.loc.clone())
+                        .with_msg(format!("{what} must have an initializer"))
+                        .with_label(Label::primary(decl.loc.clone()))
+                        .build(),
+                );
+            }
         }
     }
 

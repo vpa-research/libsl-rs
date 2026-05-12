@@ -6,6 +6,8 @@
 //! `int8`, in which case the expression would refer to it. Therefore, types form a distinct
 //! hierarchy.
 
+use std::fmt::{self, Display};
+
 use slotmap::new_key_type;
 
 use crate::ast::Variance;
@@ -72,7 +74,7 @@ impl Ty {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct IntCtor {
     /// The number of bits comprising an integer.
     pub width: IntWidth,
@@ -123,6 +125,52 @@ impl IntCtor {
     };
 }
 
+impl Display for IntCtor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self {
+                width: IntWidth::I8,
+                signed: false,
+            } => write!(f, "unsigned8"),
+
+            Self {
+                width: IntWidth::I16,
+                signed: false,
+            } => write!(f, "unsigned16"),
+
+            Self {
+                width: IntWidth::I32,
+                signed: false,
+            } => write!(f, "unsigned32"),
+
+            Self {
+                width: IntWidth::I64,
+                signed: false,
+            } => write!(f, "unsigned64"),
+
+            Self {
+                width: IntWidth::I8,
+                signed: true,
+            } => write!(f, "int8"),
+
+            Self {
+                width: IntWidth::I16,
+                signed: true,
+            } => write!(f, "int16"),
+
+            Self {
+                width: IntWidth::I32,
+                signed: true,
+            } => write!(f, "int32"),
+
+            Self {
+                width: IntWidth::I64,
+                signed: true,
+            } => write!(f, "int64"),
+        }
+    }
+}
+
 /// The width of an integer, determining its range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum IntWidth {
@@ -150,7 +198,7 @@ impl IntWidth {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FloatCtor {
     F32,
     F64,
@@ -161,6 +209,15 @@ impl FloatCtor {
         match self {
             Self::F32 => 32,
             Self::F64 => 64,
+        }
+    }
+}
+
+impl Display for FloatCtor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::F32 => write!(f, "f32"),
+            Self::F64 => write!(f, "f64"),
         }
     }
 }

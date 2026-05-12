@@ -2219,4 +2219,25 @@ pub enum FloatLit {
     F64(f64),
 }
 
+impl FloatLit {
+    pub fn to_f64(self) -> f64 {
+        match self {
+            FloatLit::F32(v) => v as _,
+            FloatLit::F64(v) => v,
+        }
+    }
+}
+
+impl From<f32> for FloatLit {
+    fn from(value: f32) -> Self {
+        Self::F32(value)
+    }
+}
+
+impl From<f64> for FloatLit {
+    fn from(value: f64) -> Self {
+        Self::F64(value)
+    }
+}
+
 impl WithLibSl for FloatLit {}

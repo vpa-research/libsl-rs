@@ -189,8 +189,8 @@ pub struct TyCk {
     /// Stores the underlying type of an entity. Applicable to enums, automata, and type aliases.
     pub underlying_tys: SparseSecondaryMap<DefId, TyId>,
 
-    // The determined arity of annotations. Actual annotation uses may provide any number of
-    // arguments within the range.
+    /// The determined arity of annotations. Actual annotation uses may provide any number of
+    /// arguments within the range.
     pub annotation_arities: SparseSecondaryMap<DefId, RangeInclusive<usize>>,
 
     /// [`DefId`s] of required parameters of annotations (those without a default value).
@@ -2145,6 +2145,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
             return;
         };
+
+        self.ctx.sema.tyck.operators.insert(expr.id, overload.overload.clone());
 
         let sig = overload.fn_sig();
         let ty_param_map = self

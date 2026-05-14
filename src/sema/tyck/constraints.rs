@@ -1446,6 +1446,7 @@ impl ConstrSet {
         diag: &mut impl DiagCtx,
         idx: usize,
     ) -> Result {
+        self.update_bounds(idx);
         let var_ty_id = sema.tyck.add_ty(Ty::Var(idx));
 
         if trace_enabled() {
@@ -1548,6 +1549,8 @@ impl ConstrSet {
                 return Err(());
             }
         }
+
+        let solution = self.normalize(sema, solution, true);
 
         self.add(
             sema,

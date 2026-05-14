@@ -535,6 +535,49 @@ impl NameRes {
 
         instance_scope_id
     }
+
+    pub fn define_special_fn_params(&mut self, def_id: DefId, define_this: bool) {
+        let param_scope_id = self.def::<DefFunction>(def_id).param_scope_id;
+
+        self.def_mut::<DefFunction>(def_id).result_def_id = self
+            .add_def(
+                param_scope_id,
+                Ns::Var,
+                "result".into(),
+                self.defs[def_id].loc.clone(),
+                DefVariable::new(
+                    None,
+                    VariableKind::Param {
+                        kind: ParamKind::Result,
+                        of: def_id,
+                    },
+                    true,
+                )
+                .into(),
+            )
+            .0;
+
+        if define_this {
+            self.def_mut::<DefFunction>(def_id).this_def_id = Some(
+                self.add_def(
+                    param_scope_id,
+                    Ns::Var,
+                    "this".into(),
+                    self.defs[def_id].loc.clone(),
+                    DefVariable::new(
+                        None,
+                        VariableKind::Param {
+                            kind: ParamKind::This,
+                            of: def_id,
+                        },
+                        false,
+                    )
+                    .into(),
+                )
+                .0,
+            );
+        }
+    }
 }
 
 impl Sema<'_> {
@@ -708,6 +751,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         builtin: FunctionBuiltin,
         kind: FunctionKind,
         generics: &[(&str, Variance)],
+        define_this: bool,
         params: &[&str],
     ) -> DefId {
         let def_id = self
@@ -741,6 +785,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             })
             .collect();
         self.sema.name_res.generics.insert(def_id, generic_defs);
+
+        self.sema.name_res.define_special_fn_params(def_id, define_this);
 
         for (idx, param) in params.iter().enumerate() {
             let param_def_id = self
@@ -782,6 +828,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 pure: true,
             },
             &[],
+            true,
             &[],
         );
 
@@ -794,6 +841,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 pure: true,
             },
             &[],
+            true,
             &["from", "to"],
         );
     }
@@ -922,6 +970,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         let param_scope_id = self.add_param_scope(fn_def_id, scope_id);
         self.def_mut::<DefFunction>(fn_def_id).param_scope_id = param_scope_id;
+        self.sema.name_res.define_special_fn_params(fn_def_id, false);
 
         fn_def_id
     }
@@ -1669,52 +1718,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         param_scope_id: ScopeId,
         params: &[ast::FunctionParam],
     ) {
-        self.def_mut::<DefFunction>(def_id)
-            .body
-            .as_user_mut()
-            .unwrap()
-            .result_def_id = self
-            .add_def(
-                param_scope_id,
-                Ns::Var,
-                "result".into(),
-                self.sema.name_res.defs[def_id].loc.clone(),
-                DefVariable::new(
-                    None,
-                    VariableKind::Param {
-                        kind: ParamKind::Result,
-                        of: def_id,
-                    },
-                    true,
-                )
-                .into(),
-            )
-            .0;
-
-        if define_this {
-            self.def_mut::<DefFunction>(def_id)
-                .body
-                .as_user_mut()
-                .unwrap()
-                .this_def_id = Some(
-                self.add_def(
-                    param_scope_id,
-                    Ns::Var,
-                    "this".into(),
-                    self.sema.name_res.defs[def_id].loc.clone(),
-                    DefVariable::new(
-                        None,
-                        VariableKind::Param {
-                            kind: ParamKind::This,
-                            of: def_id,
-                        },
-                        false,
-                    )
-                    .into(),
-                )
-                .0,
-            );
-        }
+        self.sema
+            .name_res
+            .define_special_fn_params(def_id, define_this);
 
         for (idx, param) in params.iter().enumerate() {
             let name = param.name.to_string();

@@ -734,6 +734,8 @@ pub struct DefFunction {
     pub param_scope_id: ScopeId,
     pub params: Vec<DefId>,
     pub body: FunctionBody,
+    pub this_def_id: Option<DefId>,
+    pub result_def_id: DefId,
 }
 
 impl DefFunction {
@@ -749,6 +751,8 @@ impl DefFunction {
             param_scope_id: Default::default(),
             params: Default::default(),
             body,
+            this_def_id: Default::default(),
+            result_def_id: Default::default(),
         }
     }
 }
@@ -821,8 +825,6 @@ impl From<FunctionBuiltin> for FunctionBody {
 pub struct FunctionBodyUser {
     pub decl_id: DeclId,
     pub body_scope_id: ScopeId,
-    pub result_def_id: DefId,
-    pub this_def_id: Option<DefId>,
 }
 
 impl FunctionBodyUser {
@@ -830,8 +832,6 @@ impl FunctionBodyUser {
         Self {
             decl_id,
             body_scope_id: Default::default(),
-            result_def_id: Default::default(),
-            this_def_id: Default::default(),
         }
     }
 }

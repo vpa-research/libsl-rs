@@ -1529,7 +1529,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         let generics = self.ctx.def_generic_tys(def_id).collect();
         let ret_ty_id = self.ctx.sema.tyck.add_ctor_ty(def_id, generics);
         self.register_fn_sig::<DefFunction>(ctor_def_id, None, |def| &def.params, Some(ret_ty_id));
-        self.tyck_special_fn_params(def_id);
+        self.tyck_special_fn_params(ctor_def_id);
     }
 
     fn tyck_decl_enum(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclEnum) {
@@ -2609,6 +2609,78 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             self.diag.emit(diag);
         }
     }
+
+    fn check_var_initializer(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclVariable) {
+        enum Requirement {
+            MustHave(&'static str),
+            MustNotHave(&'static str),
+            None,
+        }
+
+        let def_id = self.ctx.sema.name_res.decl_defs[decl.id];
+        let def = self.ctx.sema.name_res.def::<DefVariable>(def_id);
+
+        let req = match def.kind {
+            VariableKind::Global => Requirement::None,
+
+            VariableKind::Local {
+                kind: LocalKind::Stmt,
+                ..
+            } if def.mutable => Requirement::None,
+
+            VariableKind::Local {
+                kind: LocalKind::Stmt,
+                ..
+            } => Requirement::MustHave("an immutable local variable"),
+
+            VariableKind::Local {
+                kind: LocalKind::Contract,
+                ..
+            } => Requirement::MustHave("a contract variable"),
+
+            VariableKind::Field { of, .. }
+                if self.ctx.sema.name_res.defs[of].kind.as_struct().is_some() =>
+            {
+                Requirement::MustNotHave("a struct field")
+            }
+
+            VariableKind::Field { .. } => Requirement::MustHave("a field"),
+
+            VariableKind::ConstructorVar { .. } => Requirement::None,
+            VariableKind::Param { .. } => Requirement::None,
+        };
+
+        match req {
+            Requirement::MustHave(what) => {
+                if d.init.is_none() {
+                    self.result = Err(());
+                    self.diag.emit(
+                        Diag::err()
+                            .at(decl.loc.clone())
+                            .with_msg(format!("{what} must have an initializer"))
+                            .with_label(Label::primary(decl.loc.clone()))
+                            .build(),
+                    );
+                }
+            }
+
+            Requirement::MustNotHave(what) => {
+                if let Some(init) = d.init {
+                    let loc = &self.ctx.sema.libsl.exprs[init].loc;
+                    self.result = Err(());
+                    self.diag.emit(
+                        Diag::err()
+                            .at(loc.clone())
+                            .with_msg(format!("{what} must not have an initializer"))
+                            .with_label(Label::primary(loc.clone()))
+                            .build(),
+                    );
+                }
+            }
+
+            Requirement::None => {}
+        }
+    }
 }
 
 impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
@@ -2698,35 +2770,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         if let Some(expr_id) = d.init {
             let ty_id = self.ctx.sema.tyck.def_tys[def_id];
             self.tyck_expr(expr_id, ExprCkCtx::expecting(ty_id));
-        } else {
-            let what = match self.ctx.sema.name_res.def::<DefVariable>(def_id).kind {
-                VariableKind::Global => None,
-                VariableKind::Local {
-                    kind: LocalKind::Stmt,
-                    ..
-                } => None,
-                VariableKind::Local {
-                    kind: LocalKind::Contract,
-                    ..
-                } => Some("a contract variable"),
-                VariableKind::Field { .. } => Some("a field"),
-                VariableKind::ConstructorVar { .. } => None,
-                VariableKind::Param { .. } => None,
-            };
-
-            // FIXME: struct fields must *not* have initializers.
-
-            if let Some(what) = what {
-                self.result = Err(());
-                self.diag.emit(
-                    Diag::err()
-                        .at(decl.loc.clone())
-                        .with_msg(format!("{what} must have an initializer"))
-                        .with_label(Label::primary(decl.loc.clone()))
-                        .build(),
-                );
-            }
         }
+
+        self.check_var_initializer(decl, d);
     }
 
     fn tyck_decl_state_body(&mut self, _decl: &'ast ast::Decl, _d: &'ast ast::DeclState) {

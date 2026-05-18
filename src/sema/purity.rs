@@ -162,7 +162,6 @@ impl<'ast, D: DiagCtx> Visitor<'ast, AccessMode> for ProcChecker<'ast, '_, '_, D
             ast::StmtKind::Decl(_) => {}
             ast::StmtKind::If(_) => {}
 
-            // TODO: allow assignment to locals (requires name resolution).
             ast::StmtKind::Assign(s) => {
                 s.lhs.walk(self, AccessMode::Write)?;
                 s.rhs.walk(self, AccessMode::Read)?;

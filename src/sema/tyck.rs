@@ -193,7 +193,7 @@ pub struct TyCk {
     /// arguments within the range.
     pub annotation_arities: SparseSecondaryMap<DefId, RangeInclusive<usize>>,
 
-    /// [`DefId`s] of required parameters of annotations (those without a default value).
+    /// [`DefId`]s of required parameters of annotations (those without a default value).
     pub required_annotation_params: SparseSecondaryMap<DefId, Vec<DefId>>,
 
     // for each type stores a vec of inference variable occurring in it.
@@ -2813,6 +2813,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn tyck_stmt_assign(&mut self, stmt: &'ast ast::Stmt, s: &'ast ast::StmtAssign) {
+        // FIXME: handle in-place update assignments.
         let lhs = self.tyck_expr(s.lhs, ExprCkCtx::empty());
         self.tyck_expr(s.rhs, ExprCkCtx::expecting(lhs));
 
@@ -2839,7 +2840,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     FieldExprBase::MemberScopeOf(_) => AssignmentKind::Var(resolved.field_def_id),
                     FieldExprBase::InstanceScopeOf(_) => AssignmentKind::Field {
                         implicit: false,
-                        def_id: self.ctx.sema.tyck.field_exprs[s.lhs].field_def_id,
+                        def_id: resolved.field_def_id,
                     },
                 }
             }

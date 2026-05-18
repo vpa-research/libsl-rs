@@ -161,6 +161,14 @@ pub enum FieldExprBase {
     InstanceScopeOf(DefId),
 }
 
+#[derive(Debug, Clone)]
+pub struct CallSig {
+    pub recv: Receiver,
+    pub ty_args: Vec<TyId>,
+    pub args: Vec<TyId>,
+    pub ret: TyId,
+}
+
 #[derive(Debug, Default)]
 pub struct TyCk {
     pub tys: SlotMap<TyId, Ty>,
@@ -179,6 +187,9 @@ pub struct TyCk {
 
     /// Maps procedure call expressions to their resolved call targets.
     pub call_targets: SparseSecondaryMap<ExprId, (Receiver, DefId)>,
+
+    /// Maps procedure calls and operator expressions to resolved signatures.
+    pub call_sigs: SparseSecondaryMap<ExprId, CallSig>,
 
     /// Maps name expressions to resolved entities.
     pub name_exprs: SparseSecondaryMap<ExprId, ResolvedName>,
@@ -1269,6 +1280,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.ctx.sema.tyck.ty_exprs = ty_exprs;
         self.ctx.sema.tyck.def_tys = def_tys;
         self.ctx.sema.tyck.call_targets = call_targets;
+
+        // FIXME: call_sigs
     }
 }
 
@@ -2155,19 +2168,34 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .operators
             .insert(expr.id, overload.overload.clone());
 
+        let mut call_sig = CallSig {
+            recv: Receiver::None,
+            ty_args: vec![],
+            args: vec![],
+            ret: Default::default(),
+        };
+
         let sig = overload.fn_sig();
         let ty_param_map = self
             .ctx
             .make_fresh_vars_for_ty_params(&sig.generics, &expr.loc);
 
+        call_sig.ty_args = sig
+            .generics
+            .iter()
+            .map(|&param| ty_param_map[param])
+            .collect();
+
         for (&param, &arg) in iter::zip(&sig.params, args) {
             let param = self.ctx.sema.tyck.subst(param, &ty_param_map);
+            call_sig.args.push(param);
             let _ = self.constr_coerce(arg, param, ConstrProvenance::Expr(expr.id));
         }
 
-        let ret = self.ctx.sema.tyck.subst(sig.ret.unwrap(), &ty_param_map);
-        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, ret);
+        call_sig.ret = self.ctx.sema.tyck.subst(sig.ret.unwrap(), &ty_param_map);
+        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, call_sig.ret);
         self.ctx.sema.tyck.exprs.insert(expr.id, ty_id);
+        self.ctx.sema.tyck.call_sigs.insert(expr.id, call_sig);
     }
 
     fn make_missing_args_err(loc: Loc, missing_args: &[String]) -> Diag {
@@ -2686,6 +2714,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 VariableKind::Param { .. } => None,
             };
 
+            // FIXME: struct fields must *not* have initializers.
+
             if let Some(what) = what {
                 self.result = Err(());
                 self.diag.emit(
@@ -3057,6 +3087,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             return;
         };
 
+        let mut call_sig = CallSig {
+            recv: recv.clone(),
+            ty_args: vec![],
+            args: vec![],
+            ret: Default::default(),
+        };
+
         self.ctx
             .sema
             .tyck
@@ -3091,14 +3128,22 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             let _ = self.constr_eq(arg, ty_param_map[param], ConstrProvenance::Expr(expr.id));
         }
 
+        call_sig.ty_args = sig
+            .generics
+            .iter()
+            .map(|&param| ty_param_map[param])
+            .collect();
+
         for (&param, &arg) in iter::zip(&sig.params, &args) {
             let param = self.ctx.sema.tyck.subst(param, &ty_param_map);
+            call_sig.args.push(param);
             let _ = self.constr_coerce(arg, param, ConstrProvenance::Expr(expr.id));
         }
 
-        let ret = self.ctx.sema.tyck.subst(sig.ret.unwrap(), &ty_param_map);
-        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, ret);
+        call_sig.ret = self.ctx.sema.tyck.subst(sig.ret.unwrap(), &ty_param_map);
+        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, call_sig.ret);
         self.ctx.sema.tyck.exprs.insert(expr.id, ty_id);
+        self.ctx.sema.tyck.call_sigs.insert(expr.id, call_sig);
     }
 
     fn tyck_expr_action_call(

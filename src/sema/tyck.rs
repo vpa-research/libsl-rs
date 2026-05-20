@@ -1340,18 +1340,29 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn replace_with_reprs(&mut self) {
+        fn recv_ty_id(recv: &mut Receiver) -> Option<&mut TyId> {
+            match recv {
+                Receiver::None => None,
+                Receiver::Implicit(ty_id) | Receiver::Explicit(ty_id) => Some(ty_id),
+            }
+        }
+
         let mut exprs = mem::take(&mut self.ctx.sema.tyck.exprs);
         let mut ty_exprs = mem::take(&mut self.ctx.sema.tyck.ty_exprs);
         let mut def_tys = mem::take(&mut self.ctx.sema.tyck.def_tys);
         let mut call_targets = mem::take(&mut self.ctx.sema.tyck.call_targets);
+        let mut call_sigs = mem::take(&mut self.ctx.sema.tyck.call_sigs);
 
         let ty_ids = exprs
             .values_mut()
             .chain(ty_exprs.values_mut())
             .chain(def_tys.values_mut())
-            .chain(call_targets.values_mut().flat_map(|(recv, _)| match recv {
-                Receiver::None => None,
-                Receiver::Implicit(ty_id) | Receiver::Explicit(ty_id) => Some(ty_id),
+            .chain(call_targets.values_mut().flat_map(|(recv, _)| recv_ty_id(recv)))
+            .chain(call_sigs.values_mut().flat_map(|sig| {
+                recv_ty_id(&mut sig.recv).into_iter()
+                    .chain(&mut sig.ty_args)
+                    .chain(&mut sig.args)
+                    .chain(iter::once(&mut sig.ret))
             }));
 
         for ty_id in ty_ids {
@@ -1362,8 +1373,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.ctx.sema.tyck.ty_exprs = ty_exprs;
         self.ctx.sema.tyck.def_tys = def_tys;
         self.ctx.sema.tyck.call_targets = call_targets;
-
-        // FIXME: call_sigs
+        self.ctx.sema.tyck.call_sigs = call_sigs;
     }
 }
 

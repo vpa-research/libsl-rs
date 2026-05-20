@@ -26,7 +26,7 @@ use crate::sema::{Result, Sema};
 use crate::util::{format_list, format_sep_list};
 use crate::{AnnotationId, DeclId, ExprId, PredId, StmtId, TyExprId, ast, trace_enabled};
 
-use self::constraints::SubtypeBoundKind;
+use self::constraints::{Constr, ConstrKind, SubtypeBoundKind};
 use self::operators::BinOpFnSigProvider;
 
 use super::def::FunctionKind;
@@ -34,6 +34,8 @@ use super::def::FunctionKind;
 pub mod constraints;
 pub mod operators;
 pub mod overload;
+
+pub type TyMap = SparseSecondaryMap<TyId, TyId>;
 
 #[derive(Debug, Default)]
 pub struct BuiltinTys {
@@ -161,7 +163,7 @@ pub enum FieldExprBase {
     InstanceScopeOf(DefId),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct CallSig {
     pub recv: Receiver,
     pub ty_args: Vec<TyId>,
@@ -188,7 +190,7 @@ pub struct TyCk {
     /// Maps procedure call expressions to their resolved call targets.
     pub call_targets: SparseSecondaryMap<ExprId, (Receiver, DefId)>,
 
-    /// Maps procedure calls and operator expressions to resolved signatures.
+    /// Maps calls and operator expressions to resolved signatures.
     pub call_sigs: SparseSecondaryMap<ExprId, CallSig>,
 
     /// Maps name expressions to resolved entities.
@@ -584,6 +586,10 @@ impl TyCk {
             }
         }
     }
+
+    pub fn var_provenances(&self) -> &[VarProvenance] {
+        &self.var_provenances
+    }
 }
 
 impl Sema<'_> {
@@ -748,7 +754,7 @@ impl TyCkCtx<'_, '_> {
         &mut self,
         def_id: DefId,
         replace_ty_args: ReplaceTyArgs,
-    ) -> (TyId, SparseSecondaryMap<TyId, TyId>) {
+    ) -> (TyId, TyMap) {
         let generics = self.def_generic_tys(def_id).collect::<Vec<_>>();
 
         let (ty_args, param_map) = match replace_ty_args {
@@ -775,6 +781,82 @@ impl TyCkCtx<'_, '_> {
         self.sema.name_res.generics[def_id]
             .iter()
             .map(|&def_id| self.sema.tyck.def_tys[def_id])
+    }
+
+    pub fn add_call_constraints(
+        &mut self,
+        diag: &mut impl DiagCtx,
+        loc: &Loc,
+        provenance: ConstrProvenance,
+        sig: &FnSig,
+        recv: Receiver,
+        ty_args: &[TyId],
+        args: &[TyId],
+    ) -> (CallSig, TyMap, Result) {
+        let mut ty_param_map = self.make_fresh_vars_for_ty_params(&sig.generics, &loc);
+        let mut call_sig = CallSig::default();
+        let mut result = Ok(());
+
+        call_sig.recv = match (recv, sig.recv) {
+            (Receiver::None, None) => Receiver::None,
+            (Receiver::Implicit(_), None) => Receiver::None,
+
+            (recv @ (Receiver::Implicit(ty_id) | Receiver::Explicit(ty_id)), Some(def_id)) => {
+                let (expected, map) = self.make_recv_ty_with_map(def_id, ReplaceTyArgs::Yes(loc));
+                result = result.and(self.constrs.add(
+                    self.sema,
+                    diag,
+                    Constr {
+                        provenance: provenance.clone(),
+                        kind: ConstrKind::Eq(ty_id, expected),
+                    },
+                ));
+                ty_param_map.extend(map);
+
+                match recv {
+                    Receiver::Implicit(_) => Receiver::Implicit(expected),
+                    Receiver::Explicit(_) => Receiver::Explicit(expected),
+                    Receiver::None => unreachable!(),
+                }
+            }
+
+            (Receiver::None | Receiver::Explicit(_), _) => panic!(),
+        };
+
+        for (&param, &arg) in iter::zip(&sig.generics, ty_args) {
+            result = result.and(self.constrs.add(
+                self.sema,
+                diag,
+                Constr {
+                    provenance: provenance.clone(),
+                    kind: ConstrKind::Eq(arg, ty_param_map[param]),
+                },
+            ));
+        }
+
+        call_sig.ty_args = sig
+            .generics
+            .iter()
+            .map(|&param| ty_param_map[param])
+            .collect();
+        call_sig.args.reserve(args.len());
+
+        for (&param, &arg) in iter::zip(&sig.params, args) {
+            let param = self.sema.tyck.subst(param, &ty_param_map);
+            call_sig.args.push(param);
+            result = result.and(self.constrs.add(
+                self.sema,
+                diag,
+                Constr {
+                    provenance: provenance.clone(),
+                    kind: ConstrKind::Coerce(arg, param),
+                },
+            ));
+        }
+
+        call_sig.ret = self.sema.tyck.subst(sig.ret.unwrap(), &ty_param_map);
+
+        (call_sig, ty_param_map, result)
     }
 }
 
@@ -2168,31 +2250,19 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .operators
             .insert(expr.id, overload.overload.clone());
 
-        let mut call_sig = CallSig {
-            recv: Receiver::None,
-            ty_args: vec![],
-            args: vec![],
-            ret: Default::default(),
-        };
-
         let sig = overload.fn_sig();
-        let ty_param_map = self
-            .ctx
-            .make_fresh_vars_for_ty_params(&sig.generics, &expr.loc);
 
-        call_sig.ty_args = sig
-            .generics
-            .iter()
-            .map(|&param| ty_param_map[param])
-            .collect();
+        let (call_sig, _, result) = self.ctx.add_call_constraints(
+            self.diag,
+            &expr.loc,
+            ConstrProvenance::Expr(expr.id),
+            sig,
+            Receiver::None,
+            &[],
+            args,
+        );
 
-        for (&param, &arg) in iter::zip(&sig.params, args) {
-            let param = self.ctx.sema.tyck.subst(param, &ty_param_map);
-            call_sig.args.push(param);
-            let _ = self.constr_coerce(arg, param, ConstrProvenance::Expr(expr.id));
-        }
-
-        call_sig.ret = self.ctx.sema.tyck.subst(sig.ret.unwrap(), &ty_param_map);
+        self.result = self.result.and(result);
         let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, call_sig.ret);
         self.ctx.sema.tyck.exprs.insert(expr.id, ty_id);
         self.ctx.sema.tyck.call_sigs.insert(expr.id, call_sig);
@@ -3133,13 +3203,6 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             return;
         };
 
-        let mut call_sig = CallSig {
-            recv: recv.clone(),
-            ty_args: vec![],
-            args: vec![],
-            ret: Default::default(),
-        };
-
         self.ctx
             .sema
             .tyck
@@ -3150,43 +3213,19 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.check_arg_arity(&expr.loc, args.len(), self.fn_sig(def_id).params.len());
 
         let sig = self.fn_sig(def_id).clone();
-        let mut ty_param_map = self
-            .ctx
-            .make_fresh_vars_for_ty_params(&sig.generics, &expr.loc);
 
-        match (recv, sig.recv) {
-            (Receiver::None, None) => {}
+        let (call_sig, _, result) = self.ctx.add_call_constraints(
+            self.diag,
+            &expr.loc,
+            ConstrProvenance::Expr(expr.id),
+            &sig,
+            recv,
+            &ty_args,
+            &args,
+        );
 
-            (Receiver::Implicit(_), None) => {}
+        self.result = self.result.and(result);
 
-            (Receiver::Implicit(ty_id) | Receiver::Explicit(ty_id), Some(recv)) => {
-                let (expected, map) = self
-                    .ctx
-                    .make_recv_ty_with_map(recv, ReplaceTyArgs::Yes(&expr.loc));
-                let _ = self.constr_sub(ty_id, expected, ConstrProvenance::Expr(expr.id));
-                ty_param_map.extend(map);
-            }
-
-            _ => unreachable!(),
-        }
-
-        for (&param, &arg) in iter::zip(&sig.generics, &ty_args) {
-            let _ = self.constr_eq(arg, ty_param_map[param], ConstrProvenance::Expr(expr.id));
-        }
-
-        call_sig.ty_args = sig
-            .generics
-            .iter()
-            .map(|&param| ty_param_map[param])
-            .collect();
-
-        for (&param, &arg) in iter::zip(&sig.params, &args) {
-            let param = self.ctx.sema.tyck.subst(param, &ty_param_map);
-            call_sig.args.push(param);
-            let _ = self.constr_coerce(arg, param, ConstrProvenance::Expr(expr.id));
-        }
-
-        call_sig.ret = self.ctx.sema.tyck.subst(sig.ret.unwrap(), &ty_param_map);
         let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, call_sig.ret);
         self.ctx.sema.tyck.exprs.insert(expr.id, ty_id);
         self.ctx.sema.tyck.call_sigs.insert(expr.id, call_sig);
@@ -3198,7 +3237,6 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         e: &'ast ast::ExprActionCall,
         ctx: ExprCkCtx,
     ) {
-        // TODO: deduplicate.
         let ty_args = e
             .generics
             .as_deref()
@@ -3220,22 +3258,21 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.check_arg_arity(&expr.loc, args.len(), self.fn_sig(def_id).params.len());
 
         let sig = self.fn_sig(def_id).clone();
-        let ty_param_map = self
-            .ctx
-            .make_fresh_vars_for_ty_params(&sig.generics, &expr.loc);
 
-        for (&param, &arg) in iter::zip(&sig.generics, &ty_args) {
-            let _ = self.constr_eq(arg, ty_param_map[param], ConstrProvenance::Expr(expr.id));
-        }
+        let (call_sig, _, result) = self.ctx.add_call_constraints(
+            self.diag,
+            &expr.loc,
+            ConstrProvenance::Expr(expr.id),
+            &sig,
+            Receiver::None,
+            &[],
+            &args,
+        );
 
-        for (&param, &arg) in iter::zip(&sig.params, &args) {
-            let param = self.ctx.sema.tyck.subst(param, &ty_param_map);
-            let _ = self.constr_coerce(arg, param, ConstrProvenance::Expr(expr.id));
-        }
-
-        let ret = self.ctx.sema.tyck.subst(sig.ret.unwrap(), &ty_param_map);
-        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, ret);
+        self.result = self.result.and(result);
+        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, call_sig.ret);
         self.ctx.sema.tyck.exprs.insert(expr.id, ty_id);
+        self.ctx.sema.tyck.call_sigs.insert(expr.id, call_sig);
     }
 
     fn tyck_expr_instantiate(

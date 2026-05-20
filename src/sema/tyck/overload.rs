@@ -15,8 +15,9 @@ use crate::sema::{Result, Sema};
 use crate::util::format_sep_list;
 use crate::{ExprId, WithLibSl, trace_enabled};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub enum Receiver {
+    #[default]
     None,
     Implicit(TyId),
     Explicit(TyId),

@@ -786,7 +786,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .collect();
         self.sema.name_res.generics.insert(def_id, generic_defs);
 
-        self.sema.name_res.define_special_fn_params(def_id, define_this);
+        self.sema
+            .name_res
+            .define_special_fn_params(def_id, define_this);
 
         for (idx, param) in params.iter().enumerate() {
             let param_def_id = self
@@ -970,7 +972,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         let param_scope_id = self.add_param_scope(fn_def_id, scope_id);
         self.def_mut::<DefFunction>(fn_def_id).param_scope_id = param_scope_id;
-        self.sema.name_res.define_special_fn_params(fn_def_id, false);
+        self.sema
+            .name_res
+            .define_special_fn_params(fn_def_id, false);
 
         fn_def_id
     }

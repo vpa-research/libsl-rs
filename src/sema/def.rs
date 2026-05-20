@@ -739,11 +739,7 @@ pub struct DefFunction {
 }
 
 impl DefFunction {
-    pub fn new(
-        kind: FunctionKind,
-        is_method: bool,
-        body: FunctionBody,
-    ) -> Self {
+    pub fn new(kind: FunctionKind, is_method: bool, body: FunctionBody) -> Self {
         Self {
             annotations: Default::default(),
             kind,

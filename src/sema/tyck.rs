@@ -1357,9 +1357,14 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .values_mut()
             .chain(ty_exprs.values_mut())
             .chain(def_tys.values_mut())
-            .chain(call_targets.values_mut().flat_map(|(recv, _)| recv_ty_id(recv)))
+            .chain(
+                call_targets
+                    .values_mut()
+                    .flat_map(|(recv, _)| recv_ty_id(recv)),
+            )
             .chain(call_sigs.values_mut().flat_map(|sig| {
-                recv_ty_id(&mut sig.recv).into_iter()
+                recv_ty_id(&mut sig.recv)
+                    .into_iter()
                     .chain(&mut sig.ty_args)
                     .chain(&mut sig.args)
                     .chain(iter::once(&mut sig.ret))

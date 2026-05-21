@@ -888,6 +888,9 @@ impl ConstrSet {
 
             (Ty::Null, Ty::Null) => Ok(()),
 
+            // the unions are proper types.
+            (Ty::Union(l), Ty::Union(r)) if l == r => Ok(()),
+
             (Ty::Param(_) | Ty::Ctor(_) | Ty::Null | Ty::Union(_), _) => {
                 self.report_constr_violation(sema, diag, constr_id);
 
@@ -927,6 +930,7 @@ impl ConstrSet {
         #[allow(clippy::single_match)]
         match (l, r) {
             (Ty::Ctor(l), Ty::Ctor(r)) => {
+                #[allow(clippy::collapsible_match)]
                 if l.ctor != r.ctor {
                     let bl = sema.name_res.defs[l.ctor].kind.as_builtin_ctor();
                     let br = sema.name_res.defs[r.ctor].kind.as_builtin_ctor();

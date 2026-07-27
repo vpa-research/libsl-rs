@@ -45,11 +45,6 @@ pub enum DefKind {
 
     Enum(DefEnum),
 
-    EnumVariant {
-        enum_def_id: DefId,
-        variant_idx: usize,
-    },
-
     Annotation(DefAnnotation),
 
     Action(DefAction),
@@ -101,7 +96,6 @@ impl DefKind {
             Self::TyAlias(_) => DefKindTag::TyAlias,
             Self::Struct(_) => DefKindTag::Struct,
             Self::Enum(_) => DefKindTag::Enum,
-            Self::EnumVariant { .. } => DefKindTag::EnumVariant,
             Self::Annotation(_) => DefKindTag::Annotation,
             Self::Action(_) => DefKindTag::Action,
             Self::Automaton(_) => DefKindTag::Automaton,
@@ -708,6 +702,7 @@ pub enum VariableKind {
     Field { of: DefId, idx: usize },
     ConstructorVar { of: DefId, idx: usize },
     Param { of: DefId, kind: ParamKind },
+    EnumVariant { of: DefId, idx: usize },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

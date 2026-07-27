@@ -1140,10 +1140,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                             Ns::Var,
                             variant.name.to_string(),
                             variant.name.loc.clone(),
-                            DefKind::EnumVariant {
-                                enum_def_id: def_id,
-                                variant_idx: idx,
-                            },
+                            DefVariable::new(
+                                Some(decl_id),
+                                VariableKind::EnumVariant { of: def_id, idx },
+                                false,
+                            )
+                            .into(),
                         )
                         .0;
 

@@ -1528,6 +1528,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             VariableKind::Field { .. } => "field",
             VariableKind::ConstructorVar { .. } => unreachable!(),
             VariableKind::Param { .. } => unreachable!(),
+            VariableKind::EnumVariant { .. } => return Ok(()),
         };
 
         let Def { name, loc, .. } = &self.ctx.sema.name_res.defs[def_id];
@@ -1897,7 +1898,6 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             }
             DefKind::Struct(_) => {}
             DefKind::Enum(_) => {}
-            DefKind::EnumVariant { .. } => unreachable!(),
             DefKind::Annotation(_) => unreachable!(),
             DefKind::Action(_) => unreachable!(),
             DefKind::Automaton(_) => {}
@@ -2441,7 +2441,6 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             DefKind::TyAlias(_) => None,
             DefKind::Struct(_) => None,
             DefKind::Enum(_) => None,
-            DefKind::EnumVariant { .. } => None,
             DefKind::Annotation(_) => None,
             DefKind::Action(_) => None,
             DefKind::Automaton(_) => None,
@@ -2469,7 +2468,6 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             DefKind::TyAlias(_) => None,
             DefKind::Struct(_) => Some(self.ctx.make_recv_ty(def_id, replace_ty_args)),
             DefKind::Enum(_) => None,
-            DefKind::EnumVariant { .. } => None,
             DefKind::Annotation(_) => None,
             DefKind::Action(_) => None,
             DefKind::Automaton(_) => Some(self.ctx.make_recv_ty(def_id, replace_ty_args)),
@@ -2502,6 +2500,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 Some(self.ctx.make_recv_ty(of, replace_ty_args))
             }
             VariableKind::Param { of, .. } => self.function_recv(of, replace_ty_args),
+            VariableKind::EnumVariant { of, .. } => {
+                Some(self.ctx.make_recv_ty(of, replace_ty_args))
+            }
         }
     }
 
@@ -2733,6 +2734,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
             VariableKind::ConstructorVar { .. } => Requirement::None,
             VariableKind::Param { .. } => Requirement::None,
+            VariableKind::EnumVariant { .. } => unreachable!(),
         };
 
         match req {

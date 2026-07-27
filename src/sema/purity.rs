@@ -133,6 +133,8 @@ impl<'ast, D: DiagCtx> ProcChecker<'ast, '_, '_, D> {
                     VariableKind::Local { .. } | VariableKind::Param { .. } => return,
 
                     VariableKind::Field { .. } | VariableKind::ConstructorVar { .. } => "fields",
+
+                    VariableKind::EnumVariant { .. } => return,
                 };
 
                 let msg = match mode {

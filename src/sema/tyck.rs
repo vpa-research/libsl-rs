@@ -22,7 +22,7 @@ use crate::sema::ty::{
 use crate::sema::tyck::constraints::{ConstrProvenance, ConstrSet, VarProvenance};
 use crate::sema::tyck::operators::{Op, OpFnSigProvider, OpOverload, OpOverloadDiagProvider};
 use crate::sema::tyck::overload::Receiver;
-use crate::sema::{Result, Sema};
+use crate::sema::{Result, Sema, SemaError};
 use crate::util::{format_list, format_sep_list};
 use crate::{AnnotationId, DeclId, ExprId, PredId, StmtId, TyExprId, ast, trace_enabled};
 
@@ -724,6 +724,7 @@ impl Sema<'_> {
     }
 }
 
+#[allow(missing_debug_implementations)]
 pub struct TyCkCtx<'ast, 's> {
     pub sema: &'s mut Sema<'ast>,
     pub constrs: ConstrSet,
@@ -783,6 +784,7 @@ impl TyCkCtx<'_, '_> {
             .map(|&def_id| self.sema.tyck.def_tys[def_id])
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn add_call_constraints(
         &mut self,
         diag: &mut impl DiagCtx,
@@ -793,7 +795,7 @@ impl TyCkCtx<'_, '_> {
         ty_args: &[TyId],
         args: &[TyId],
     ) -> (CallSig, TyMap, Result) {
-        let mut ty_param_map = self.make_fresh_vars_for_ty_params(&sig.generics, &loc);
+        let mut ty_param_map = self.make_fresh_vars_for_ty_params(&sig.generics, loc);
         let mut call_sig = CallSig::default();
         let mut result = Ok(());
 
@@ -903,6 +905,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         let defs = &self.ctx.sema.name_res.prelude_defs;
         let prelude_scope_id = self.ctx.sema.name_res.prelude_scope_id;
 
+        #[allow(clippy::type_complexity, reason = "it's here for illustrative purposes")]
         let builtins: &[(fn(&mut BuiltinTys) -> &mut TyId, DefId, BuiltinTyCtor)] = &[
             (
                 |t| &mut t.int8,
@@ -1256,7 +1259,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn check_ty_arg_arity(&mut self, loc: &Loc, expected: usize, actual: usize) -> bool {
         if expected > actual {
-            self.result = Err(());
+            self.result = Err(SemaError);
             self.diag.emit(
                 Diag::err()
                     .at(loc.clone())
@@ -1275,7 +1278,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn check_arg_arity(&mut self, loc: &Loc, expected: usize, actual: usize) {
         if expected != actual {
-            self.result = Err(());
+            self.result = Err(SemaError);
             self.diag.emit(
                 Diag::err()
                     .at(loc.clone())
@@ -1304,7 +1307,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             let prev_ty_id = self.int_ctor_ty(prev);
 
             *error_reported = true;
-            self.result = Err(());
+            self.result = Err(SemaError);
             self.diag.emit(
                 Diag::err()
                     .at(enum_loc.clone())
@@ -1533,7 +1536,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         let Def { name, loc, .. } = &self.ctx.sema.name_res.defs[def_id];
 
-        self.result = Err(());
+        self.result = Err(SemaError);
         self.diag.emit(
             Diag::err()
                 .at(loc.clone())
@@ -1542,7 +1545,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 .build(),
         );
 
-        Err(())
+        Err(SemaError)
     }
 }
 
@@ -1700,7 +1703,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
                 (Some(min_arity), false) => {
                     // a parameter without a default value after optional parameters start — error.
-                    self.result = Err(());
+                    self.result = Err(SemaError);
 
                     missing_default
                         .get_or_insert_with(|| {
@@ -1969,7 +1972,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         def_id: DefId,
     ) {
         if !ty_args.is_empty() {
-            self.result = Err(());
+            self.result = Err(SemaError);
             self.diag.emit(
                 Diag::err()
                     .at(ty_expr.loc.clone())
@@ -2340,10 +2343,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 });
             }
 
-            match scope.parent {
-                Some(parent_scope_id) => scope_id = parent_scope_id,
-                None => return None,
-            }
+            scope_id = scope.parent?;
         }
     }
 
@@ -2371,11 +2371,11 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             });
         }
 
-        self.result = Err(());
+        self.result = Err(SemaError);
         self.diag
             .emit(NameRes::make_unresolved_name_error(&name, loc.clone()));
 
-        Err(())
+        Err(SemaError)
     }
 
     fn check_assignable(&mut self, stmt: &'ast ast::Stmt, lhs: ExprId) {
@@ -2394,7 +2394,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         "field"
                     };
 
-                    self.result = Err(());
+                    self.result = Err(SemaError);
                     self.diag.emit(
                         Diag::err()
                             .at(loc.clone())
@@ -2673,7 +2673,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         // emit collected diagnostics.
         if !missing_args.is_empty() {
-            self.result = Err(());
+            self.result = Err(SemaError);
             self.diag.emit(Self::make_missing_args_err(
                 annotation.loc.clone(),
                 &missing_args,
@@ -2681,17 +2681,17 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
 
         if let UnnamedAfterNamed::Named(_, Some(diag)) = unnamed_after_named {
-            self.result = Err(());
+            self.result = Err(SemaError);
             self.diag.emit(diag);
         }
 
         if let Some(diag) = extraneous_args {
-            self.result = Err(());
+            self.result = Err(SemaError);
             self.diag.emit(diag);
         }
 
         for (_, diag) in duplicate_args {
-            self.result = Err(());
+            self.result = Err(SemaError);
             self.diag.emit(diag);
         }
     }
@@ -2740,7 +2740,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         match req {
             Requirement::MustHave(what) => {
                 if d.init.is_none() {
-                    self.result = Err(());
+                    self.result = Err(SemaError);
                     self.diag.emit(
                         Diag::err()
                             .at(decl.loc.clone())
@@ -2754,7 +2754,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             Requirement::MustNotHave(what) => {
                 if let Some(init) = d.init {
                     let loc = &self.ctx.sema.libsl.exprs[init].loc;
-                    self.result = Err(());
+                    self.result = Err(SemaError);
                     self.diag.emit(
                         Diag::err()
                             .at(loc.clone())
@@ -3031,7 +3031,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         {
             // allowed.
         } else {
-            self.result = Err(());
+            self.result = Err(SemaError);
             self.diag.emit(
                 Diag::err()
                     .at(stmt.loc.clone())
@@ -3318,7 +3318,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 ast::ConstructorArg::State(loc, _) => {
                     let diag = match state {
                         Some(Ok((prev, _))) => {
-                            self.result = Err(());
+                            self.result = Err(SemaError);
                             state
                                 .insert(Err(Diag::err()
                                     .at(prev.loc().clone())
@@ -3359,7 +3359,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         Entry::Occupied(mut entry) => {
                             let diag = match entry.get_mut() {
                                 r @ &mut Ok((prev, _)) => {
-                                    self.result = Err(());
+                                    self.result = Err(SemaError);
                                     *r = Err(Diag::err()
                                         .at(prev.loc().clone())
                                         .with_msg(
@@ -3404,7 +3404,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .collect::<Vec<_>>();
 
         if !missing_args.is_empty() {
-            self.result = Err(());
+            self.result = Err(SemaError);
             self.diag
                 .emit(Self::make_missing_args_err(expr.loc.clone(), &missing_args));
         }
@@ -3412,7 +3412,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         match state {
             Some(Ok((arg, def_id))) => {
                 if def.final_states.contains(&def_id) {
-                    self.result = Err(());
+                    self.result = Err(SemaError);
                     self.diag.emit(
                         Diag::err()
                             .at(arg.loc().clone())
@@ -3431,7 +3431,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             }
 
             None => {
-                self.result = Err(());
+                self.result = Err(SemaError);
                 self.diag.emit(
                     Diag::err()
                         .at(expr.loc.clone())
@@ -3550,7 +3550,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     ),
 
                     _ => {
-                        self.result = Err(());
+                        self.result = Err(SemaError);
                         self.diag.emit(self.make_wrong_field_base_ty_err(
                             expr.loc.clone(),
                             e.base,
@@ -3567,7 +3567,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 ),
 
                 Ty::Param(_) | Ty::Null | Ty::Union(_) => {
-                    self.result = Err(());
+                    self.result = Err(SemaError);
                     self.diag.emit(self.make_wrong_field_base_ty_err(
                         expr.loc.clone(),
                         e.base,
@@ -3587,7 +3587,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .name_res
             .try_resolve_local(scope_id, Ns::Var, &field)
         else {
-            self.result = Err(());
+            self.result = Err(SemaError);
             self.diag.emit(match base {
                 Base::MemberScope(def_id) => Diag::err()
                     .at(e.field.loc.clone())

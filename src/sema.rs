@@ -7,6 +7,9 @@ pub mod resolve;
 pub mod ty;
 pub mod tyck;
 
+use std::error::Error;
+use std::fmt::{self, Display};
+
 use slotmap::{SecondaryMap, SparseSecondaryMap};
 
 use crate::diag::DiagCtx;
@@ -17,6 +20,17 @@ use crate::{DeclId, FileId, LibSl};
 
 pub use crate::sema::load::{ImportCtx, LoadError, LoadReason};
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct SemaError;
+
+impl Display for SemaError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "semantic analysis failed")
+    }
+}
+
+impl Error for SemaError {}
+
 /// The result of a semantic analysis pass.
 ///
 /// Usually the error information is absent from this type (set to `()`), since passes generally
@@ -24,7 +38,7 @@ pub use crate::sema::load::{ImportCtx, LoadError, LoadReason};
 /// attach more detailed information to each diagnostic.
 ///
 /// When used in this way, the type acts as supercharged `bool` with the short-circuiting ability.
-pub type Result<T = (), E = ()> = std::result::Result<T, E>;
+pub type Result<T = (), E = SemaError> = std::result::Result<T, E>;
 
 /// A semantic analyzer for LibSL.
 ///

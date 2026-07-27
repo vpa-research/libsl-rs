@@ -11,7 +11,7 @@ use crate::sema::resolve::ScopeKind;
 use crate::sema::ty::{Ty, TyId};
 use crate::sema::tyck::constraints::{Constr, ConstrKind, ConstrProvenance};
 use crate::sema::tyck::{FnSig, Pass, ReplaceTyArgs, TyCkCtx};
-use crate::sema::{Result, Sema};
+use crate::sema::{Result, Sema, SemaError};
 use crate::util::format_sep_list;
 use crate::{ExprId, WithLibSl, trace_enabled};
 
@@ -62,6 +62,7 @@ impl<T: FnSigProvider> FnSigProvider for &'_ T {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct DefFnSigProvider(DefId);
 
 impl DefFnSigProvider {
@@ -260,6 +261,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn find_method_candidates(
         &mut self,
         candidates: &mut Vec<DefFnSigProvider>,
@@ -423,8 +425,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     ) -> Result<&'a F> {
         self.ctx
             .select_overload(self.diag, candidates, diag_provider)
-            .inspect_err(|()| {
-                self.result = Err(());
+            .inspect_err(|SemaError| {
+                self.result = Err(SemaError);
             })
     }
 }
@@ -458,7 +460,7 @@ impl TyCkCtx<'_, '_> {
                     );
                 }
 
-                return Err(());
+                return Err(SemaError);
             }
 
             let ty_param_map = self.make_fresh_vars_for_ty_params(&sig.generics, &Loc::Synthetic);
@@ -516,7 +518,7 @@ impl TyCkCtx<'_, '_> {
                         })?;
                 }
 
-                _ => return Err(()),
+                _ => return Err(SemaError),
             }
 
             for (idx, (&param, &arg)) in iter::zip(&sig.params, args).enumerate() {
@@ -552,7 +554,7 @@ impl TyCkCtx<'_, '_> {
                     eprintln!("  criteria unsatisfied");
                 }
 
-                return Err(());
+                return Err(SemaError);
             }
 
             Ok(())
@@ -614,7 +616,7 @@ impl TyCkCtx<'_, '_> {
         if candidates.is_empty() {
             diag.emit(diag_provider.empty_candidate_set(self));
 
-            return Err(());
+            return Err(SemaError);
         }
 
         let mut criteria = SelectionCriteria {
@@ -659,7 +661,7 @@ impl TyCkCtx<'_, '_> {
             ambiguities.insert(0, best);
             diag.emit(diag_provider.ambiguity(self, &ambiguities));
 
-            return Err(());
+            return Err(SemaError);
         }
 
         Ok(best)

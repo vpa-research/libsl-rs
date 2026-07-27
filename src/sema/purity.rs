@@ -11,6 +11,8 @@ use crate::sema::{Result, Sema};
 use crate::visit::{Visitor, Walkable};
 use crate::{LibSl, ast};
 
+use super::SemaError;
+
 #[derive(Debug, Clone, Copy)]
 enum AccessMode {
     Read,
@@ -60,7 +62,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     }
 
     fn record_err(&mut self, diag: Diag) {
-        self.result = Err(());
+        self.result = Err(SemaError);
         self.diag.emit(diag);
     }
 }

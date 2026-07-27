@@ -167,6 +167,7 @@ impl<O: Op> FnSigProvider for OpFnSigProvider<O> {
 pub type UnOpFnSigProvider = OpFnSigProvider<ast::UnOp>;
 pub type BinOpFnSigProvider = OpFnSigProvider<ast::BinOp>;
 
+#[derive(Debug)]
 pub struct OpOverloadDiagProvider<'a, O, F> {
     op: O,
     loc: &'a Loc,

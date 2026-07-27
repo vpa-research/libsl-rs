@@ -16,7 +16,7 @@ use crate::sema::def::DefId;
 use crate::sema::resolve::NameRes;
 use crate::sema::ty::{BuiltinTyCtor, ConstructedTy, Ty, TyId};
 use crate::sema::tyck::{Pass, TyCk};
-use crate::sema::{Result, Sema};
+use crate::sema::{Result, Sema, SemaError};
 use crate::{ExprId, trace_enabled};
 
 use super::TyCkCtx;
@@ -34,6 +34,7 @@ enum Status {
 }
 
 impl Status {
+    #[expect(unused, reason = "exists for uniformity")]
     fn is_sat(&self) -> bool {
         matches!(self, Self::Sat)
     }
@@ -364,7 +365,7 @@ impl ConstrSet {
         while let Some(constr_id) = self.unprocessed.pop() {
             if self.reduce(sema, diag, constr_id).is_err() {
                 self.status = Status::Unsat;
-                result = Err(());
+                result = Err(SemaError);
                 self.constr_dedup.remove(&self.constrs[constr_id].kind);
             }
         }
@@ -410,7 +411,7 @@ impl ConstrSet {
             VarProvenance::Generic(ty_id, ..) => {
                 let param = &sema.tyck.ty_params[sema.tyck.tys[ty_id].as_param().unwrap()];
 
-                write!(f, "type argument `{}`", &param.name)
+                write!(f, "type argument `{}`", param.name)
             }
         })
     }
@@ -738,7 +739,7 @@ impl ConstrSet {
                 if l.ctor != r.ctor {
                     self.report_constr_violation(sema, diag, constr_id);
 
-                    return Err(());
+                    return Err(SemaError);
                 }
 
                 for (lhs_arg, rhs_arg) in iter::zip(l.args.clone(), r.args.clone()) {
@@ -766,7 +767,7 @@ impl ConstrSet {
             (Ty::Param(_) | Ty::Ctor(_) | Ty::Null | Ty::Union(_), _) => {
                 self.report_constr_violation(sema, diag, constr_id);
 
-                Err(())
+                Err(SemaError)
             }
         }
     }
@@ -839,7 +840,7 @@ impl ConstrSet {
                         (Some(_), _) | (_, Some(_)) => {
                             self.report_constr_violation(sema, diag, constr_id);
 
-                            return Err(());
+                            return Err(SemaError);
                         }
 
                         _ => {}
@@ -847,7 +848,7 @@ impl ConstrSet {
 
                     self.report_constr_violation(sema, diag, constr_id);
 
-                    return Err(());
+                    return Err(SemaError);
                 }
 
                 // the two types have the same type constructor. this is now a question of variance.
@@ -894,7 +895,7 @@ impl ConstrSet {
             (Ty::Param(_) | Ty::Ctor(_) | Ty::Null | Ty::Union(_), _) => {
                 self.report_constr_violation(sema, diag, constr_id);
 
-                Err(())
+                Err(SemaError)
             }
         }
     }
@@ -976,11 +977,9 @@ impl ConstrSet {
                 }
             }
 
-            (_, Ty::Union(r)) => {
-                // l is not a union: check for membership.
-                if r.elems.contains(&lhs) {
-                    return Ok(());
-                }
+            // l is not a union: check for membership.
+            (_, Ty::Union(r)) if r.elems.contains(&lhs) => {
+                return Ok(());
             }
 
             _ => {}
@@ -1009,7 +1008,7 @@ impl ConstrSet {
                 eprintln!("  unsat; skipping");
             }
 
-            return Err(());
+            return Err(SemaError);
         }
 
         var.unprocessed.push((bound, provenance));
@@ -1048,7 +1047,7 @@ impl ConstrSet {
 
             if r.is_err() {
                 var.status = Status::Unsat;
-                result = Err(());
+                result = Err(SemaError);
             }
         }
 
@@ -1550,7 +1549,7 @@ impl ConstrSet {
             } else {
                 self.report_inconsistent_bounds(sema, diag, idx, kind, bounds);
 
-                return Err(());
+                return Err(SemaError);
             }
         }
 
@@ -1756,6 +1755,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         result
     }
 
+    #[expect(unused, reason = "exists for uniformity")]
     pub fn constr_sub(&mut self, lhs: TyId, rhs: TyId, provenance: ConstrProvenance) -> Result {
         let result = self.ctx.constrs.add(
             self.ctx.sema,

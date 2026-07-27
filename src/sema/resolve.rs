@@ -18,6 +18,7 @@ use crate::sema::def::{
 use crate::sema::{Result, Sema};
 use crate::{AnnotationId, DeclId, ExprId, FileId, PredId, StmtId, TyExprId, ast};
 
+use super::SemaError;
 use super::def::{DefKindTag, FunctionBuiltin};
 
 new_key_type! {
@@ -395,7 +396,7 @@ impl NameRes {
 
         diag.emit(Self::make_unresolved_name_error(name, loc.clone()));
 
-        Err(())
+        Err(SemaError)
     }
 
     pub fn try_resolve(&self, mut scope_id: ScopeId, ns: Ns, name: &str) -> Option<DefId> {
@@ -411,11 +412,7 @@ impl NameRes {
             }
 
             let scope = &self.scopes[scope_id];
-
-            match scope.parent {
-                Some(parent_scope_id) => scope_id = parent_scope_id,
-                None => return None,
-            }
+            scope_id = scope.parent?;
         }
     }
 
@@ -433,7 +430,7 @@ impl NameRes {
 
         diag.emit(Self::make_unresolved_name_error(name, loc.clone()));
 
-        Err(())
+        Err(SemaError)
     }
 
     pub fn def<T: DefKindProject>(&self, def_id: DefId) -> &T {
@@ -585,11 +582,6 @@ impl Sema<'_> {
     pub fn resolve_names(&mut self, diag: &mut impl DiagCtx) -> Result {
         Pass::new(self, diag).run()
     }
-}
-
-enum DeclNode {
-    Stmt(StmtId),
-    Pred(PredId),
 }
 
 enum DeclCtx<'a> {
@@ -744,6 +736,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.register_builtin_array_methods();
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn register_builtin_function(
         &mut self,
         scope_id: ScopeId,
@@ -850,7 +843,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn report_multiple_definition(&mut self, loc: Loc, prev_def_id: DefId, name: String) {
         let prev_def = &self.sema.name_res.defs[prev_def_id];
-        self.result = Err(());
+        self.result = Err(SemaError);
         self.diag.emit(
             Diag::err()
                 .at(loc.clone())
@@ -903,10 +896,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         {
             Ok(def_id) => Ok(def_id),
 
-            Err(()) => {
-                self.result = Err(());
+            Err(SemaError) => {
+                self.result = Err(SemaError);
 
-                Err(())
+                Err(SemaError)
             }
         }
     }
@@ -1523,7 +1516,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                             let prev_loc = self.sema.name_res.defs[resolved_def_id].loc.clone();
                             let loc = self.sema.name_res.defs[resolved_prev_def_id].loc.clone();
 
-                            self.result = Err(());
+                            self.result = Err(SemaError);
                             self.diag.emit(
                                 Diag::err()
                                     .at(import_loc.clone())
@@ -2961,7 +2954,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                                     if def.constructor_params.contains(&def_id) {
                                         Some(def_id)
                                     } else {
-                                        self.result = Err(());
+                                        self.result = Err(SemaError);
                                         self.diag.emit(
                                             Diag::err()
                                                 .at(name.loc.clone())

@@ -537,7 +537,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             ],
 
             ast::BinOp::Or => vec![P::concrete(op, loc, OpOverload::Or, vec![bool, bool], bool)],
-            ast::BinOp::And => vec![P::concrete(op, loc, OpOverload::Or, vec![bool, bool], bool)],
+            ast::BinOp::And => vec![P::concrete(op, loc, OpOverload::And, vec![bool, bool], bool)],
         }
     }
 }

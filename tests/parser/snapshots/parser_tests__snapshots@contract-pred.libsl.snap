@@ -1,0 +1,1132 @@
+---
+source: tests/parser/main.rs
+description: "// Input file:\nlibsl \"2.0.0\";\n\nlibrary contract_pred;\n\nfun test() {\n    // expression predicate.\n    ensures x == 10;\n\n    // named contract.\n    requires spam: 2 * 2 == 4;\n\n    // if predicate.\n    ensures if (x > 10) {\n        y > 10;\n    }\n\n    // block predicate.\n    ensures {\n        // nested block predicate.\n        {\n            x > 10;\n            y < 10;\n        }\n\n        // named predicate.\n        foo: x > 10;\n\n        // if predicate.\n        if (x > 10) {\n            // empty body.\n        }\n\n        // if predicate with else-branches.\n        if (x > 0) {\n            y > 0;\n        } else if (y > 0) {\n            z > 0;\n        } else {\n            x < 0;\n        }\n\n        // variable declaration.\n        val x: int = 42;\n    }\n}\n"
+input_file: tests/parser/test-data/contract-pred.libsl
+---
+Ok(File(
+  loc: Span(
+    start: 0,
+    len: 741,
+    file: "tests/parser/test-data/contract-pred.libsl",
+    line: Some(1),
+    col: None,
+  ),
+  header: Some(Header(
+    loc: Span(
+      start: 0,
+      len: 37,
+      file: "tests/parser/test-data/contract-pred.libsl",
+      line: Some(1),
+      col: None,
+    ),
+    libsl_version: "2.0.0",
+    library_name: "contract_pred",
+    version: None,
+    language: None,
+    url: None,
+  )),
+  decls: [
+    Decl(
+      loc: Span(
+        start: 40,
+        len: 700,
+        file: "tests/parser/test-data/contract-pred.libsl",
+        line: Some(5),
+        col: None,
+      ),
+      kind: Function(DeclFunction(
+        annotations: [],
+        is_static: false,
+        extension_for: None,
+        is_method: false,
+        name: Name(
+          loc: Span(
+            start: 44,
+            len: 3,
+            file: "tests/parser/test-data/contract-pred.libsl",
+            line: Some(5),
+            col: Some(4),
+          ),
+          name: "test",
+        ),
+        generics: [],
+        params: [],
+        ret_ty_expr: None,
+        ty_constraints: [],
+        body: Some(FunctionBody(
+          contracts: [
+            Ensures(ContractEnsures(
+              name: None,
+              pred: Pred(
+                loc: Span(
+                  start: 94,
+                  len: 7,
+                  file: "tests/parser/test-data/contract-pred.libsl",
+                  line: Some(7),
+                  col: Some(12),
+                ),
+                kind: Expr(Expr(
+                  loc: Span(
+                    start: 94,
+                    len: 6,
+                    file: "tests/parser/test-data/contract-pred.libsl",
+                    line: Some(7),
+                    col: Some(12),
+                  ),
+                  kind: Binary(ExprBinary(
+                    lhs: Expr(
+                      loc: Span(
+                        start: 94,
+                        len: 0,
+                        file: "tests/parser/test-data/contract-pred.libsl",
+                        line: Some(7),
+                        col: Some(12),
+                      ),
+                      kind: Access(ExprAccess(
+                        access: QualifiedAccess(
+                          loc: Span(
+                            start: 94,
+                            len: 0,
+                            file: "tests/parser/test-data/contract-pred.libsl",
+                            line: Some(7),
+                            col: Some(12),
+                          ),
+                          kind: Name(AccessName(
+                            name: Name(
+                              loc: Span(
+                                start: 94,
+                                len: 0,
+                                file: "tests/parser/test-data/contract-pred.libsl",
+                                line: Some(7),
+                                col: Some(12),
+                              ),
+                              name: "x",
+                            ),
+                          )),
+                        ),
+                      )),
+                    ),
+                    op: Eq,
+                    rhs: Expr(
+                      loc: Span(
+                        start: 99,
+                        len: 1,
+                        file: "tests/parser/test-data/contract-pred.libsl",
+                        line: Some(7),
+                        col: Some(17),
+                      ),
+                      kind: PrimitiveLit(ExprPrimitiveLit(
+                        lit: Int(I32(10)),
+                      )),
+                    ),
+                  )),
+                )),
+              ),
+            )),
+            Requires(ContractRequires(
+              name: Some(Name(
+                loc: Span(
+                  start: 140,
+                  len: 3,
+                  file: "tests/parser/test-data/contract-pred.libsl",
+                  line: Some(10),
+                  col: Some(13),
+                ),
+                name: "spam",
+              )),
+              pred: Pred(
+                loc: Span(
+                  start: 146,
+                  len: 10,
+                  file: "tests/parser/test-data/contract-pred.libsl",
+                  line: Some(10),
+                  col: Some(19),
+                ),
+                kind: Expr(Expr(
+                  loc: Span(
+                    start: 146,
+                    len: 9,
+                    file: "tests/parser/test-data/contract-pred.libsl",
+                    line: Some(10),
+                    col: Some(19),
+                  ),
+                  kind: Binary(ExprBinary(
+                    lhs: Expr(
+                      loc: Span(
+                        start: 146,
+                        len: 4,
+                        file: "tests/parser/test-data/contract-pred.libsl",
+                        line: Some(10),
+                        col: Some(19),
+                      ),
+                      kind: Binary(ExprBinary(
+                        lhs: Expr(
+                          loc: Span(
+                            start: 146,
+                            len: 0,
+                            file: "tests/parser/test-data/contract-pred.libsl",
+                            line: Some(10),
+                            col: Some(19),
+                          ),
+                          kind: PrimitiveLit(ExprPrimitiveLit(
+                            lit: Int(I32(2)),
+                          )),
+                        ),
+                        op: Mul,
+                        rhs: Expr(
+                          loc: Span(
+                            start: 150,
+                            len: 0,
+                            file: "tests/parser/test-data/contract-pred.libsl",
+                            line: Some(10),
+                            col: Some(23),
+                          ),
+                          kind: PrimitiveLit(ExprPrimitiveLit(
+                            lit: Int(I32(2)),
+                          )),
+                        ),
+                      )),
+                    ),
+                    op: Eq,
+                    rhs: Expr(
+                      loc: Span(
+                        start: 155,
+                        len: 0,
+                        file: "tests/parser/test-data/contract-pred.libsl",
+                        line: Some(10),
+                        col: Some(28),
+                      ),
+                      kind: PrimitiveLit(ExprPrimitiveLit(
+                        lit: Int(I32(4)),
+                      )),
+                    ),
+                  )),
+                )),
+              ),
+            )),
+            Ensures(ContractEnsures(
+              name: None,
+              pred: Pred(
+                loc: Span(
+                  start: 192,
+                  len: 34,
+                  file: "tests/parser/test-data/contract-pred.libsl",
+                  line: Some(13),
+                  col: Some(12),
+                ),
+                kind: If(PredIf(
+                  cond: Expr(
+                    loc: Span(
+                      start: 196,
+                      len: 5,
+                      file: "tests/parser/test-data/contract-pred.libsl",
+                      line: Some(13),
+                      col: Some(16),
+                    ),
+                    kind: Binary(ExprBinary(
+                      lhs: Expr(
+                        loc: Span(
+                          start: 196,
+                          len: 0,
+                          file: "tests/parser/test-data/contract-pred.libsl",
+                          line: Some(13),
+                          col: Some(16),
+                        ),
+                        kind: Access(ExprAccess(
+                          access: QualifiedAccess(
+                            loc: Span(
+                              start: 196,
+                              len: 0,
+                              file: "tests/parser/test-data/contract-pred.libsl",
+                              line: Some(13),
+                              col: Some(16),
+                            ),
+                            kind: Name(AccessName(
+                              name: Name(
+                                loc: Span(
+                                  start: 196,
+                                  len: 0,
+                                  file: "tests/parser/test-data/contract-pred.libsl",
+                                  line: Some(13),
+                                  col: Some(16),
+                                ),
+                                name: "x",
+                              ),
+                            )),
+                          ),
+                        )),
+                      ),
+                      op: Gt,
+                      rhs: Expr(
+                        loc: Span(
+                          start: 200,
+                          len: 1,
+                          file: "tests/parser/test-data/contract-pred.libsl",
+                          line: Some(13),
+                          col: Some(20),
+                        ),
+                        kind: PrimitiveLit(ExprPrimitiveLit(
+                          lit: Int(I32(10)),
+                        )),
+                      ),
+                    )),
+                  ),
+                  then_branch: Pred(
+                    loc: Span(
+                      start: 204,
+                      len: 22,
+                      file: "tests/parser/test-data/contract-pred.libsl",
+                      line: Some(13),
+                      col: Some(24),
+                    ),
+                    kind: Block(PredBlock(
+                      preds: [
+                        Pred(
+                          loc: Span(
+                            start: 214,
+                            len: 6,
+                            file: "tests/parser/test-data/contract-pred.libsl",
+                            line: Some(14),
+                            col: Some(8),
+                          ),
+                          kind: Expr(Expr(
+                            loc: Span(
+                              start: 214,
+                              len: 5,
+                              file: "tests/parser/test-data/contract-pred.libsl",
+                              line: Some(14),
+                              col: Some(8),
+                            ),
+                            kind: Binary(ExprBinary(
+                              lhs: Expr(
+                                loc: Span(
+                                  start: 214,
+                                  len: 0,
+                                  file: "tests/parser/test-data/contract-pred.libsl",
+                                  line: Some(14),
+                                  col: Some(8),
+                                ),
+                                kind: Access(ExprAccess(
+                                  access: QualifiedAccess(
+                                    loc: Span(
+                                      start: 214,
+                                      len: 0,
+                                      file: "tests/parser/test-data/contract-pred.libsl",
+                                      line: Some(14),
+                                      col: Some(8),
+                                    ),
+                                    kind: Name(AccessName(
+                                      name: Name(
+                                        loc: Span(
+                                          start: 214,
+                                          len: 0,
+                                          file: "tests/parser/test-data/contract-pred.libsl",
+                                          line: Some(14),
+                                          col: Some(8),
+                                        ),
+                                        name: "y",
+                                      ),
+                                    )),
+                                  ),
+                                )),
+                              ),
+                              op: Gt,
+                              rhs: Expr(
+                                loc: Span(
+                                  start: 218,
+                                  len: 1,
+                                  file: "tests/parser/test-data/contract-pred.libsl",
+                                  line: Some(14),
+                                  col: Some(12),
+                                ),
+                                kind: PrimitiveLit(ExprPrimitiveLit(
+                                  lit: Int(I32(10)),
+                                )),
+                              ),
+                            )),
+                          )),
+                        ),
+                      ],
+                    )),
+                  ),
+                  else_branch: None,
+                )),
+              ),
+            )),
+            Ensures(ContractEnsures(
+              name: None,
+              pred: Pred(
+                loc: Span(
+                  start: 265,
+                  len: 473,
+                  file: "tests/parser/test-data/contract-pred.libsl",
+                  line: Some(18),
+                  col: Some(12),
+                ),
+                kind: Block(PredBlock(
+                  preds: [
+                    Pred(
+                      loc: Span(
+                        start: 310,
+                        len: 50,
+                        file: "tests/parser/test-data/contract-pred.libsl",
+                        line: Some(20),
+                        col: Some(8),
+                      ),
+                      kind: Block(PredBlock(
+                        preds: [
+                          Pred(
+                            loc: Span(
+                              start: 324,
+                              len: 6,
+                              file: "tests/parser/test-data/contract-pred.libsl",
+                              line: Some(21),
+                              col: Some(12),
+                            ),
+                            kind: Expr(Expr(
+                              loc: Span(
+                                start: 324,
+                                len: 5,
+                                file: "tests/parser/test-data/contract-pred.libsl",
+                                line: Some(21),
+                                col: Some(12),
+                              ),
+                              kind: Binary(ExprBinary(
+                                lhs: Expr(
+                                  loc: Span(
+                                    start: 324,
+                                    len: 0,
+                                    file: "tests/parser/test-data/contract-pred.libsl",
+                                    line: Some(21),
+                                    col: Some(12),
+                                  ),
+                                  kind: Access(ExprAccess(
+                                    access: QualifiedAccess(
+                                      loc: Span(
+                                        start: 324,
+                                        len: 0,
+                                        file: "tests/parser/test-data/contract-pred.libsl",
+                                        line: Some(21),
+                                        col: Some(12),
+                                      ),
+                                      kind: Name(AccessName(
+                                        name: Name(
+                                          loc: Span(
+                                            start: 324,
+                                            len: 0,
+                                            file: "tests/parser/test-data/contract-pred.libsl",
+                                            line: Some(21),
+                                            col: Some(12),
+                                          ),
+                                          name: "x",
+                                        ),
+                                      )),
+                                    ),
+                                  )),
+                                ),
+                                op: Gt,
+                                rhs: Expr(
+                                  loc: Span(
+                                    start: 328,
+                                    len: 1,
+                                    file: "tests/parser/test-data/contract-pred.libsl",
+                                    line: Some(21),
+                                    col: Some(16),
+                                  ),
+                                  kind: PrimitiveLit(ExprPrimitiveLit(
+                                    lit: Int(I32(10)),
+                                  )),
+                                ),
+                              )),
+                            )),
+                          ),
+                          Pred(
+                            loc: Span(
+                              start: 344,
+                              len: 6,
+                              file: "tests/parser/test-data/contract-pred.libsl",
+                              line: Some(22),
+                              col: Some(12),
+                            ),
+                            kind: Expr(Expr(
+                              loc: Span(
+                                start: 344,
+                                len: 5,
+                                file: "tests/parser/test-data/contract-pred.libsl",
+                                line: Some(22),
+                                col: Some(12),
+                              ),
+                              kind: Binary(ExprBinary(
+                                lhs: Expr(
+                                  loc: Span(
+                                    start: 344,
+                                    len: 0,
+                                    file: "tests/parser/test-data/contract-pred.libsl",
+                                    line: Some(22),
+                                    col: Some(12),
+                                  ),
+                                  kind: Access(ExprAccess(
+                                    access: QualifiedAccess(
+                                      loc: Span(
+                                        start: 344,
+                                        len: 0,
+                                        file: "tests/parser/test-data/contract-pred.libsl",
+                                        line: Some(22),
+                                        col: Some(12),
+                                      ),
+                                      kind: Name(AccessName(
+                                        name: Name(
+                                          loc: Span(
+                                            start: 344,
+                                            len: 0,
+                                            file: "tests/parser/test-data/contract-pred.libsl",
+                                            line: Some(22),
+                                            col: Some(12),
+                                          ),
+                                          name: "y",
+                                        ),
+                                      )),
+                                    ),
+                                  )),
+                                ),
+                                op: Lt,
+                                rhs: Expr(
+                                  loc: Span(
+                                    start: 348,
+                                    len: 1,
+                                    file: "tests/parser/test-data/contract-pred.libsl",
+                                    line: Some(22),
+                                    col: Some(16),
+                                  ),
+                                  kind: PrimitiveLit(ExprPrimitiveLit(
+                                    lit: Int(I32(10)),
+                                  )),
+                                ),
+                              )),
+                            )),
+                          ),
+                        ],
+                      )),
+                    ),
+                    Pred(
+                      loc: Span(
+                        start: 399,
+                        len: 11,
+                        file: "tests/parser/test-data/contract-pred.libsl",
+                        line: Some(26),
+                        col: Some(8),
+                      ),
+                      kind: Named(PredNamed(
+                        name: Name(
+                          loc: Span(
+                            start: 399,
+                            len: 2,
+                            file: "tests/parser/test-data/contract-pred.libsl",
+                            line: Some(26),
+                            col: Some(8),
+                          ),
+                          name: "foo",
+                        ),
+                        pred: Pred(
+                          loc: Span(
+                            start: 404,
+                            len: 6,
+                            file: "tests/parser/test-data/contract-pred.libsl",
+                            line: Some(26),
+                            col: Some(13),
+                          ),
+                          kind: Expr(Expr(
+                            loc: Span(
+                              start: 404,
+                              len: 5,
+                              file: "tests/parser/test-data/contract-pred.libsl",
+                              line: Some(26),
+                              col: Some(13),
+                            ),
+                            kind: Binary(ExprBinary(
+                              lhs: Expr(
+                                loc: Span(
+                                  start: 404,
+                                  len: 0,
+                                  file: "tests/parser/test-data/contract-pred.libsl",
+                                  line: Some(26),
+                                  col: Some(13),
+                                ),
+                                kind: Access(ExprAccess(
+                                  access: QualifiedAccess(
+                                    loc: Span(
+                                      start: 404,
+                                      len: 0,
+                                      file: "tests/parser/test-data/contract-pred.libsl",
+                                      line: Some(26),
+                                      col: Some(13),
+                                    ),
+                                    kind: Name(AccessName(
+                                      name: Name(
+                                        loc: Span(
+                                          start: 404,
+                                          len: 0,
+                                          file: "tests/parser/test-data/contract-pred.libsl",
+                                          line: Some(26),
+                                          col: Some(13),
+                                        ),
+                                        name: "x",
+                                      ),
+                                    )),
+                                  ),
+                                )),
+                              ),
+                              op: Gt,
+                              rhs: Expr(
+                                loc: Span(
+                                  start: 408,
+                                  len: 1,
+                                  file: "tests/parser/test-data/contract-pred.libsl",
+                                  line: Some(26),
+                                  col: Some(17),
+                                ),
+                                kind: PrimitiveLit(ExprPrimitiveLit(
+                                  lit: Int(I32(10)),
+                                )),
+                              ),
+                            )),
+                          )),
+                        ),
+                      )),
+                    ),
+                    Pred(
+                      loc: Span(
+                        start: 446,
+                        len: 49,
+                        file: "tests/parser/test-data/contract-pred.libsl",
+                        line: Some(29),
+                        col: Some(8),
+                      ),
+                      kind: If(PredIf(
+                        cond: Expr(
+                          loc: Span(
+                            start: 450,
+                            len: 5,
+                            file: "tests/parser/test-data/contract-pred.libsl",
+                            line: Some(29),
+                            col: Some(12),
+                          ),
+                          kind: Binary(ExprBinary(
+                            lhs: Expr(
+                              loc: Span(
+                                start: 450,
+                                len: 0,
+                                file: "tests/parser/test-data/contract-pred.libsl",
+                                line: Some(29),
+                                col: Some(12),
+                              ),
+                              kind: Access(ExprAccess(
+                                access: QualifiedAccess(
+                                  loc: Span(
+                                    start: 450,
+                                    len: 0,
+                                    file: "tests/parser/test-data/contract-pred.libsl",
+                                    line: Some(29),
+                                    col: Some(12),
+                                  ),
+                                  kind: Name(AccessName(
+                                    name: Name(
+                                      loc: Span(
+                                        start: 450,
+                                        len: 0,
+                                        file: "tests/parser/test-data/contract-pred.libsl",
+                                        line: Some(29),
+                                        col: Some(12),
+                                      ),
+                                      name: "x",
+                                    ),
+                                  )),
+                                ),
+                              )),
+                            ),
+                            op: Gt,
+                            rhs: Expr(
+                              loc: Span(
+                                start: 454,
+                                len: 1,
+                                file: "tests/parser/test-data/contract-pred.libsl",
+                                line: Some(29),
+                                col: Some(16),
+                              ),
+                              kind: PrimitiveLit(ExprPrimitiveLit(
+                                lit: Int(I32(10)),
+                              )),
+                            ),
+                          )),
+                        ),
+                        then_branch: Pred(
+                          loc: Span(
+                            start: 458,
+                            len: 37,
+                            file: "tests/parser/test-data/contract-pred.libsl",
+                            line: Some(29),
+                            col: Some(20),
+                          ),
+                          kind: Block(PredBlock(
+                            preds: [],
+                          )),
+                        ),
+                        else_branch: None,
+                      )),
+                    ),
+                    Pred(
+                      loc: Span(
+                        start: 550,
+                        len: 123,
+                        file: "tests/parser/test-data/contract-pred.libsl",
+                        line: Some(34),
+                        col: Some(8),
+                      ),
+                      kind: If(PredIf(
+                        cond: Expr(
+                          loc: Span(
+                            start: 554,
+                            len: 4,
+                            file: "tests/parser/test-data/contract-pred.libsl",
+                            line: Some(34),
+                            col: Some(12),
+                          ),
+                          kind: Binary(ExprBinary(
+                            lhs: Expr(
+                              loc: Span(
+                                start: 554,
+                                len: 0,
+                                file: "tests/parser/test-data/contract-pred.libsl",
+                                line: Some(34),
+                                col: Some(12),
+                              ),
+                              kind: Access(ExprAccess(
+                                access: QualifiedAccess(
+                                  loc: Span(
+                                    start: 554,
+                                    len: 0,
+                                    file: "tests/parser/test-data/contract-pred.libsl",
+                                    line: Some(34),
+                                    col: Some(12),
+                                  ),
+                                  kind: Name(AccessName(
+                                    name: Name(
+                                      loc: Span(
+                                        start: 554,
+                                        len: 0,
+                                        file: "tests/parser/test-data/contract-pred.libsl",
+                                        line: Some(34),
+                                        col: Some(12),
+                                      ),
+                                      name: "x",
+                                    ),
+                                  )),
+                                ),
+                              )),
+                            ),
+                            op: Gt,
+                            rhs: Expr(
+                              loc: Span(
+                                start: 558,
+                                len: 0,
+                                file: "tests/parser/test-data/contract-pred.libsl",
+                                line: Some(34),
+                                col: Some(16),
+                              ),
+                              kind: PrimitiveLit(ExprPrimitiveLit(
+                                lit: Int(I32(0)),
+                              )),
+                            ),
+                          )),
+                        ),
+                        then_branch: Pred(
+                          loc: Span(
+                            start: 561,
+                            len: 29,
+                            file: "tests/parser/test-data/contract-pred.libsl",
+                            line: Some(34),
+                            col: Some(19),
+                          ),
+                          kind: Block(PredBlock(
+                            preds: [
+                              Pred(
+                                loc: Span(
+                                  start: 575,
+                                  len: 5,
+                                  file: "tests/parser/test-data/contract-pred.libsl",
+                                  line: Some(35),
+                                  col: Some(12),
+                                ),
+                                kind: Expr(Expr(
+                                  loc: Span(
+                                    start: 575,
+                                    len: 4,
+                                    file: "tests/parser/test-data/contract-pred.libsl",
+                                    line: Some(35),
+                                    col: Some(12),
+                                  ),
+                                  kind: Binary(ExprBinary(
+                                    lhs: Expr(
+                                      loc: Span(
+                                        start: 575,
+                                        len: 0,
+                                        file: "tests/parser/test-data/contract-pred.libsl",
+                                        line: Some(35),
+                                        col: Some(12),
+                                      ),
+                                      kind: Access(ExprAccess(
+                                        access: QualifiedAccess(
+                                          loc: Span(
+                                            start: 575,
+                                            len: 0,
+                                            file: "tests/parser/test-data/contract-pred.libsl",
+                                            line: Some(35),
+                                            col: Some(12),
+                                          ),
+                                          kind: Name(AccessName(
+                                            name: Name(
+                                              loc: Span(
+                                                start: 575,
+                                                len: 0,
+                                                file: "tests/parser/test-data/contract-pred.libsl",
+                                                line: Some(35),
+                                                col: Some(12),
+                                              ),
+                                              name: "y",
+                                            ),
+                                          )),
+                                        ),
+                                      )),
+                                    ),
+                                    op: Gt,
+                                    rhs: Expr(
+                                      loc: Span(
+                                        start: 579,
+                                        len: 0,
+                                        file: "tests/parser/test-data/contract-pred.libsl",
+                                        line: Some(35),
+                                        col: Some(16),
+                                      ),
+                                      kind: PrimitiveLit(ExprPrimitiveLit(
+                                        lit: Int(I32(0)),
+                                      )),
+                                    ),
+                                  )),
+                                )),
+                              ),
+                            ],
+                          )),
+                        ),
+                        else_branch: Some(Pred(
+                          loc: Span(
+                            start: 597,
+                            len: 76,
+                            file: "tests/parser/test-data/contract-pred.libsl",
+                            line: Some(36),
+                            col: Some(15),
+                          ),
+                          kind: If(PredIf(
+                            cond: Expr(
+                              loc: Span(
+                                start: 601,
+                                len: 4,
+                                file: "tests/parser/test-data/contract-pred.libsl",
+                                line: Some(36),
+                                col: Some(19),
+                              ),
+                              kind: Binary(ExprBinary(
+                                lhs: Expr(
+                                  loc: Span(
+                                    start: 601,
+                                    len: 0,
+                                    file: "tests/parser/test-data/contract-pred.libsl",
+                                    line: Some(36),
+                                    col: Some(19),
+                                  ),
+                                  kind: Access(ExprAccess(
+                                    access: QualifiedAccess(
+                                      loc: Span(
+                                        start: 601,
+                                        len: 0,
+                                        file: "tests/parser/test-data/contract-pred.libsl",
+                                        line: Some(36),
+                                        col: Some(19),
+                                      ),
+                                      kind: Name(AccessName(
+                                        name: Name(
+                                          loc: Span(
+                                            start: 601,
+                                            len: 0,
+                                            file: "tests/parser/test-data/contract-pred.libsl",
+                                            line: Some(36),
+                                            col: Some(19),
+                                          ),
+                                          name: "y",
+                                        ),
+                                      )),
+                                    ),
+                                  )),
+                                ),
+                                op: Gt,
+                                rhs: Expr(
+                                  loc: Span(
+                                    start: 605,
+                                    len: 0,
+                                    file: "tests/parser/test-data/contract-pred.libsl",
+                                    line: Some(36),
+                                    col: Some(23),
+                                  ),
+                                  kind: PrimitiveLit(ExprPrimitiveLit(
+                                    lit: Int(I32(0)),
+                                  )),
+                                ),
+                              )),
+                            ),
+                            then_branch: Pred(
+                              loc: Span(
+                                start: 608,
+                                len: 29,
+                                file: "tests/parser/test-data/contract-pred.libsl",
+                                line: Some(36),
+                                col: Some(26),
+                              ),
+                              kind: Block(PredBlock(
+                                preds: [
+                                  Pred(
+                                    loc: Span(
+                                      start: 622,
+                                      len: 5,
+                                      file: "tests/parser/test-data/contract-pred.libsl",
+                                      line: Some(37),
+                                      col: Some(12),
+                                    ),
+                                    kind: Expr(Expr(
+                                      loc: Span(
+                                        start: 622,
+                                        len: 4,
+                                        file: "tests/parser/test-data/contract-pred.libsl",
+                                        line: Some(37),
+                                        col: Some(12),
+                                      ),
+                                      kind: Binary(ExprBinary(
+                                        lhs: Expr(
+                                          loc: Span(
+                                            start: 622,
+                                            len: 0,
+                                            file: "tests/parser/test-data/contract-pred.libsl",
+                                            line: Some(37),
+                                            col: Some(12),
+                                          ),
+                                          kind: Access(ExprAccess(
+                                            access: QualifiedAccess(
+                                              loc: Span(
+                                                start: 622,
+                                                len: 0,
+                                                file: "tests/parser/test-data/contract-pred.libsl",
+                                                line: Some(37),
+                                                col: Some(12),
+                                              ),
+                                              kind: Name(AccessName(
+                                                name: Name(
+                                                  loc: Span(
+                                                    start: 622,
+                                                    len: 0,
+                                                    file: "tests/parser/test-data/contract-pred.libsl",
+                                                    line: Some(37),
+                                                    col: Some(12),
+                                                  ),
+                                                  name: "z",
+                                                ),
+                                              )),
+                                            ),
+                                          )),
+                                        ),
+                                        op: Gt,
+                                        rhs: Expr(
+                                          loc: Span(
+                                            start: 626,
+                                            len: 0,
+                                            file: "tests/parser/test-data/contract-pred.libsl",
+                                            line: Some(37),
+                                            col: Some(16),
+                                          ),
+                                          kind: PrimitiveLit(ExprPrimitiveLit(
+                                            lit: Int(I32(0)),
+                                          )),
+                                        ),
+                                      )),
+                                    )),
+                                  ),
+                                ],
+                              )),
+                            ),
+                            else_branch: Some(Pred(
+                              loc: Span(
+                                start: 644,
+                                len: 29,
+                                file: "tests/parser/test-data/contract-pred.libsl",
+                                line: Some(38),
+                                col: Some(15),
+                              ),
+                              kind: Block(PredBlock(
+                                preds: [
+                                  Pred(
+                                    loc: Span(
+                                      start: 658,
+                                      len: 5,
+                                      file: "tests/parser/test-data/contract-pred.libsl",
+                                      line: Some(39),
+                                      col: Some(12),
+                                    ),
+                                    kind: Expr(Expr(
+                                      loc: Span(
+                                        start: 658,
+                                        len: 4,
+                                        file: "tests/parser/test-data/contract-pred.libsl",
+                                        line: Some(39),
+                                        col: Some(12),
+                                      ),
+                                      kind: Binary(ExprBinary(
+                                        lhs: Expr(
+                                          loc: Span(
+                                            start: 658,
+                                            len: 0,
+                                            file: "tests/parser/test-data/contract-pred.libsl",
+                                            line: Some(39),
+                                            col: Some(12),
+                                          ),
+                                          kind: Access(ExprAccess(
+                                            access: QualifiedAccess(
+                                              loc: Span(
+                                                start: 658,
+                                                len: 0,
+                                                file: "tests/parser/test-data/contract-pred.libsl",
+                                                line: Some(39),
+                                                col: Some(12),
+                                              ),
+                                              kind: Name(AccessName(
+                                                name: Name(
+                                                  loc: Span(
+                                                    start: 658,
+                                                    len: 0,
+                                                    file: "tests/parser/test-data/contract-pred.libsl",
+                                                    line: Some(39),
+                                                    col: Some(12),
+                                                  ),
+                                                  name: "x",
+                                                ),
+                                              )),
+                                            ),
+                                          )),
+                                        ),
+                                        op: Lt,
+                                        rhs: Expr(
+                                          loc: Span(
+                                            start: 662,
+                                            len: 0,
+                                            file: "tests/parser/test-data/contract-pred.libsl",
+                                            line: Some(39),
+                                            col: Some(16),
+                                          ),
+                                          kind: PrimitiveLit(ExprPrimitiveLit(
+                                            lit: Int(I32(0)),
+                                          )),
+                                        ),
+                                      )),
+                                    )),
+                                  ),
+                                ],
+                              )),
+                            )),
+                          )),
+                        )),
+                      )),
+                    ),
+                    Pred(
+                      loc: Span(
+                        start: 717,
+                        len: 15,
+                        file: "tests/parser/test-data/contract-pred.libsl",
+                        line: Some(43),
+                        col: Some(8),
+                      ),
+                      kind: Decl(Decl(
+                        loc: Span(
+                          start: 717,
+                          len: 15,
+                          file: "tests/parser/test-data/contract-pred.libsl",
+                          line: Some(43),
+                          col: Some(8),
+                        ),
+                        kind: Variable(DeclVariable(
+                          annotations: [],
+                          kind: Val,
+                          name: Name(
+                            loc: Span(
+                              start: 721,
+                              len: 0,
+                              file: "tests/parser/test-data/contract-pred.libsl",
+                              line: Some(43),
+                              col: Some(12),
+                            ),
+                            name: "x",
+                          ),
+                          ty_expr: TyExpr(
+                            loc: Span(
+                              start: 724,
+                              len: 2,
+                              file: "tests/parser/test-data/contract-pred.libsl",
+                              line: Some(43),
+                              col: Some(15),
+                            ),
+                            kind: Name(TyExprName(
+                              ty_name: FullName(
+                                loc: Span(
+                                  start: 724,
+                                  len: 2,
+                                  file: "tests/parser/test-data/contract-pred.libsl",
+                                  line: Some(43),
+                                  col: Some(15),
+                                ),
+                                components: [
+                                  Name(
+                                    loc: Span(
+                                      start: 724,
+                                      len: 2,
+                                      file: "tests/parser/test-data/contract-pred.libsl",
+                                      line: Some(43),
+                                      col: Some(15),
+                                    ),
+                                    name: "int",
+                                  ),
+                                ],
+                              ),
+                              generics: None,
+                            )),
+                          ),
+                          init: Some(Expr(
+                            loc: Span(
+                              start: 730,
+                              len: 1,
+                              file: "tests/parser/test-data/contract-pred.libsl",
+                              line: Some(43),
+                              col: Some(21),
+                            ),
+                            kind: PrimitiveLit(ExprPrimitiveLit(
+                              lit: Int(I32(42)),
+                            )),
+                          )),
+                        )),
+                      )),
+                    ),
+                  ],
+                )),
+              ),
+            )),
+          ],
+          stmts: [],
+        )),
+      )),
+    ),
+  ],
+))

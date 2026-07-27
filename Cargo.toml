@@ -4,20 +4,23 @@ exclude = ["tool/antlr4-rust-target/runtime/Rust"]
 
 [package]
 name = "libsl"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 [dependencies]
 antlr-rust = { path = "tool/antlr4-rust-target/runtime/Rust" }
-libsl-derive = { path = "libsl-derive", optional = true }
+bit-set = "0.8.0"
+libsl-derive = { path = "libsl-derive" }
+relative-path = "2.0.1"
 serde = { version = "1.0.219", features = ["derive"], optional = true }
 slotmap = "1.0.7"
+static_assertions = "1.1.0"
 
 [features]
-serde = ["dep:serde", "dep:libsl-derive"]
+serde = ["dep:serde"]
 
 [dev-dependencies]
-insta = { version = "1.42.2", features = ["glob", "ron"] }
+insta = { version = "1.43.1", features = ["glob", "ron"] }
 
 # see https://github.com/rust-lang/cargo/issues/2911.
 libsl = { path = ".", features = ["serde"] }

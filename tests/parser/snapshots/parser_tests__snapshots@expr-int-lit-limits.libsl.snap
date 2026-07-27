@@ -57,6 +57,13 @@ Ok(File(
           ),
           kind: Name(TyExprName(
             ty_name: FullName(
+              loc: Span(
+                start: 60,
+                len: 3,
+                file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                line: Some(5),
+                col: Some(14),
+              ),
               components: [
                 Name(
                   loc: Span(
@@ -70,7 +77,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -118,6 +125,13 @@ Ok(File(
           ),
           kind: Name(TyExprName(
             ty_name: FullName(
+              loc: Span(
+                start: 88,
+                len: 3,
+                file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                line: Some(6),
+                col: Some(14),
+              ),
               components: [
                 Name(
                   loc: Span(
@@ -131,7 +145,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -179,6 +193,13 @@ Ok(File(
           ),
           kind: Name(TyExprName(
             ty_name: FullName(
+              loc: Span(
+                start: 121,
+                len: 8,
+                file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                line: Some(8),
+                col: Some(19),
+              ),
               components: [
                 Name(
                   loc: Span(
@@ -192,7 +213,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -240,6 +261,13 @@ Ok(File(
           ),
           kind: Name(TyExprName(
             ty_name: FullName(
+              loc: Span(
+                start: 157,
+                len: 8,
+                file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                line: Some(9),
+                col: Some(19),
+              ),
               components: [
                 Name(
                   loc: Span(
@@ -253,7 +281,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -301,6 +329,13 @@ Ok(File(
           ),
           kind: Name(TyExprName(
             ty_name: FullName(
+              loc: Span(
+                start: 192,
+                len: 4,
+                file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                line: Some(11),
+                col: Some(15),
+              ),
               components: [
                 Name(
                   loc: Span(
@@ -314,7 +349,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -362,6 +397,13 @@ Ok(File(
           ),
           kind: Name(TyExprName(
             ty_name: FullName(
+              loc: Span(
+                start: 224,
+                len: 4,
+                file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                line: Some(12),
+                col: Some(15),
+              ),
               components: [
                 Name(
                   loc: Span(
@@ -375,7 +417,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -423,6 +465,13 @@ Ok(File(
           ),
           kind: Name(TyExprName(
             ty_name: FullName(
+              loc: Span(
+                start: 261,
+                len: 9,
+                file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                line: Some(14),
+                col: Some(20),
+              ),
               components: [
                 Name(
                   loc: Span(
@@ -436,7 +485,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -484,6 +533,13 @@ Ok(File(
           ),
           kind: Name(TyExprName(
             ty_name: FullName(
+              loc: Span(
+                start: 299,
+                len: 9,
+                file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                line: Some(15),
+                col: Some(20),
+              ),
               components: [
                 Name(
                   loc: Span(
@@ -497,7 +553,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -545,6 +601,13 @@ Ok(File(
           ),
           kind: Name(TyExprName(
             ty_name: FullName(
+              loc: Span(
+                start: 337,
+                len: 4,
+                file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                line: Some(17),
+                col: Some(15),
+              ),
               components: [
                 Name(
                   loc: Span(
@@ -558,7 +621,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -606,6 +669,13 @@ Ok(File(
           ),
           kind: Name(TyExprName(
             ty_name: FullName(
+              loc: Span(
+                start: 373,
+                len: 4,
+                file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                line: Some(18),
+                col: Some(15),
+              ),
               components: [
                 Name(
                   loc: Span(
@@ -619,7 +689,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -667,6 +737,13 @@ Ok(File(
           ),
           kind: Name(TyExprName(
             ty_name: FullName(
+              loc: Span(
+                start: 414,
+                len: 9,
+                file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                line: Some(20),
+                col: Some(20),
+              ),
               components: [
                 Name(
                   loc: Span(
@@ -680,7 +757,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -728,6 +805,13 @@ Ok(File(
           ),
           kind: Name(TyExprName(
             ty_name: FullName(
+              loc: Span(
+                start: 451,
+                len: 9,
+                file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                line: Some(21),
+                col: Some(20),
+              ),
               components: [
                 Name(
                   loc: Span(
@@ -741,7 +825,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -789,6 +873,13 @@ Ok(File(
           ),
           kind: Name(TyExprName(
             ty_name: FullName(
+              loc: Span(
+                start: 493,
+                len: 4,
+                file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                line: Some(23),
+                col: Some(15),
+              ),
               components: [
                 Name(
                   loc: Span(
@@ -802,7 +893,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -850,6 +941,13 @@ Ok(File(
           ),
           kind: Name(TyExprName(
             ty_name: FullName(
+              loc: Span(
+                start: 539,
+                len: 4,
+                file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                line: Some(24),
+                col: Some(15),
+              ),
               components: [
                 Name(
                   loc: Span(
@@ -863,7 +961,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -911,6 +1009,13 @@ Ok(File(
           ),
           kind: Name(TyExprName(
             ty_name: FullName(
+              loc: Span(
+                start: 590,
+                len: 9,
+                file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                line: Some(26),
+                col: Some(20),
+              ),
               components: [
                 Name(
                   loc: Span(
@@ -924,7 +1029,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(
@@ -972,6 +1077,13 @@ Ok(File(
           ),
           kind: Name(TyExprName(
             ty_name: FullName(
+              loc: Span(
+                start: 628,
+                len: 9,
+                file: "tests/parser/test-data/expr-int-lit-limits.libsl",
+                line: Some(27),
+                col: Some(20),
+              ),
               components: [
                 Name(
                   loc: Span(
@@ -985,7 +1097,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         init: Some(Expr(

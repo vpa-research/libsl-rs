@@ -1,3 +1,5 @@
+//! A parser working with a single file at a time.
+
 use std::cell::RefCell;
 use std::error::Error;
 use std::fmt::{self, Debug, Display};
@@ -8,65 +10,85 @@ use antlr_rust::common_token_stream::CommonTokenStream;
 use antlr_rust::error_listener::ErrorListener;
 use antlr_rust::errors::ANTLRError;
 use antlr_rust::parser_rule_context::ParserRuleContext;
-use antlr_rust::token::CommonToken;
+use antlr_rust::token::{CommonToken, Token};
 use antlr_rust::token_factory::TokenFactory;
-use antlr_rust::tree::TerminalNode;
+use antlr_rust::tree::{ParseTree, TerminalNode};
 use antlr_rust::{InputStream, Parser};
 
 use crate::grammar::lexer::LibSLLexer;
-use crate::grammar::libslparser::{
-    ActionDeclContextAll, ActionDeclContextAttrs, ActionDeclParamListContextAttrs,
-    ActionParameterContextAttrs, ActionUsageContextAll, ActionUsageContextAttrs,
-    AnnotationArgsContextAttrs, AnnotationDeclContextAll, AnnotationDeclContextAttrs,
-    AnnotationDeclParamsContextAttrs, AnnotationDeclParamsPartContextAttrs,
-    AnnotationUsageContextAll, AnnotationUsageContextAttrs, ArgPairContextAttrs,
-    ArrayLiteralContextAll, ArrayLiteralContextAttrs, AssignmentRightContextAttrs,
-    AssignsContractContextAll, AssignsContractContextAttrs, AutomatonDeclContextAll,
-    AutomatonDeclContextAttrs, AutomatonShiftDeclContextAll, AutomatonShiftDeclContextAttrs,
-    AutomatonStateDeclContext, AutomatonStateDeclContextAttrs, AutomatonStatementContextAll,
-    AutomatonStatementContextAttrs, BitShiftOpContextAttrs,
-    CallAutomatonConstructorWithNamedArgsContextAll,
-    CallAutomatonConstructorWithNamedArgsContextAttrs, ConstructorDeclContextAll,
-    ConstructorDeclContextAttrs, ConstructorHeaderContextAttrs, ConstructorVariablesContextAll,
-    ConstructorVariablesContextAttrs, DestructorDeclContextAll, DestructorDeclContextAttrs,
-    DestructorHeaderContextAttrs, ElseStatementContextAttrs, EnsuresContractContextAll,
-    EnsuresContractContextAttrs, EnumBlockContextAll, EnumBlockContextAttrs,
-    EnumBlockStatementContextAll, EnumBlockStatementContextAttrs, EnumSemanticTypeContextAttrs,
-    EnumSemanticTypeEntryContextAll, EnumSemanticTypeEntryContextAttrs, ExpressionAtomicContextAll,
-    ExpressionAtomicContextAttrs, ExpressionContextAll, ExpressionContextAttrs,
-    ExpressionsListContextAttrs, FileContextAttrs, FloatNumberContextAll, FloatNumberContextAttrs,
-    FunctionBodyContextAll, FunctionBodyContextAttrs, FunctionBodyStatementContextAll,
-    FunctionBodyStatementContextAttrs, FunctionContractContextAll, FunctionContractContextAttrs,
-    FunctionDeclArgListContextAll, FunctionDeclArgListContextAttrs, FunctionDeclContextAll,
-    FunctionDeclContextAttrs, FunctionHeaderContextAttrs, FunctionsListContextAttrs,
-    FunctionsListPartContextAll, FunctionsListPartContextAttrs, GenericBoundContextAll,
-    GenericContextAll, GenericContextAttrs, GlobalStatementContextAll, GlobalStatementContextAttrs,
-    HasAutomatonConceptContextAll, HasAutomatonConceptContextAttrs, HeaderContextAll,
-    IdentifierListContextAttrs, IfStatementContextAll, IfStatementContextAttrs,
-    ImplementedConceptsContextAttrs, IntegerNumberContextAll, IntegerNumberContextAttrs,
-    LibSLParserContextType, NameWithTypeContextAll, NameWithTypeContextAttrs,
-    NamedArgsContextAttrs, ParameterContextAttrs, PeriodSeparatedFullNameContextAll,
-    PeriodSeparatedFullNameContextAttrs, PrimitiveLiteralContextAll, PrimitiveLiteralContextAttrs,
-    ProcDeclContextAll, ProcDeclContextAttrs, ProcHeaderContextAttrs, ProcUsageContextAll,
-    ProcUsageContextAttrs, QualifiedAccessContextAll, QualifiedAccessContextAttrs,
-    RequiresContractContextAll, RequiresContractContextAttrs, SemanticTypeDeclContextAll,
-    SemanticTypeDeclContextAttrs, SimpleCallContextAttrs, SimpleSemanticTypeContextAttrs,
-    TargetTypeContextAttrs, TopLevelDeclContextAttrs, TypeArgumentContextAll,
-    TypeArgumentContextAttrs, TypeDefBlockContextAll, TypeDefBlockContextAttrs,
-    TypeDefBlockStatementContextAttrs, TypeExpressionContextAll, TypeExpressionContextAttrs,
-    TypeIdentifierBoundedContextAttrs, TypeIdentifierContextAll, TypeIdentifierContextAttrs,
-    TypeIdentifierNameContextAttrs, TypeListContextAttrs, TypealiasStatementContextAll,
-    TypealiasStatementContextAttrs, TypesSectionContextAttrs, VariableAssignmentContextAll,
-    VariableAssignmentContextAttrs, VariableDeclContextAll, VariableDeclContextAttrs,
-    WhereConstraintsContextAll, WhereConstraintsContextAttrs,
+use crate::grammar::parser::{
+    ActionCallExprContextAll, ActionDeclContextAll, ActionParamContextAll, AddBinOpContextAll,
+    AnnotationArgContextAll, AnnotationContextAll, AnnotationDeclContextAll,
+    AnnotationParamContextAll, ArrayLitExprContextAll, AssignOpContextAll, AssignStmtContextAll,
+    AssigneeContextAll, AssigneeFieldContext, AssigneeIndexContext, AssigneeNameContext,
+    AssignsContractContextAll, AtomicExprArrayLitContextAttrs, AtomicExprContextAll,
+    AtomicExprNameContext, AtomicExprPrimitiveLitContext, AtomicExprSetLitContextAttrs,
+    AtomicExprSignedNumLitContext, AtomicExprSignedNumLitContextAttrs, AtomicTypeExprContextAll,
+    AutomatonDeclContextAll, AutomatonDefDeclConstructorContextAttrs, AutomatonDefDeclContextAll,
+    AutomatonDefDeclDestructorContextAttrs, AutomatonDefDeclFunctionContextAttrs,
+    AutomatonDefDeclProcContextAttrs, AutomatonDefDeclShiftContextAttrs,
+    AutomatonDefDeclStateContextAttrs, AutomatonDefDeclVariableContextAttrs, BitShiftOpContextAll,
+    BlockContextAll, BlockLoneStmtContextAttrs, BlockPredicateContextAll, CancelStmtContextAll,
+    ConstructorArgContextAll, ConstructorDeclContextAll, ConstructorDeclContextAttrs,
+    ConstructorVariableContextAll, ContractAssignsContextAttrs, ContractContextAll,
+    ContractEnsuresContextAttrs, ContractPredicateBlockContextAttrs, ContractPredicateContextAll,
+    ContractPredicateExprContextAttrs, ContractPredicateIfContextAttrs,
+    ContractRequiresContextAttrs, DestructorDeclContextAll, DestructorDeclContextAttrs,
+    EnsuresContractContextAll, EnumDeclContextAll, EnumDeclVariantContextAll,
+    EnumSemanticTypeValueContextAll, ExprActionCallContextAttrs, ExprAdditiveContext,
+    ExprAndContext, ExprArrayLitContextAttrs, ExprBitAndContext, ExprBitOrContext,
+    ExprBitXorContext, ExprCastContext, ExprContextAll, ExprDerefContext, ExprFieldContext,
+    ExprHasConceptContext, ExprIndexContext, ExprInstantiationContextAttrs,
+    ExprMultiplicativeContext, ExprNameContext, ExprOrContext, ExprPredicateBlockContextAttrs,
+    ExprPredicateContextAll, ExprPredicateExprContextAttrs, ExprPrevContext,
+    ExprPrimitiveLitContext, ExprPrimitiveLitContextAttrs, ExprProcCallQualifiedContext,
+    ExprProcCallUnqualifiedContext, ExprRelationalContext, ExprSetLitContextAttrs,
+    ExprShiftContext, ExprTypeComparisonContext, ExprUnaryContext, FileContextAll,
+    FileContextAttrs, FullNameContextAll, FunctionBodyContextAll, FunctionDeclContextAll,
+    FunctionDefBracedContextAttrs, FunctionDefContextAll, FunctionModifierContextAll,
+    FunctionParamContextAll, FunctionSignatureContextAll, GenericContextAll, GenericsContextAll,
+    GlobalDeclActionContextAttrs, GlobalDeclAnnotationContextAttrs,
+    GlobalDeclAutomatonContextAttrs, GlobalDeclContextAll, GlobalDeclEnumContextAttrs,
+    GlobalDeclFunctionContextAttrs, GlobalDeclImportContextAttrs, GlobalDeclIncludeContextAttrs,
+    GlobalDeclProcContextAttrs, GlobalDeclSemanticTypeSectionContextAttrs,
+    GlobalDeclStructContextAttrs, GlobalDeclTypeAliasContextAttrs, GlobalDeclVariableContextAttrs,
+    HeaderContextAll, IdentContextAll, IfPredicateContextAll, IfStmtContextAll,
+    ImportDeclContextAll, ImportDeclContextAttrs, IncludeDeclContextAll, IncludeDeclContextAttrs,
+    InstantiationExprContextAll, LibSLParser, LibSLParserContextType, MulBinOpContextAll,
+    NameTypeExprContextAll, PathBareContextAttrs, PathContextAll, PathStringLitContextAttrs,
+    PointerTypeExprContextAll, PredicateBlockContextAttrs, PredicateContextAll,
+    PredicateExprContextAttrs, PredicateIfContextAttrs, PredicateNamedContext,
+    PredicateNamedContextAttrs, PredicateVariableDeclContextAttrs, PrimitiveLitCharContextAttrs,
+    PrimitiveLitContextAll, PrimitiveLitFloatContextAttrs, PrimitiveLitIntContextAttrs,
+    PrimitiveLitStringLitContextAttrs, ProcDeclContextAll, ProcModifierContextAll,
+    QualifiedTypeNameContextAll, RelOpContextAll, RequiresContractContextAll,
+    SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs, SemanticTypeDefContextAll,
+    SetLitExprContextAll, ShiftByContextAll, ShiftDeclContextAll, ShiftSourceStateContextAll,
+    ShiftSourceStateShorthandContextAttrs, SignContextAll, SignedIntLitContextAll,
+    SignedIntLitContextAttrs, SignedNumLitContextAll, SignedNumLitFloatContextAttrs,
+    SignedNumLitIntContextAttrs, StateDeclContextAll, StateKindContextAll, StmtAssignContextAttrs,
+    StmtCancelContextAttrs, StmtContextAll, StmtExprContext, StmtIfContextAttrs,
+    StmtVariableDeclContext, StmtVariableDeclContextAttrs, StructDeclContextAll,
+    StructDefDeclContextAll, StructDefDeclFunctionContextAttrs, StructDefDeclProcContextAttrs,
+    StructDefDeclVariableContextAttrs, TypeAliasDeclContextAll, TypeArgContextAll,
+    TypeArgSpecContextAll, TypeArgTypeExprContextAttrs, TypeConstraintContextAll,
+    TypeExprAtomicContextAttrs, TypeExprContextAll, TypeExprIntersectionContext,
+    TypeExprNameContextAttrs, TypeExprPointerContextAttrs, TypeExprPrimitiveLitContext,
+    TypeExprUnionContext, UnOpContextAll, VariableDeclContextAll, VariableKindContextAll,
+    VarianceSpecContextAll, WhereClauseContextAll,
 };
-use crate::grammar::parser::{FileContextAll, LibSLParser};
-use crate::loc::{FileId, Loc, Span};
-use crate::{DeclId, ExprId, LibSl, QualifiedAccessId, StmtId, TyExprId, ast, grammar};
+use crate::loc::{Loc, Span};
+use crate::{AnnotationId, DeclId, ExprId, FileId, LibSl, PredId, StmtId, TyExprId, ast, grammar};
 
 type Result<T, E = ParseError> = std::result::Result<T, E>;
 
 type Terminal<'a> = TerminalNode<'a, LibSLParserContextType>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Sign {
+    Plus,
+    Minus,
+}
 
 fn strip_surrounding(s: &str, prefix: char, suffix: char) -> &str {
     s.strip_prefix(prefix)
@@ -114,93 +136,23 @@ fn parse_string_lit(token: &CommonToken<'_>) -> String {
     strip_surrounding(&token.text, '"', '"').replace("\\\'", "\'")
 }
 
-fn parse_ident(token: &CommonToken<'_>) -> String {
-    strip_surrounding(&token.text, '`', '`').into()
+fn parse_ident(ctx: &IdentContextAll<'_>) -> String {
+    strip_surrounding(&ctx.get_text(), '`', '`').into()
 }
 
-fn strip_prefix_ascii_case_insensitive<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
-    let (p, tail) = s.split_at_checked(prefix.len())?;
-
-    p.eq_ignore_ascii_case(prefix).then_some(tail)
-}
-
-fn parse_import_or_include(ctx: &Terminal<'_>, kw: &str, rule_name: &str) -> Result<String> {
-    let Some(tail) = strip_prefix_ascii_case_insensitive(&ctx.symbol.text, kw) else {
-        panic!("a terminal `{rule_name}` does not start with '{kw}': {ctx:?}");
-    };
-    let Some(path) = tail.strip_suffix(';') else {
-        panic!("a terminal `{rule_name}` does not end with `;`: {ctx:?}");
-    };
-
-    let path = path.trim_ascii();
-
-    if path.is_empty() {
-        Err(ParseError::Syntax {
-            line: ctx.symbol.line,
-            column: ctx.symbol.column,
-            msg: format!("no path specified for the {kw} declaration"),
-        })
-    } else {
-        Ok(path.into())
-    }
-}
-
-fn unit_vec<T>(value: T) -> Vec<T> {
-    vec![value]
-}
-
-enum QualifiedAccessBase {
-    None,
-
-    Automaton {
-        automaton: ast::Name,
-        generics: Vec<ast::TyArg>,
-        arg: QualifiedAccessId,
-    },
-
-    QualifiedAccess(QualifiedAccessId),
-}
-
-enum ParsedQualifiedAccess {
-    QualifiedAccess(QualifiedAccessId),
-    ProcCall(ExprId),
-}
-
-impl ParsedQualifiedAccess {
-    fn to_qualified_access(&self, libsl: &LibSl) -> Result<QualifiedAccessId> {
-        match *self {
-            Self::QualifiedAccess(id) => Ok(id),
-
-            Self::ProcCall(expr_id) => {
-                let span = libsl.exprs[expr_id].loc.span().unwrap();
-
-                Err(ParseError::Syntax {
-                    line: span.line.map(|n| usize::from(n) as isize).unwrap_or(-1),
-                    column: span.col.map(|n| usize::from(n) as isize).unwrap_or(-1),
-                    msg: "unexpected procedure call".into(),
-                })
-            }
-        }
-    }
-}
-
-impl From<QualifiedAccessId> for ParsedQualifiedAccess {
-    fn from(qid: QualifiedAccessId) -> Self {
-        Self::QualifiedAccess(qid)
-    }
-}
-
-impl From<ExprId> for ParsedQualifiedAccess {
-    fn from(expr_id: ExprId) -> Self {
-        Self::ProcCall(expr_id)
-    }
-}
-
+/// The radix of an integer literal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Radix {
+    /// Binary (`0b` prefix).
     Binary,
+
+    /// Octal (`0` prefix).
     Octal,
+
+    /// Decimal (no prefix).
     Decimal,
+
+    /// Hexadecimal (`0x` prefix).
     Hexadecimal,
 }
 
@@ -226,16 +178,58 @@ impl From<Radix> for u32 {
     }
 }
 
+fn parse_line(line: isize) -> Option<NonZeroUsize> {
+    if line > 0 {
+        Some(NonZeroUsize::new(line as usize).unwrap())
+    } else {
+        None
+    }
+}
+
+fn parse_col(col: isize) -> Option<NonZeroUsize> {
+    if col >= 0 {
+        Some(NonZeroUsize::new(col as usize + 1).unwrap())
+    } else {
+        None
+    }
+}
+
+fn fmt_line_col(line: Option<NonZeroUsize>, col: Option<NonZeroUsize>) -> impl Display {
+    struct Fmt {
+        line: Option<NonZeroUsize>,
+        column: Option<NonZeroUsize>,
+    }
+
+    impl Display for Fmt {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match (self.line, self.column) {
+                (Some(line), Some(column)) => write!(f, "L{line}:{column}"),
+                (Some(line), None) => write!(f, "L{line}"),
+                (None, Some(column)) => write!(f, "L<unknown>:{column}"),
+                (None, None) => write!(f, "<unknown>"),
+            }
+        }
+    }
+
+    Fmt { line, column: col }
+}
+
 /// An error that occurred while parsing a file.
 #[derive(Debug, Clone)]
 pub enum ParseError {
     /// A syntax error.
     Syntax {
+        /// The identifier of the file being parsed.
+        file_id: FileId,
+
         /// The line number (1-based) this error occurred in.
-        line: isize,
+        line: Option<NonZeroUsize>,
 
         /// The column number (1-based) this error occurred in.
-        column: isize,
+        col: Option<NonZeroUsize>,
+
+        /// The length of the offending text.
+        len: usize,
 
         /// The error message.
         msg: String,
@@ -243,32 +237,61 @@ pub enum ParseError {
 
     /// Could not parse an integer literal.
     Int {
+        /// The radix of the integer literal.
         radix: Radix,
-        line: isize,
-        column: isize,
+
+        /// The identifier of the file being parsed.
+        file_id: FileId,
+
+        /// The line number (1-based) this error occurred in.
+        line: Option<NonZeroUsize>,
+
+        /// The column number (1-based) this error occurred in.
+        col: Option<NonZeroUsize>,
+
+        /// The length of the offending text.
+        len: usize,
+
+        /// The underlying error.
         inner: ParseIntError,
     },
+}
+
+impl ParseError {
+    /// Returns the identifier of the file that caused this error.
+    pub fn file_id(&self) -> FileId {
+        match *self {
+            Self::Syntax { file_id, .. } => file_id,
+            Self::Int { file_id, .. } => file_id,
+        }
+    }
 }
 
 impl Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ParseError::Syntax { line, column, msg } => {
-                write!(f, "encountered a syntax error at L{line}:{column}: {msg}")
+            ParseError::Syntax { line, col, msg, .. } => {
+                write!(
+                    f,
+                    "encountered a syntax error at {loc}: {msg}",
+                    loc = fmt_line_col(*line, *col),
+                )
             }
 
             ParseError::Int {
                 radix,
                 line,
-                column,
+                col,
                 inner,
+                ..
             } => write!(
                 f,
-                "could not parse {radix_article} {radix} integer literal at L{line}:{column}: {inner}",
+                "could not parse {radix_article} {radix} integer literal at {loc}: {inner}",
                 radix_article = match radix {
                     Radix::Octal => "an",
                     _ => "a",
                 },
+                loc = fmt_line_col(*line, *col),
             ),
         }
     }
@@ -284,13 +307,22 @@ impl Error for ParseError {
 }
 
 #[derive(Debug, Clone)]
-struct ErrorCollector(Rc<RefCell<Vec<ParseError>>>);
+struct ErrorCollector {
+    errors: Rc<RefCell<Vec<ParseError>>>,
+    file_id: FileId,
+}
 
 impl ErrorCollector {
-    fn new() -> (Self, Rc<RefCell<Vec<ParseError>>>) {
+    fn new(file_id: FileId) -> (Self, Rc<RefCell<Vec<ParseError>>>) {
         let errors: Rc<RefCell<Vec<ParseError>>> = Default::default();
 
-        (Self(errors.clone()), errors)
+        (
+            Self {
+                errors: errors.clone(),
+                file_id,
+            },
+            errors,
+        )
     }
 }
 
@@ -298,16 +330,31 @@ impl<'input, T: Parser<'input>> ErrorListener<'input, T> for ErrorCollector {
     fn syntax_error(
         &self,
         _recognizer: &T,
-        _offending_symbol: Option<&<<T>::TF as TokenFactory<'input>>::Inner>,
+        offending_symbol: Option<&<<T>::TF as TokenFactory<'input>>::Inner>,
         line: isize,
         column: isize,
         msg: &str,
         _error: Option<&ANTLRError>,
     ) {
-        self.0.borrow_mut().push(ParseError::Syntax {
-            line,
-            column,
+        let len = offending_symbol
+            .map(|sym| {
+                let start = sym.get_start();
+                let stop = sym.get_stop();
+
+                if start >= 0 && stop >= 0 {
+                    (stop - start) as usize
+                } else {
+                    0
+                }
+            })
+            .unwrap_or_default();
+
+        self.errors.borrow_mut().push(ParseError::Syntax {
+            line: parse_line(line),
+            col: parse_col(column),
             msg: msg.into(),
+            len,
+            file_id: self.file_id,
         });
     }
 }
@@ -315,18 +362,26 @@ impl<'input, T: Parser<'input>> ErrorListener<'input, T> for ErrorCollector {
 impl LibSl {
     /// Parses the `contents` as a LibSL file with the given name.
     ///
-    /// If the file has syntax errors, returns an `Err(ParserError)`.
-    pub fn parse_file(
-        &mut self,
-        file_name: String,
-        contents: &str,
-    ) -> Result<ast::File, ParseError> {
+    /// If the file has syntax errors, returns an `Err(ParseError)`.
+    ///
+    /// The name is treated opaquely and only used for emitting diagnostic messages. It can, but
+    /// does not have to, be a file path.
+    ///
+    /// Note that loading the same file twice, even with the same file name, means you'll get two
+    /// distinct [`ast::File`]s back. They will be treated as if they were different files whose
+    /// contents that just happened to be same. For this reason this method is **not**
+    /// an appropriate choice for resolving imports unless you implement deduplication and file name
+    /// canonicalization.
+    pub fn parse_file(&mut self, file_name: String, contents: &str) -> Result<FileId, ParseError> {
+        let ctor = AstConstructor::new(self, file_name.clone());
+        let file_id = ctor.file_id;
+
         let input_stream = InputStream::new(contents);
         let lexer = LibSLLexer::new(input_stream);
         let token_stream = CommonTokenStream::new(lexer);
         let mut parser = LibSLParser::new(token_stream);
         parser.remove_error_listeners();
-        let (error_listener, errors) = ErrorCollector::new();
+        let (error_listener, errors) = ErrorCollector::new(file_id);
         parser.add_error_listener(Box::new(error_listener));
 
         let tree = match parser.file() {
@@ -351,7 +406,10 @@ impl LibSl {
             }
         };
 
-        AstConstructor::new(self, file_name).construct(&tree)
+        let file = ctor.construct(&tree)?;
+        self.files[file_id] = file;
+
+        Ok(file_id)
     }
 }
 
@@ -362,18 +420,15 @@ struct AstConstructor<'a> {
 
 impl<'a> AstConstructor<'a> {
     fn new(libsl: &'a mut LibSl, file_name: String) -> Self {
-        let file_idx = libsl.file_names.len();
-        libsl.file_names.push(file_name);
+        let file_id = libsl.files.insert(Default::default());
+        libsl.file_names.insert(file_id, file_name);
 
-        Self {
-            libsl,
-            file_id: FileId(file_idx),
-        }
+        Self { libsl, file_id }
     }
 
     fn get_loc(&self, start: &CommonToken<'_>, stop: &CommonToken<'_>) -> Loc {
-        let line = (start.line > 0).then(|| NonZeroUsize::new(start.line as usize).unwrap());
-        let col = (start.column > 0).then(|| NonZeroUsize::new(start.column as usize).unwrap());
+        let line = parse_line(start.line);
+        let col = parse_col(start.column);
 
         Span {
             start: start.start as usize,
@@ -388,17 +443,17 @@ impl<'a> AstConstructor<'a> {
         .into()
     }
 
-    fn construct(mut self, tree: &FileContextAll<'_>) -> Result<ast::File> {
-        let loc = self.get_loc(&tree.start(), &tree.stop());
-        let header = tree
+    fn construct(mut self, ctx: &FileContextAll<'_>) -> Result<ast::File> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let header = ctx
             .header()
             .map(|header| self.process_header(&header))
             .transpose()?;
 
-        let mut decls = vec![];
+        let mut decls = Vec::with_capacity(ctx.decls.len());
 
-        for ctx in tree.globalStatement_all() {
-            decls.extend(self.process_global_stmt(&ctx)?);
+        for ctx in &ctx.decls {
+            decls.extend(self.process_global_decl(ctx)?);
         }
 
         Ok(ast::File { loc, header, decls })
@@ -406,20 +461,11 @@ impl<'a> AstConstructor<'a> {
 
     fn process_header(&mut self, ctx: &HeaderContextAll<'_>) -> Result<ast::Header> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
-
-        let libsl_version = ctx
-            .lslver
-            .as_ref()
-            .map(|t| parse_string_lit(t))
-            .unwrap_or_default();
-        let library_name = ctx
-            .libraryName
-            .as_ref()
-            .map(|t| parse_ident(t))
-            .unwrap_or_default();
-        let version = ctx.ver.as_ref().map(|t| parse_string_lit(t));
-        let language = ctx.lang.as_ref().map(|t| parse_string_lit(t));
-        let url = ctx.link.as_ref().map(|t| parse_string_lit(t));
+        let libsl_version = parse_string_lit(ctx.libslVersion.as_ref().unwrap());
+        let library_name = parse_ident(ctx.libraryName.as_ref().unwrap());
+        let version = ctx.version.as_ref().map(|t| parse_string_lit(t));
+        let language = ctx.language.as_ref().map(|t| parse_string_lit(t));
+        let url = ctx.url.as_ref().map(|t| parse_string_lit(t));
 
         Ok(ast::Header {
             loc,
@@ -431,44 +477,67 @@ impl<'a> AstConstructor<'a> {
         })
     }
 
-    fn process_global_stmt(&mut self, ctx: &GlobalStatementContextAll<'_>) -> Result<Vec<DeclId>> {
-        if let Some(import) = ctx.ImportStatement() {
-            self.process_decl_import(&import).map(unit_vec)
-        } else if let Some(include) = ctx.IncludeStatement() {
-            self.process_decl_include(&include).map(unit_vec)
-        } else if let Some(ctx) = ctx.typesSection() {
-            ctx.semanticTypeDecl_all()
-                .into_iter()
-                .map(|decl| self.process_decl_semantic_ty(&decl))
-                .collect()
-        } else if let Some(ty_alias) = ctx.typealiasStatement() {
-            self.process_decl_ty_alias(&ty_alias).map(unit_vec)
-        } else if let Some(ty) = ctx.typeDefBlock() {
-            self.process_decl_struct(&ty).map(unit_vec)
-        } else if let Some(ty) = ctx.enumBlock() {
-            self.process_decl_enum(&ty).map(unit_vec)
-        } else if let Some(decl) = ctx.annotationDecl() {
-            self.process_decl_annotation(&decl).map(unit_vec)
-        } else if let Some(decl) = ctx.actionDecl() {
-            self.process_decl_action(&decl).map(unit_vec)
-        } else if let Some(ctx) = ctx.topLevelDecl() {
-            if let Some(decl) = ctx.automatonDecl() {
-                self.process_decl_automaton(&decl).map(unit_vec)
-            } else if let Some(decl) = ctx.functionDecl() {
-                self.process_decl_function(&decl).map(unit_vec)
-            } else if let Some(decl) = ctx.variableDecl() {
-                self.process_decl_variable(&decl).map(unit_vec)
-            } else {
-                panic!("unrecognized topLevelDecl node: {ctx:?}");
+    fn process_global_decl(&mut self, ctx: &GlobalDeclContextAll<'_>) -> Result<Vec<DeclId>> {
+        Ok(match ctx {
+            GlobalDeclContextAll::GlobalDeclImportContext(ctx) => {
+                vec![self.process_import_decl(&ctx.importDecl().unwrap())?]
             }
-        } else {
-            panic!("unrecognized globalStatement node: {ctx:?}");
-        }
+
+            GlobalDeclContextAll::GlobalDeclIncludeContext(ctx) => {
+                vec![self.process_include_decl(&ctx.includeDecl().unwrap())?]
+            }
+
+            GlobalDeclContextAll::GlobalDeclSemanticTypeSectionContext(ctx) => ctx
+                .semanticTypeSectionDecl()
+                .unwrap()
+                .decls
+                .iter()
+                .map(|ctx| self.process_semantic_type_decl(ctx))
+                .collect::<Result<_>>()?,
+
+            GlobalDeclContextAll::GlobalDeclTypeAliasContext(ctx) => {
+                vec![self.process_type_alias_decl(&ctx.typeAliasDecl().unwrap())?]
+            }
+
+            GlobalDeclContextAll::GlobalDeclStructContext(ctx) => {
+                vec![self.process_struct_decl(&ctx.structDecl().unwrap())?]
+            }
+
+            GlobalDeclContextAll::GlobalDeclEnumContext(ctx) => {
+                vec![self.process_enum_decl(&ctx.enumDecl().unwrap())?]
+            }
+
+            GlobalDeclContextAll::GlobalDeclAnnotationContext(ctx) => {
+                vec![self.process_annotation_decl(&ctx.annotationDecl().unwrap())?]
+            }
+
+            GlobalDeclContextAll::GlobalDeclActionContext(ctx) => {
+                vec![self.process_action_decl(&ctx.actionDecl().unwrap())?]
+            }
+
+            GlobalDeclContextAll::GlobalDeclAutomatonContext(ctx) => {
+                vec![self.process_automaton_decl(&ctx.automatonDecl().unwrap())?]
+            }
+
+            GlobalDeclContextAll::GlobalDeclFunctionContext(ctx) => {
+                vec![self.process_function_decl(&ctx.functionDecl().unwrap())?]
+            }
+
+            GlobalDeclContextAll::GlobalDeclProcContext(ctx) => {
+                vec![self.process_proc_decl(&ctx.procDecl().unwrap())?]
+            }
+
+            GlobalDeclContextAll::GlobalDeclVariableContext(ctx) => {
+                vec![self.process_variable_decl(&ctx.variableDecl().unwrap())?]
+            }
+
+            GlobalDeclContextAll::Error(_) => unreachable!(),
+        })
     }
 
-    fn process_decl_import(&mut self, ctx: &Terminal<'_>) -> Result<DeclId> {
-        let path = parse_import_or_include(ctx, "import", "ImportStatement")?;
-        let loc = self.get_loc(&ctx.symbol, &ctx.symbol);
+    fn process_import_decl(&mut self, ctx: &ImportDeclContextAll<'_>) -> Result<DeclId> {
+        let path = self.process_path(&ctx.path().unwrap());
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
         Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
             id,
@@ -477,9 +546,9 @@ impl<'a> AstConstructor<'a> {
         }))
     }
 
-    fn process_decl_include(&mut self, ctx: &Terminal<'_>) -> Result<DeclId> {
-        let path = parse_import_or_include(ctx, "include", "IncludeStatement")?;
-        let loc = self.get_loc(&ctx.symbol, &ctx.symbol);
+    fn process_include_decl(&mut self, ctx: &IncludeDeclContextAll<'_>) -> Result<DeclId> {
+        let path = self.process_path(&ctx.path().unwrap());
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
         Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
             id,
@@ -488,70 +557,72 @@ impl<'a> AstConstructor<'a> {
         }))
     }
 
-    fn process_decl_semantic_ty(&mut self, ctx: &SemanticTypeDeclContextAll<'_>) -> Result<DeclId> {
-        if let Some(ctx) = ctx.simpleSemanticType() {
-            let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
-            let ty_name = self
-                .process_ty_identifier_as_qualified_ty_name(ctx.semanticName.as_ref().unwrap())?;
-            let real_ty = self.process_ty_identifier_as_ty_expr(ctx.realName.as_ref().unwrap())?;
-            let loc = self.get_loc(&ctx.start(), &ctx.stop());
+    fn process_path(&mut self, ctx: &PathContextAll<'_>) -> String {
+        match ctx {
+            PathContextAll::PathStringLitContext(ctx) => {
+                parse_string_lit(&ctx.StringLit().unwrap().symbol)
+            }
 
-            Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
-                id,
-                loc,
-                kind: ast::DeclSemanticTy {
-                    annotations,
-                    ty_name,
-                    real_ty,
-                    kind: ast::SemanticTyKind::Simple,
-                }
-                .into(),
-            }))
-        } else if let Some(ctx) = ctx.enumSemanticType() {
-            let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
-            let ty_name = self.process_identifier_as_qualified_ty_name(&Terminal::new(
-                ctx.semanticName.clone().unwrap(),
-            ))?;
-            let real_ty = self.process_ty_identifier_as_ty_expr(ctx.realName.as_ref().unwrap())?;
-            let entries = ctx
-                .enumSemanticTypeEntry_all()
-                .into_iter()
-                .map(|entry| self.process_semantic_ty_enum_value(&entry))
-                .collect::<Result<Vec<_>>>()?;
-            let loc = self.get_loc(&ctx.start(), &ctx.stop());
+            PathContextAll::PathBareContext(ctx) => ctx.BarePath().unwrap().symbol.text.to_string(),
 
-            Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
-                id,
-                loc,
-                kind: ast::DeclSemanticTy {
-                    annotations,
-                    ty_name,
-                    real_ty,
-                    kind: ast::SemanticTyKind::Enumerated(entries),
-                }
-                .into(),
-            }))
-        } else {
-            panic!("unrecognized semanticTypeDecl node: {ctx:?}");
+            PathContextAll::Error(_) => unreachable!(),
         }
     }
 
-    fn process_semantic_ty_enum_value(
+    fn process_semantic_type_decl(
         &mut self,
-        ctx: &EnumSemanticTypeEntryContextAll<'_>,
+        ctx: &SemanticTypeDeclContextAll<'_>,
+    ) -> Result<DeclId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let annotations = self.process_annotations(&ctx.annotations)?;
+        let ty_name = self.process_qualified_type_name(ctx.typeName.as_ref().unwrap())?;
+        let real_ty = self.process_type_expr(ctx.realType.as_ref().unwrap())?;
+
+        let kind = match &*ctx.semanticTypeDef().unwrap() {
+            SemanticTypeDefContextAll::SemanticTypeDefSimpleContext(_) => {
+                ast::SemanticTyKind::Simple
+            }
+
+            SemanticTypeDefContextAll::SemanticTypeDefEnumContext(ctx) => {
+                ast::SemanticTyKind::Enumerated(
+                    ctx.values
+                        .iter()
+                        .map(|ctx| self.process_enum_semantic_type_value(ctx))
+                        .collect::<Result<_>>()?,
+                )
+            }
+
+            SemanticTypeDefContextAll::Error(_) => unreachable!(),
+        };
+
+        Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
+            id,
+            loc,
+            kind: ast::DeclSemanticTy {
+                annotations,
+                ty_name,
+                real_ty,
+                kind,
+            }
+            .into(),
+        }))
+    }
+
+    fn process_enum_semantic_type_value(
+        &mut self,
+        ctx: &EnumSemanticTypeValueContextAll<'_>,
     ) -> Result<ast::SemanticTyEnumValue> {
-        let name = self.process_identifier(&ctx.Identifier().unwrap())?;
-        let expr = self.process_expr_atomic(&ctx.expressionAtomic().unwrap())?;
+        let name = self.process_name(ctx.name.as_ref().unwrap());
+        let expr = self.process_atomic_expr(ctx.value.as_ref().unwrap())?;
 
         Ok(ast::SemanticTyEnumValue { name, expr })
     }
 
-    fn process_decl_ty_alias(&mut self, ctx: &TypealiasStatementContextAll<'_>) -> Result<DeclId> {
-        let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
-        let ty_name =
-            self.process_ty_identifier_as_qualified_ty_name(ctx.left.as_ref().unwrap())?;
-        let ty_expr = self.process_ty_identifier_as_ty_expr(ctx.right.as_ref().unwrap())?;
+    fn process_type_alias_decl(&mut self, ctx: &TypeAliasDeclContextAll<'_>) -> Result<DeclId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let annotations = self.process_annotations(&ctx.annotations)?;
+        let ty_name = self.process_qualified_type_name(ctx.typeName.as_ref().unwrap())?;
+        let ty_expr = self.process_type_expr(ctx.def.as_ref().unwrap())?;
 
         Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
             id,
@@ -565,50 +636,55 @@ impl<'a> AstConstructor<'a> {
         }))
     }
 
-    fn process_decl_struct(&mut self, ctx: &TypeDefBlockContextAll<'_>) -> Result<DeclId> {
-        let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
-        let ty_name =
-            self.process_ty_identifier_as_qualified_ty_name(ctx.r#type.as_ref().unwrap())?;
+    fn process_struct_decl(&mut self, ctx: &StructDeclContextAll<'_>) -> Result<DeclId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let annotations = self.process_annotations(&ctx.annotations)?;
+        let ty_name = self.process_qualified_type_name(ctx.typeName.as_ref().unwrap())?;
 
-        let (is_ty, for_tys) = if let Some(target_ty_ctx) = ctx.targetType() {
-            (
-                target_ty_ctx
-                    .typeIdentifier()
-                    .map(|t| self.process_ty_identifier_as_ty_expr(&t))
+        let (is_ty, for_tys) = match &ctx.targetType {
+            Some(ctx) => (
+                ctx.isType
+                    .as_ref()
+                    .map(|ctx| self.process_type_expr(ctx))
                     .transpose()?,
-                target_ty_ctx
-                    .typeList()
+                ctx.forTypes
+                    .as_ref()
                     .unwrap()
-                    .typeIdentifier_all()
-                    .into_iter()
-                    .map(|t| self.process_ty_identifier_as_ty_expr(&t))
-                    .collect::<Result<Vec<_>>>()?,
-            )
-        } else {
-            Default::default()
+                    .typeExprs
+                    .iter()
+                    .map(|ctx| self.process_type_expr(ctx))
+                    .collect::<Result<_>>()?,
+            ),
+
+            None => (None, vec![]),
         };
 
         let ty_constraints = ctx
-            .whereConstraints()
-            .map(|c| self.process_where_constraints(&c))
+            .typeConstraints
+            .as_ref()
+            .map(|ctx| self.process_where_clause(ctx))
             .transpose()?
             .unwrap_or_default();
 
         let decls = ctx
-            .typeDefBlockStatement_all()
-            .into_iter()
-            .map(|stmt_ctx| {
-                if let Some(decl) = stmt_ctx.variableDecl() {
-                    self.process_decl_variable(&decl)
-                } else if let Some(decl) = stmt_ctx.functionDecl() {
-                    self.process_decl_function(&decl)
-                } else {
-                    panic!("unrecognized typeDefBlockStatement node: {stmt_ctx:?}");
+            .decls
+            .iter()
+            .map(|ctx| match &**ctx {
+                StructDefDeclContextAll::StructDefDeclVariableContext(ctx) => {
+                    self.process_variable_decl(&ctx.variableDecl().unwrap())
                 }
-            })
-            .collect::<Result<Vec<_>>>()?;
 
-        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+                StructDefDeclContextAll::StructDefDeclFunctionContext(ctx) => {
+                    self.process_function_decl(&ctx.functionDecl().unwrap())
+                }
+
+                StructDefDeclContextAll::StructDefDeclProcContext(ctx) => {
+                    self.process_proc_decl(&ctx.procDecl().unwrap())
+                }
+
+                StructDefDeclContextAll::Error(_) => unreachable!(),
+            })
+            .collect::<Result<_>>()?;
 
         Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
             id,
@@ -625,18 +701,15 @@ impl<'a> AstConstructor<'a> {
         }))
     }
 
-    fn process_decl_enum(&mut self, ctx: &EnumBlockContextAll<'_>) -> Result<DeclId> {
-        let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
-        let ty_name =
-            self.process_ty_identifier_as_qualified_ty_name(&ctx.typeIdentifier().unwrap())?;
-
-        let variants = ctx
-            .enumBlockStatement_all()
-            .into_iter()
-            .map(|e| self.process_enum_variant(&e))
-            .collect::<Result<Vec<_>>>()?;
-
+    fn process_enum_decl(&mut self, ctx: &EnumDeclContextAll<'_>) -> Result<DeclId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let annotations = self.process_annotations(&ctx.annotations)?;
+        let ty_name = self.process_qualified_type_name(ctx.typeName.as_ref().unwrap())?;
+        let variants = ctx
+            .variants
+            .iter()
+            .map(|ctx| self.process_enum_decl_variant(ctx))
+            .collect::<Result<_>>()?;
 
         Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
             id,
@@ -650,39 +723,53 @@ impl<'a> AstConstructor<'a> {
         }))
     }
 
-    fn process_enum_variant(
+    fn process_enum_decl_variant(
         &mut self,
-        ctx: &EnumBlockStatementContextAll<'_>,
+        ctx: &EnumDeclVariantContextAll<'_>,
     ) -> Result<ast::EnumVariant> {
-        let name = self.process_identifier(&ctx.Identifier().unwrap())?;
-        let value = self.process_int_lit(&ctx.integerNumber().unwrap())?;
+        let name = self.process_name(ctx.name.as_ref().unwrap());
+        let value_ctx = ctx.value.as_ref().unwrap();
+        let value = self.process_signed_int_lit(value_ctx)?;
+        let value_loc = self.get_loc(&value_ctx.start(), &value_ctx.stop());
 
-        Ok(ast::EnumVariant { name, value })
+        Ok(ast::EnumVariant {
+            name,
+            value,
+            value_loc,
+        })
     }
 
-    fn process_decl_annotation(&mut self, ctx: &AnnotationDeclContextAll<'_>) -> Result<DeclId> {
-        let name = self.process_identifier(&Terminal::new(ctx.name.clone().unwrap()))?;
+    fn process_signed_int_lit(&mut self, ctx: &SignedIntLitContextAll<'_>) -> Result<ast::IntLit> {
+        let sign = ctx
+            .sign()
+            .map(|ctx| self.process_sign(&ctx))
+            .unwrap_or(Sign::Plus);
 
-        let params = ctx
-            .annotationDeclParams()
-            .into_iter()
-            .flat_map(|l| l.annotationDeclParamsPart_all())
-            .map(|param| {
-                let (name, ty_expr) = self.process_name_with_ty(&param.nameWithType().unwrap())?;
-                let default = param
-                    .expression()
-                    .map(|e| self.process_expr(&e))
-                    .transpose()?;
+        self.process_integer_lit(sign, &ctx.IntegerLit().unwrap())
+    }
 
-                Ok(ast::AnnotationParam {
-                    name,
-                    ty_expr,
-                    default,
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
+    fn process_sign(&mut self, ctx: &SignContextAll<'_>) -> Sign {
+        match ctx {
+            SignContextAll::PlusSignContext(_) => Sign::Plus,
+            SignContextAll::MinusSignContext(_) => Sign::Minus,
+            SignContextAll::Error(_) => unreachable!(),
+        }
+    }
 
+    fn process_annotation_decl(&mut self, ctx: &AnnotationDeclContextAll<'_>) -> Result<DeclId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let name = self.process_name(ctx.name.as_ref().unwrap());
+        let params = ctx
+            .params
+            .as_ref()
+            .map(|ctx| {
+                ctx.params
+                    .iter()
+                    .map(|ctx| self.process_annotation_param(ctx))
+                    .collect::<Result<_>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
 
         Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
             id,
@@ -691,55 +778,68 @@ impl<'a> AstConstructor<'a> {
         }))
     }
 
-    fn process_decl_action(&mut self, ctx: &ActionDeclContextAll<'_>) -> Result<DeclId> {
-        let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
+    fn process_annotation_param(
+        &mut self,
+        ctx: &AnnotationParamContextAll<'_>,
+    ) -> Result<ast::AnnotationParam> {
+        let name = self.process_name(ctx.name.as_ref().unwrap());
+        let ty_expr = self.process_type_expr(ctx.r#type.as_ref().unwrap())?;
+        let default = ctx
+            .default
+            .as_ref()
+            .map(|ctx| self.process_expr(ctx))
+            .transpose()?;
+
+        Ok(ast::AnnotationParam {
+            name,
+            ty_expr,
+            default,
+        })
+    }
+
+    fn process_action_decl(&mut self, ctx: &ActionDeclContextAll<'_>) -> Result<DeclId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let annotations = self.process_annotations(&ctx.annotations)?;
+        let name = self.process_name(ctx.name.as_ref().unwrap());
 
         let generics = ctx
-            .generic()
-            .map(|g| self.process_generics(&g))
+            .typeParams
+            .as_ref()
+            .map(|ctx| self.process_generics(ctx))
+            .unwrap_or_default();
+
+        let params = ctx
+            .params
+            .as_ref()
+            .map(|ctx| {
+                ctx.params
+                    .iter()
+                    .map(|ctx| self.process_action_param(ctx))
+                    .collect::<Result<_>>()
+            })
             .transpose()?
             .unwrap_or_default();
 
-        let name = self.process_identifier(&Terminal::new(ctx.actionName.clone().unwrap()))?;
-
-        let params = ctx
-            .actionDeclParamList()
-            .into_iter()
-            .flat_map(|l| l.actionParameter_all())
-            .map(|p| {
-                let annotations = self.process_annotation_usage_list(p.annotationUsage_all())?;
-                let name = self.process_identifier(&Terminal::new(p.name.clone().unwrap()))?;
-                let ty_expr = self.process_ty_identifier_as_ty_expr(p.r#type.as_ref().unwrap())?;
-
-                Ok(ast::ActionParam {
-                    annotations,
-                    name,
-                    ty_expr,
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
-
         let ret_ty_expr = ctx
-            .actionType
+            .retType
             .as_ref()
-            .map(|t| self.process_ty_identifier_as_ty_expr(t))
+            .map(|ctx| self.process_type_expr(ctx))
             .transpose()?;
 
         let ty_constraints = ctx
-            .whereConstraints()
-            .map(|c| self.process_where_constraints(&c))
+            .typeConstrants
+            .as_ref()
+            .map(|ctx| self.process_where_clause(ctx))
             .transpose()?
             .unwrap_or_default();
-
-        let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
         Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
             id,
             loc,
             kind: ast::DeclAction {
                 annotations,
-                generics,
                 name,
+                generics,
                 params,
                 ret_ty_expr,
                 ty_constraints,
@@ -748,46 +848,94 @@ impl<'a> AstConstructor<'a> {
         }))
     }
 
-    fn process_decl_automaton(&mut self, ctx: &AutomatonDeclContextAll<'_>) -> Result<DeclId> {
-        let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
-        let is_concept = ctx.CONCEPT().is_some();
-        let name = self
-            .process_period_separated_full_name_as_qualified_ty_name(ctx.name.as_ref().unwrap())?;
+    fn process_action_param(
+        &mut self,
+        ctx: &ActionParamContextAll<'_>,
+    ) -> Result<ast::ActionParam> {
+        let annotations = self.process_annotations(&ctx.annotations)?;
+        let name = self.process_name(ctx.name.as_ref().unwrap());
+        let ty_expr = self.process_type_expr(ctx.r#type.as_ref().unwrap())?;
+
+        Ok(ast::ActionParam {
+            annotations,
+            name,
+            ty_expr,
+        })
+    }
+
+    fn process_automaton_decl(&mut self, ctx: &AutomatonDeclContextAll<'_>) -> Result<DeclId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let annotations = self.process_annotations(&ctx.annotations)?;
+        let is_concept = ctx.concept.is_some();
+        let name = self.process_qualified_type_name(ctx.name.as_ref().unwrap())?;
 
         let constructor_variables = ctx
-            .constructorVariables_all()
-            .into_iter()
-            .map(|v| self.process_constructor_variable(&v))
-            .collect::<Result<Vec<_>>>()?;
+            .constructorVariables
+            .as_ref()
+            .map(|ctx| {
+                ctx.variables
+                    .iter()
+                    .map(|ctx| self.process_constructor_variable(ctx))
+                    .collect::<Result<_>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
 
-        let ty_expr = self.process_ty_expr(ctx.r#type.as_ref().unwrap())?;
+        let ty_expr = self.process_type_expr(ctx.r#type.as_ref().unwrap())?;
 
-        let mut implemented_concepts = vec![];
+        let implemented_concepts = ctx
+            .implements
+            .as_ref()
+            .map(|ctx| {
+                ctx.concepts
+                    .iter()
+                    .map(|ctx| self.process_name(ctx))
+                    .collect()
+            })
+            .unwrap_or_default();
 
-        for c in ctx.implementedConcepts_all() {
-            let implements = c.implements.as_ref().unwrap();
+        let ty_constraints = ctx
+            .typeConstraints
+            .as_ref()
+            .map(|ctx| self.process_where_clause(ctx))
+            .transpose()?
+            .unwrap_or_default();
 
-            if !implements.text.eq_ignore_ascii_case("implements") {
-                return Err(ParseError::Syntax {
-                    line: implements.line,
-                    column: implements.column,
-                    msg: format!("expected 'implements', got '{}'", implements.text),
-                });
-            }
+        let mut decls = Vec::with_capacity(ctx.decls.len());
 
-            for concept in c.concept_all() {
-                implemented_concepts
-                    .push(self.process_identifier(&Terminal::new(concept.name.clone().unwrap()))?);
+        for ctx in &ctx.decls {
+            match &**ctx {
+                AutomatonDefDeclContextAll::AutomatonDefDeclStateContext(ctx) => {
+                    decls.extend(self.process_state_decl(&ctx.stateDecl().unwrap()))
+                }
+
+                AutomatonDefDeclContextAll::AutomatonDefDeclShiftContext(ctx) => {
+                    decls.push(self.process_shift_decl(&ctx.shiftDecl().unwrap())?)
+                }
+
+                AutomatonDefDeclContextAll::AutomatonDefDeclConstructorContext(ctx) => {
+                    decls.push(self.process_constructor_decl(&ctx.constructorDecl().unwrap())?)
+                }
+
+                AutomatonDefDeclContextAll::AutomatonDefDeclDestructorContext(ctx) => {
+                    decls.push(self.process_destructor_decl(&ctx.destructorDecl().unwrap())?)
+                }
+
+                AutomatonDefDeclContextAll::AutomatonDefDeclProcContext(ctx) => {
+                    decls.push(self.process_proc_decl(&ctx.procDecl().unwrap())?)
+                }
+
+                AutomatonDefDeclContextAll::AutomatonDefDeclFunctionContext(ctx) => {
+                    decls.push(self.process_function_decl(&ctx.functionDecl().unwrap())?)
+                }
+
+                AutomatonDefDeclContextAll::AutomatonDefDeclVariableContext(ctx) => {
+                    decls.push(self.process_variable_decl(&ctx.variableDecl().unwrap())?)
+                }
+
+                AutomatonDefDeclContextAll::Error(_) => unreachable!(),
             }
         }
-
-        let mut decls = vec![];
-
-        for d in ctx.automatonStatement_all() {
-            decls.extend(self.process_automaton_decl(&d)?);
-        }
-
-        let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
         Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
             id,
@@ -799,6 +947,7 @@ impl<'a> AstConstructor<'a> {
                 constructor_variables,
                 ty_expr,
                 implemented_concepts,
+                ty_constraints,
                 decls,
             }
             .into(),
@@ -807,19 +956,19 @@ impl<'a> AstConstructor<'a> {
 
     fn process_constructor_variable(
         &mut self,
-        ctx: &ConstructorVariablesContextAll<'_>,
+        ctx: &ConstructorVariableContextAll<'_>,
     ) -> Result<DeclId> {
-        let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
-
-        let kind = self.process_var_kind(ctx.keyword.as_ref().unwrap())?;
-        let (name, ty_expr) = self.process_name_with_ty(&ctx.nameWithType().unwrap())?;
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let annotations = self.process_annotations(&ctx.annotations)?;
+        let kind = self.process_variable_kind(ctx.kind.as_ref().unwrap());
+        let name = self.process_name(ctx.name.as_ref().unwrap());
+        let ty_expr = self.process_type_expr(ctx.r#type.as_ref().unwrap())?;
 
         let init = ctx
-            .assignmentRight()
-            .map(|e| self.process_expr(&e.expression().unwrap()))
+            .init
+            .as_ref()
+            .map(|ctx| self.process_expr(ctx))
             .transpose()?;
-
-        let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
         Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
             id,
@@ -828,95 +977,68 @@ impl<'a> AstConstructor<'a> {
                 annotations,
                 kind,
                 name,
-                ty_expr,
+                ty_expr: Some(ty_expr),
                 init,
             }
             .into(),
         }))
     }
 
-    fn process_automaton_decl(
-        &mut self,
-        ctx: &AutomatonStatementContextAll<'_>,
-    ) -> Result<Vec<DeclId>> {
-        if let Some(decl) = ctx.automatonStateDecl() {
-            self.process_decl_state(&decl)
-        } else if let Some(decl) = ctx.automatonShiftDecl() {
-            self.process_decl_shift(&decl).map(unit_vec)
-        } else if let Some(decl) = ctx.constructorDecl() {
-            self.process_decl_constructor(&decl).map(unit_vec)
-        } else if let Some(decl) = ctx.destructorDecl() {
-            self.process_decl_destructor(&decl).map(unit_vec)
-        } else if let Some(decl) = ctx.procDecl() {
-            self.process_decl_proc(&decl).map(unit_vec)
-        } else if let Some(decl) = ctx.functionDecl() {
-            self.process_decl_function(&decl).map(unit_vec)
-        } else if let Some(decl) = ctx.variableDecl() {
-            self.process_decl_variable(&decl).map(unit_vec)
-        } else {
-            panic!("unrecognized automatonStatement node: {ctx:?}");
-        }
-    }
-
-    fn process_decl_function(&mut self, ctx: &FunctionDeclContextAll<'_>) -> Result<DeclId> {
-        let header = ctx.functionHeader().unwrap();
-        let annotations = self.process_annotation_usage_list(header.annotationUsage_all())?;
-
-        let is_static = if let Some(modifier) = header.modifier.as_ref() {
-            match &modifier.text {
-                m if m.eq_ignore_ascii_case("static") => true,
-
-                m => {
-                    return Err(ParseError::Syntax {
-                        line: modifier.line,
-                        column: modifier.column,
-                        msg: format!("unknown modifier `{m}`"),
-                    });
-                }
-            }
-        } else {
-            false
-        };
-
-        let extension_for = header
-            .automatonName
-            .as_ref()
-            .map(|n| self.process_period_separated_full_name(n))
-            .transpose()?;
-
-        let is_method = header.headerWithAsterisk().is_some();
-        let name = self.process_identifier(&Terminal::new(header.functionName.clone().unwrap()))?;
-
-        let generics = header
-            .generic()
-            .map(|g| self.process_generics(&g))
-            .transpose()?
-            .unwrap_or_default();
-
-        let params = header
-            .functionDeclArgList()
-            .map(|a| self.process_function_params(&a))
-            .transpose()?
-            .unwrap_or_default();
-
-        let ret_ty_expr = header
-            .functionType
-            .as_ref()
-            .map(|t| self.process_ty_expr(t))
-            .transpose()?;
-
-        let ty_constraints = header
-            .whereConstraints()
-            .map(|w| self.process_where_constraints(&w))
-            .transpose()?
-            .unwrap_or_default();
-
-        let body = ctx
-            .functionBody()
-            .map(|b| self.process_function_body(&b))
-            .transpose()?;
-
+    fn process_function_decl(&mut self, ctx: &FunctionDeclContextAll<'_>) -> Result<DeclId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let annotations = self.process_annotations(&ctx.annotations)?;
+
+        let mut is_static = false;
+
+        for modifier in &ctx.modifiers {
+            match &**modifier {
+                FunctionModifierContextAll::FunctionModifierStaticContext(_) => {
+                    is_static = true;
+                }
+
+                FunctionModifierContextAll::Error(_) => unreachable!(),
+            }
+        }
+
+        let extension_for = ctx
+            .extensionFor
+            .as_ref()
+            .map(|ctx| self.process_full_name(ctx));
+        let is_method = ctx.method.is_some();
+        let name = self.process_name(ctx.name.as_ref().unwrap());
+
+        let generics = ctx
+            .typeParams
+            .as_ref()
+            .map(|ctx| self.process_generics(ctx))
+            .unwrap_or_default();
+
+        let params = ctx
+            .params
+            .as_ref()
+            .map(|ctx| {
+                ctx.params
+                    .iter()
+                    .map(|ctx| self.process_function_param(ctx))
+                    .collect::<Result<_>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+
+        let ret_ty_expr = ctx
+            .retType
+            .as_ref()
+            .map(|ctx| self.process_type_expr(ctx))
+            .transpose()?;
+
+        let ty_constraints = ctx
+            .typeConstraints
+            .as_ref()
+            .map(|ctx| self.process_where_clause(ctx))
+            .transpose()?
+            .unwrap_or_default();
+
+        let body = self.process_function_def(ctx.def.as_ref().unwrap())?;
 
         Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
             id,
@@ -937,35 +1059,37 @@ impl<'a> AstConstructor<'a> {
         }))
     }
 
-    fn process_function_params(
+    fn process_function_def(
         &mut self,
-        ctx: &FunctionDeclArgListContextAll<'_>,
-    ) -> Result<Vec<ast::FunctionParam>> {
-        ctx.parameter_all()
-            .into_iter()
-            .map(|p| {
-                let annotations = self.process_annotation_usage_list(p.annotationUsage_all())?;
-                let name = self.process_identifier(&Terminal::new(p.name.clone().unwrap()))?;
-                let ty_expr = self.process_ty_expr(&p.typeExpression().unwrap())?;
+        ctx: &FunctionDefContextAll<'_>,
+    ) -> Result<Option<ast::FunctionBody>> {
+        Ok(match ctx {
+            FunctionDefContextAll::FunctionDefBracedContext(ctx) => {
+                Some(self.process_function_body(&ctx.functionBody().unwrap())?)
+            }
 
-                Ok(ast::FunctionParam {
-                    annotations,
-                    name,
-                    ty_expr,
-                })
-            })
-            .collect()
+            FunctionDefContextAll::FunctionDefSemicolonContext(_) => None,
+
+            FunctionDefContextAll::Error(_) => unreachable!(),
+        })
     }
 
-    fn process_decl_variable(&mut self, ctx: &VariableDeclContextAll<'_>) -> Result<DeclId> {
-        let annotations = self.process_annotation_usage_list(ctx.annotationUsage_all())?;
-        let kind = self.process_var_kind(ctx.keyword.as_ref().unwrap())?;
-        let (name, ty_expr) = self.process_name_with_ty(&ctx.nameWithType().unwrap())?;
-        let init = ctx
-            .assignmentRight()
-            .map(|e| self.process_expr(&e.expression().unwrap()))
-            .transpose()?;
+    fn process_variable_decl(&mut self, ctx: &VariableDeclContextAll<'_>) -> Result<DeclId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let annotations = self.process_annotations(&ctx.annotations)?;
+        let kind = self.process_variable_kind(ctx.kind.as_ref().unwrap());
+        let name = self.process_name(ctx.name.as_ref().unwrap());
+        let ty_expr = ctx
+            .r#type
+            .as_ref()
+            .map(|ctx| self.process_type_expr(ctx))
+            .transpose()?;
+
+        let init = ctx
+            .init
+            .as_ref()
+            .map(|ctx| self.process_expr(ctx))
+            .transpose()?;
 
         Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
             id,
@@ -981,73 +1105,79 @@ impl<'a> AstConstructor<'a> {
         }))
     }
 
-    fn process_var_kind(&mut self, ctx: &CommonToken<'_>) -> Result<ast::VariableKind> {
-        Ok(match ctx.token_type {
-            grammar::parser::VAR => ast::VariableKind::Var,
-            grammar::parser::VAL => ast::VariableKind::Val,
-            _ => panic!("unrecognized variable keyword: `{}`", ctx.text),
-        })
+    fn process_variable_kind(&mut self, ctx: &VariableKindContextAll<'_>) -> ast::VariableKind {
+        match ctx {
+            VariableKindContextAll::VariableKindVarContext(_) => ast::VariableKind::Var,
+            VariableKindContextAll::VariableKindValContext(_) => ast::VariableKind::Val,
+            VariableKindContextAll::Error(_) => unreachable!(),
+        }
     }
 
-    fn process_decl_state(&mut self, ctx: &AutomatonStateDeclContext<'_>) -> Result<Vec<DeclId>> {
-        let kw = ctx.keyword.as_ref().unwrap();
-        let kind = match kw.token_type {
-            grammar::parser::INITSTATE => ast::StateKind::Initial,
-            grammar::parser::STATE => ast::StateKind::Regular,
-            grammar::parser::FINISHSTATE => ast::StateKind::Final,
-            _ => panic!("unrecognized state kind: `{}`", kw.text),
+    fn process_state_decl(&mut self, ctx: &StateDeclContextAll<'_>) -> Vec<DeclId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+
+        let kind = match **ctx.kind.as_ref().unwrap() {
+            StateKindContextAll::StateKindInitialContext(_) => ast::StateKind::Initial,
+            StateKindContextAll::StateKindFinalContext(_) => ast::StateKind::Final,
+            StateKindContextAll::StateKindRegularContext(_) => ast::StateKind::Regular,
+            StateKindContextAll::Error(_) => unreachable!(),
         };
 
-        ctx.identifierList()
-            .into_iter()
-            .flat_map(|l| l.Identifier_all())
-            .map(|i| {
-                self.process_identifier(&i).map(|name| {
-                    self.libsl.decls.insert_with_key(|id| ast::Decl {
-                        id,
-                        loc: name.loc.clone(),
-                        kind: ast::DeclState { kind, name }.into(),
-                    })
+        ctx.names
+            .as_ref()
+            .unwrap()
+            .names
+            .iter()
+            .map(move |ctx| {
+                let name = self.process_name(ctx);
+
+                self.libsl.decls.insert_with_key(|id| ast::Decl {
+                    id,
+                    loc: loc.clone(),
+                    kind: ast::DeclState { kind, name }.into(),
                 })
             })
-            .collect::<Result<Vec<_>>>()
+            .collect()
     }
 
-    fn process_decl_shift(&mut self, ctx: &AutomatonShiftDeclContextAll<'_>) -> Result<DeclId> {
-        let from_token = ctx.from.as_ref().unwrap();
+    fn process_shift_decl(&mut self, ctx: &ShiftDeclContextAll<'_>) -> Result<DeclId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
-        let from = match from_token.token_type {
-            grammar::parser::Identifier => {
-                vec![self.process_identifier(&Terminal::new(from_token.clone()))?]
+        let from = match &**ctx.from.as_ref().unwrap() {
+            ShiftSourceStateContextAll::ShiftSourceStateShorthandContext(ctx) => {
+                vec![self.process_name(&ctx.ident().unwrap())]
             }
 
-            grammar::parser::L_BRACKET => ctx
-                .identifierList()
-                .unwrap()
-                .Identifier_all()
-                .into_iter()
-                .map(|i| self.process_identifier(&i))
-                .collect::<Result<Vec<_>>>()?,
+            ShiftSourceStateContextAll::ShiftSourceStateListContext(ctx) => ctx
+                .states
+                .as_ref()
+                .map(|ctx| ctx.names.iter().map(|ctx| self.process_name(ctx)).collect())
+                .unwrap_or_default(),
 
-            _ => panic!(
-                "unrecognized token for `from` field in rule `automatonShiftDecl`: `{}`",
-                from_token.text,
-            ),
+            ShiftSourceStateContextAll::Error(_) => unreachable!(),
         };
 
-        let to = self.process_identifier(&Terminal::new(ctx.to.clone().unwrap()))?;
+        let to = self.process_name(ctx.to.as_ref().unwrap());
 
-        let by = if let Some(f) = ctx.functionsListPart() {
-            vec![self.process_qualified_function_name(&f)?]
-        } else {
-            ctx.functionsList()
-                .into_iter()
-                .flat_map(|l| l.functionsListPart_all())
-                .map(|f| self.process_qualified_function_name(&f))
-                .collect::<Result<Vec<_>>>()?
+        let by = match &**ctx.by.as_ref().unwrap() {
+            ShiftByContextAll::ShiftByShorthandContext(ctx) => {
+                vec![self.process_function_signature(ctx.signature.as_ref().unwrap())?]
+            }
+
+            ShiftByContextAll::ShiftByListContext(ctx) => ctx
+                .signatures
+                .as_ref()
+                .map(|ctx| {
+                    ctx.signatures
+                        .iter()
+                        .map(|ctx| self.process_function_signature(ctx))
+                        .collect::<Result<_>>()
+                })
+                .transpose()?
+                .unwrap_or_default(),
+
+            ShiftByContextAll::Error(_) => unreachable!(),
         };
-
-        let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
         Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
             id,
@@ -1056,55 +1186,68 @@ impl<'a> AstConstructor<'a> {
         }))
     }
 
-    fn process_qualified_function_name(
+    fn process_function_signature(
         &mut self,
-        ctx: &FunctionsListPartContextAll<'_>,
+        ctx: &FunctionSignatureContextAll<'_>,
     ) -> Result<ast::QualifiedFunctionName> {
-        let name = self.process_identifier(&Terminal::new(ctx.name.clone().unwrap()))?;
+        Ok(match ctx {
+            FunctionSignatureContextAll::FunctionSignatureShorthandContext(ctx) => {
+                let name = self.process_name(ctx.name.as_ref().unwrap());
 
-        let params = if ctx.L_BRACKET().is_some() {
-            Some(
-                ctx.typeIdentifier_all()
-                    .into_iter()
-                    .map(|t| self.process_ty_identifier_as_ty_expr(&t))
-                    .collect::<Result<Vec<_>>>()?,
-            )
-        } else {
-            None
-        };
+                ast::QualifiedFunctionName { name, params: None }
+            }
 
-        Ok(ast::QualifiedFunctionName { name, params })
+            FunctionSignatureContextAll::FunctionSignatureQualifiedContext(ctx) => {
+                let name = self.process_name(ctx.name.as_ref().unwrap());
+                let params = ctx
+                    .params
+                    .as_ref()
+                    .map(|ctx| {
+                        ctx.typeExprs
+                            .iter()
+                            .map(|ctx| self.process_type_expr(ctx))
+                            .collect::<Result<_>>()
+                    })
+                    .transpose()?
+                    .unwrap_or_default();
+
+                ast::QualifiedFunctionName {
+                    name,
+                    params: Some(params),
+                }
+            }
+
+            FunctionSignatureContextAll::Error(_) => todo!(),
+        })
     }
 
-    fn process_decl_constructor(&mut self, ctx: &ConstructorDeclContextAll<'_>) -> Result<DeclId> {
-        let header = ctx.constructorHeader().unwrap();
-        let annotations = self.process_annotation_usage_list(header.annotationUsage_all())?;
-        let is_method = header.headerWithAsterisk().is_some();
+    fn process_constructor_decl(&mut self, ctx: &ConstructorDeclContextAll<'_>) -> Result<DeclId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let annotations = self.process_annotations(&ctx.annotations)?;
+        let kw = &ctx.CONSTRUCTOR().unwrap().symbol;
+        let kw_loc = self.get_loc(kw, kw);
+        let is_method = ctx.method.is_some();
+        let name = ctx.name.as_ref().map(|ctx| self.process_name(ctx));
 
-        let name = header
-            .functionName
+        let params = ctx
+            .params
             .as_ref()
-            .map(|n| self.process_identifier(&Terminal::new(n.clone())))
-            .transpose()?;
-
-        let params = header
-            .functionDeclArgList()
-            .map(|a| self.process_function_params(&a))
+            .map(|ctx| {
+                ctx.params
+                    .iter()
+                    .map(|ctx| self.process_function_param(ctx))
+                    .collect::<Result<_>>()
+            })
             .transpose()?
             .unwrap_or_default();
 
-        let ret_ty_expr = header
-            .functionType
+        let ret_ty_expr = ctx
+            .retType
             .as_ref()
-            .map(|t| self.process_ty_identifier_as_ty_expr(t))
+            .map(|ctx| self.process_type_expr(ctx))
             .transpose()?;
 
-        let body = ctx
-            .functionBody()
-            .map(|b| self.process_function_body(&b))
-            .transpose()?;
-
-        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let body = self.process_function_def(ctx.def.as_ref().unwrap())?;
 
         Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
             id,
@@ -1113,6 +1256,7 @@ impl<'a> AstConstructor<'a> {
                 annotations,
                 is_method,
                 name,
+                kw_loc,
                 params,
                 ret_ty_expr,
                 body,
@@ -1121,35 +1265,33 @@ impl<'a> AstConstructor<'a> {
         }))
     }
 
-    fn process_decl_destructor(&mut self, ctx: &DestructorDeclContextAll<'_>) -> Result<DeclId> {
-        let header = ctx.destructorHeader().unwrap();
-        let annotations = self.process_annotation_usage_list(header.annotationUsage_all())?;
-        let is_method = header.headerWithAsterisk().is_some();
+    fn process_destructor_decl(&mut self, ctx: &DestructorDeclContextAll<'_>) -> Result<DeclId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let annotations = self.process_annotations(&ctx.annotations)?;
+        let kw = ctx.DESTRUCTOR().unwrap();
+        let kw_loc = self.get_loc(&kw.start(), &kw.stop());
+        let is_method = ctx.method.is_some();
+        let name = ctx.name.as_ref().map(|ctx| self.process_name(ctx));
 
-        let name = header
-            .functionName
+        let params = ctx
+            .params
             .as_ref()
-            .map(|n| self.process_identifier(&Terminal::new(n.clone())))
-            .transpose()?;
-
-        let params = header
-            .functionDeclArgList()
-            .map(|a| self.process_function_params(&a))
+            .map(|ctx| {
+                ctx.params
+                    .iter()
+                    .map(|ctx| self.process_function_param(ctx))
+                    .collect::<Result<_>>()
+            })
             .transpose()?
             .unwrap_or_default();
 
-        let ret_ty_expr = header
-            .functionType
+        let ret_ty_expr = ctx
+            .retType
             .as_ref()
-            .map(|t| self.process_ty_identifier_as_ty_expr(t))
+            .map(|ctx| self.process_type_expr(ctx))
             .transpose()?;
 
-        let body = ctx
-            .functionBody()
-            .map(|b| self.process_function_body(&b))
-            .transpose()?;
-
-        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let body = self.process_function_def(ctx.def.as_ref().unwrap())?;
 
         Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
             id,
@@ -1158,6 +1300,7 @@ impl<'a> AstConstructor<'a> {
                 annotations,
                 is_method,
                 name,
+                kw_loc,
                 params,
                 ret_ty_expr,
                 body,
@@ -1166,48 +1309,64 @@ impl<'a> AstConstructor<'a> {
         }))
     }
 
-    fn process_decl_proc(&mut self, ctx: &ProcDeclContextAll<'_>) -> Result<DeclId> {
-        let header = ctx.procHeader().unwrap();
-        let annotations = self.process_annotation_usage_list(header.annotationUsage_all())?;
-        let is_method = header.headerWithAsterisk().is_some();
-        let name = self.process_identifier(&Terminal::new(header.functionName.clone().unwrap()))?;
-
-        let generics = header
-            .generic()
-            .map(|g| self.process_generics(&g))
-            .transpose()?
-            .unwrap_or_default();
-
-        let params = header
-            .functionDeclArgList()
-            .map(|a| self.process_function_params(&a))
-            .transpose()?
-            .unwrap_or_default();
-
-        let ret_ty_expr = header
-            .functionType
-            .as_ref()
-            .map(|t| self.process_ty_expr(t))
-            .transpose()?;
-
-        let ty_constraints = header
-            .whereConstraints()
-            .map(|w| self.process_where_constraints(&w))
-            .transpose()?
-            .unwrap_or_default();
-
-        let body = ctx
-            .functionBody()
-            .map(|b| self.process_function_body(&b))
-            .transpose()?;
-
+    fn process_proc_decl(&mut self, ctx: &ProcDeclContextAll<'_>) -> Result<DeclId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let annotations = self.process_annotations(&ctx.annotations)?;
+
+        let mut is_pure = false;
+
+        for modifier in &ctx.modifiers {
+            match &**modifier {
+                ProcModifierContextAll::ProcModifierPureContext(_) => {
+                    is_pure = true;
+                }
+
+                ProcModifierContextAll::Error(_) => unreachable!(),
+            }
+        }
+
+        let is_method = ctx.method.is_some();
+        let name = self.process_name(ctx.name.as_ref().unwrap());
+
+        let generics = ctx
+            .typeParams
+            .as_ref()
+            .map(|ctx| self.process_generics(ctx))
+            .unwrap_or_default();
+
+        let params = ctx
+            .params
+            .as_ref()
+            .map(|ctx| {
+                ctx.params
+                    .iter()
+                    .map(|ctx| self.process_function_param(ctx))
+                    .collect::<Result<_>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+
+        let ret_ty_expr = ctx
+            .retType
+            .as_ref()
+            .map(|ctx| self.process_type_expr(ctx))
+            .transpose()?;
+
+        let ty_constraints = ctx
+            .typeConstraints
+            .as_ref()
+            .map(|ctx| self.process_where_clause(ctx))
+            .transpose()?
+            .unwrap_or_default();
+
+        let body = self.process_function_def(ctx.def.as_ref().unwrap())?;
 
         Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
             id,
             loc,
             kind: ast::DeclProc {
                 annotations,
+                is_pure,
                 is_method,
                 name,
                 generics,
@@ -1220,124 +1379,578 @@ impl<'a> AstConstructor<'a> {
         }))
     }
 
+    fn process_function_param(
+        &mut self,
+        ctx: &FunctionParamContextAll<'_>,
+    ) -> Result<ast::FunctionParam> {
+        let annotations = self.process_annotations(&ctx.annotations)?;
+        let name = self.process_name(ctx.name.as_ref().unwrap());
+        let ty_expr = self.process_type_expr(ctx.r#type.as_ref().unwrap())?;
+
+        Ok(ast::FunctionParam {
+            annotations,
+            name,
+            ty_expr,
+        })
+    }
+
     fn process_function_body(
         &mut self,
         ctx: &FunctionBodyContextAll<'_>,
     ) -> Result<ast::FunctionBody> {
         let contracts = ctx
-            .functionContract_all()
-            .into_iter()
-            .map(|c| self.process_contract(&c))
-            .collect::<Result<Vec<_>>>()?;
+            .contracts
+            .iter()
+            .map(|ctx| self.process_contract(ctx))
+            .collect::<Result<_>>()?;
 
         let stmts = ctx
-            .functionBodyStatement_all()
-            .into_iter()
-            .map(|c| self.process_stmt(&c))
-            .collect::<Result<Vec<_>>>()?;
+            .stmts
+            .iter()
+            .map(|ctx| self.process_stmt(ctx))
+            .collect::<Result<_>>()?;
 
         Ok(ast::FunctionBody { contracts, stmts })
     }
 
-    fn process_contract(&mut self, ctx: &FunctionContractContextAll<'_>) -> Result<ast::Contract> {
-        if let Some(ctx) = ctx.requiresContract() {
-            self.process_contract_requires(&ctx)
-        } else if let Some(ctx) = ctx.ensuresContract() {
-            self.process_contract_ensures(&ctx)
-        } else if let Some(ctx) = ctx.assignsContract() {
-            self.process_contract_assigns(&ctx)
-        } else {
-            panic!("unrecognized functionContract node: {ctx:?}");
-        }
+    fn process_contract(&mut self, ctx: &ContractContextAll<'_>) -> Result<ast::Contract> {
+        Ok(match ctx {
+            ContractContextAll::ContractRequiresContext(ctx) => self
+                .process_requires_contract(&ctx.requiresContract().unwrap())?
+                .into(),
+
+            ContractContextAll::ContractEnsuresContext(ctx) => self
+                .process_ensures_contract(&ctx.ensuresContract().unwrap())?
+                .into(),
+
+            ContractContextAll::ContractAssignsContext(ctx) => self
+                .process_assigns_contract(&ctx.assignsContract().unwrap())?
+                .into(),
+
+            ContractContextAll::Error(_) => unreachable!(),
+        })
     }
 
-    fn process_contract_requires(
+    fn process_requires_contract(
         &mut self,
         ctx: &RequiresContractContextAll<'_>,
-    ) -> Result<ast::Contract> {
-        let name = ctx
-            .name
-            .as_ref()
-            .map(|i| self.process_identifier(&Terminal::new(i.clone())))
-            .transpose()?;
+    ) -> Result<ast::ContractRequires> {
+        let name = ctx.name.as_ref().map(|ctx| self.process_name(ctx));
+        let mut pred = self.process_contract_predicate(ctx.spec.as_ref().unwrap())?;
 
-        let expr = self.process_expr(&ctx.expression().unwrap())?;
+        if let Some(name) = name {
+            let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
-        Ok(ast::ContractRequires { name, expr }.into())
+            pred = self.libsl.preds.insert_with_key(|id| ast::Pred {
+                id,
+                loc,
+                kind: ast::PredNamed { name, pred }.into(),
+            });
+        }
+
+        Ok(ast::ContractRequires { pred })
     }
 
-    fn process_contract_ensures(
+    fn process_ensures_contract(
         &mut self,
         ctx: &EnsuresContractContextAll<'_>,
-    ) -> Result<ast::Contract> {
-        let name = ctx
-            .name
-            .as_ref()
-            .map(|i| self.process_identifier(&Terminal::new(i.clone())))
-            .transpose()?;
+    ) -> Result<ast::ContractEnsures> {
+        let name = ctx.name.as_ref().map(|ctx| self.process_name(ctx));
+        let mut pred = self.process_contract_predicate(ctx.spec.as_ref().unwrap())?;
 
-        let expr = self.process_expr(&ctx.expression().unwrap())?;
+        if let Some(name) = name {
+            let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
-        Ok(ast::ContractEnsures { name, expr }.into())
+            pred = self.libsl.preds.insert_with_key(|id| ast::Pred {
+                id,
+                loc,
+                kind: ast::PredNamed { name, pred }.into(),
+            });
+        }
+
+        Ok(ast::ContractEnsures { pred })
     }
 
-    fn process_contract_assigns(
+    fn process_assigns_contract(
         &mut self,
         ctx: &AssignsContractContextAll<'_>,
-    ) -> Result<ast::Contract> {
-        let name = ctx
-            .name
-            .as_ref()
-            .map(|i| self.process_identifier(&Terminal::new(i.clone())))
-            .transpose()?;
+    ) -> Result<ast::ContractAssigns> {
+        let name = ctx.name.as_ref().map(|ctx| self.process_name(ctx));
+        let expr = self.process_expr(ctx.spec.as_ref().unwrap())?;
 
-        let expr = self.process_expr(&ctx.expression().unwrap())?;
-
-        Ok(ast::ContractAssigns { name, expr }.into())
+        Ok(ast::ContractAssigns { name, expr })
     }
 
-    fn process_stmt(&mut self, ctx: &FunctionBodyStatementContextAll<'_>) -> Result<StmtId> {
-        if let Some(stmt) = ctx.variableAssignment() {
-            self.process_stmt_assign(&stmt)
-        } else if let Some(decl) = ctx.variableDecl() {
-            self.process_stmt_decl_variable(&decl)
-        } else if let Some(stmt) = ctx.ifStatement() {
-            self.process_stmt_if(&stmt)
-        } else if let Some(expr) = ctx.expression() {
-            self.process_stmt_expr(&expr)
-        } else {
-            panic!("unrecognized funcionBodyStatement node: {ctx:?}");
+    fn process_contract_predicate(
+        &mut self,
+        ctx: &ContractPredicateContextAll<'_>,
+    ) -> Result<PredId> {
+        match ctx {
+            ContractPredicateContextAll::ContractPredicateIfContext(ctx) => {
+                self.process_if_predicate(&ctx.ifPredicate().unwrap())
+            }
+
+            ContractPredicateContextAll::ContractPredicateExprContext(ctx) => self
+                .process_predicate_expr(
+                    &ctx.expr().unwrap(),
+                    self.get_loc(&ctx.start(), &ctx.stop()),
+                ),
+
+            ContractPredicateContextAll::ContractPredicateBlockContext(ctx) => {
+                self.process_block_predicate(&ctx.blockPredicate().unwrap())
+            }
+
+            ContractPredicateContextAll::Error(_) => unreachable!(),
         }
     }
 
-    fn process_stmt_decl_variable(&mut self, ctx: &VariableDeclContextAll<'_>) -> Result<StmtId> {
-        let decl = self.process_decl_variable(ctx)?;
+    #[allow(unused)]
+    fn process_expr_predicate(&mut self, ctx: &ExprPredicateContextAll<'_>) -> Result<PredId> {
+        match ctx {
+            ExprPredicateContextAll::ExprPredicateBlockContext(ctx) => {
+                self.process_block_predicate(&ctx.blockPredicate().unwrap())
+            }
+
+            ExprPredicateContextAll::ExprPredicateExprContext(ctx) => self.process_predicate_expr(
+                &ctx.expr().unwrap(),
+                self.get_loc(&ctx.start(), &ctx.stop()),
+            ),
+
+            ExprPredicateContextAll::Error(_) => unreachable!(),
+        }
+    }
+
+    fn process_predicate(&mut self, ctx: &PredicateContextAll<'_>) -> Result<PredId> {
+        match ctx {
+            PredicateContextAll::PredicateExprContext(ctx) => self.process_predicate_expr(
+                &ctx.expr().unwrap(),
+                self.get_loc(&ctx.start(), &ctx.stop()),
+            ),
+
+            PredicateContextAll::PredicateNamedContext(ctx) => self.process_predicate_named(ctx),
+
+            PredicateContextAll::PredicateIfContext(ctx) => {
+                self.process_if_predicate(&ctx.ifPredicate().unwrap())
+            }
+
+            PredicateContextAll::PredicateVariableDeclContext(ctx) => {
+                self.process_predicate_variable_decl(&ctx.variableDecl().unwrap())
+            }
+
+            PredicateContextAll::PredicateBlockContext(ctx) => {
+                self.process_block_predicate(&ctx.blockPredicate().unwrap())
+            }
+
+            PredicateContextAll::Error(_) => unreachable!(),
+        }
+    }
+
+    fn process_block_predicate(&mut self, ctx: &BlockPredicateContextAll<'_>) -> Result<PredId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
+
+        let preds = ctx
+            .predicates
+            .iter()
+            .map(|ctx| self.process_predicate(ctx))
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(self.libsl.preds.insert_with_key(|id| ast::Pred {
+            id,
+            loc,
+            kind: ast::PredBlock { preds }.into(),
+        }))
+    }
+
+    fn process_predicate_named(&mut self, ctx: &PredicateNamedContext<'_>) -> Result<PredId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let name = self.process_name(ctx.name.as_ref().unwrap());
+        let pred = self.process_predicate(&ctx.predicate().unwrap())?;
+
+        Ok(self.libsl.preds.insert_with_key(|id| ast::Pred {
+            id,
+            loc,
+            kind: ast::PredNamed { name, pred }.into(),
+        }))
+    }
+
+    fn process_predicate_variable_decl(
+        &mut self,
+        ctx: &VariableDeclContextAll<'_>,
+    ) -> Result<PredId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let decl_id = self.process_variable_decl(ctx)?;
+
+        Ok(self.libsl.preds.insert_with_key(|id| ast::Pred {
+            id,
+            loc,
+            kind: decl_id.into(),
+        }))
+    }
+
+    fn process_if_predicate(&mut self, ctx: &IfPredicateContextAll<'_>) -> Result<PredId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let cond = self.process_expr(ctx.condition.as_ref().unwrap())?;
+        let then_branch = self.process_predicate(ctx.thenBranch.as_ref().unwrap())?;
+        let else_branch = ctx
+            .elseBranch
+            .as_ref()
+            .map(|ctx| self.process_predicate(ctx))
+            .transpose()?;
+
+        Ok(self.libsl.preds.insert_with_key(|id| ast::Pred {
+            id,
+            loc,
+            kind: ast::PredIf {
+                cond,
+                then_branch,
+                else_branch,
+            }
+            .into(),
+        }))
+    }
+
+    fn process_predicate_expr(&mut self, ctx: &ExprContextAll<'_>, loc: Loc) -> Result<PredId> {
+        let expr_id = self.process_expr(ctx)?;
+
+        Ok(self.libsl.preds.insert_with_key(|id| ast::Pred {
+            id,
+            loc,
+            kind: expr_id.into(),
+        }))
+    }
+
+    fn process_annotations(
+        &mut self,
+        ctx: &[Rc<AnnotationContextAll<'_>>],
+    ) -> Result<Vec<AnnotationId>> {
+        ctx.iter().map(|ctx| self.process_annotation(ctx)).collect()
+    }
+
+    fn process_annotation(&mut self, ctx: &AnnotationContextAll<'_>) -> Result<AnnotationId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let name = self.process_name(ctx.name.as_ref().unwrap());
+        let args = ctx
+            .args
+            .as_ref()
+            .map(|ctx| {
+                ctx.args
+                    .iter()
+                    .map(|ctx| self.process_annotation_arg(ctx))
+                    .collect::<Result<_>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+
+        Ok(self
+            .libsl
+            .annotations
+            .insert_with_key(|id| ast::Annotation {
+                id,
+                loc,
+                name,
+                args,
+            }))
+    }
+
+    fn process_annotation_arg(
+        &mut self,
+        ctx: &AnnotationArgContextAll<'_>,
+    ) -> Result<ast::AnnotationArg> {
+        let name = ctx.name.as_ref().map(|ctx| self.process_name(ctx));
+        let expr = self.process_expr(ctx.value.as_ref().unwrap())?;
+
+        Ok(ast::AnnotationArg { name, expr })
+    }
+
+    fn process_qualified_type_name(
+        &mut self,
+        ctx: &QualifiedTypeNameContextAll<'_>,
+    ) -> Result<ast::QualifiedTyName> {
+        let ty_name = self.process_full_name(ctx.typeName.as_ref().unwrap());
+
+        let generics = ctx
+            .typeParams
+            .as_ref()
+            .map(|ctx| self.process_generics(ctx))
+            .unwrap_or_default();
+
+        Ok(ast::QualifiedTyName { ty_name, generics })
+    }
+
+    fn process_full_name(&mut self, ctx: &FullNameContextAll<'_>) -> ast::FullName {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let components = ctx
+            .components
+            .iter()
+            .map(|ctx| self.process_name(ctx))
+            .collect();
+
+        ast::FullName { loc, components }
+    }
+
+    fn process_name(&mut self, ctx: &IdentContextAll<'_>) -> ast::Name {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let name = parse_ident(ctx);
+
+        ast::Name { loc, name }
+    }
+
+    fn process_where_clause(
+        &mut self,
+        ctx: &WhereClauseContextAll<'_>,
+    ) -> Result<Vec<ast::TyConstraint>> {
+        ctx.constraints
+            .iter()
+            .map(|ctx| self.process_type_constraint(ctx))
+            .collect()
+    }
+
+    fn process_type_constraint(
+        &mut self,
+        ctx: &TypeConstraintContextAll<'_>,
+    ) -> Result<ast::TyConstraint> {
+        let param = self.process_name(ctx.param.as_ref().unwrap());
+        let bound = self.process_type_expr(ctx.bound.as_ref().unwrap())?;
+
+        Ok(ast::TyConstraint { param, bound })
+    }
+
+    fn process_generics(&mut self, ctx: &GenericsContextAll<'_>) -> Vec<ast::Generic> {
+        ctx.list
+            .as_ref()
+            .map(|ctx| {
+                ctx.params
+                    .iter()
+                    .map(|ctx| self.process_generic(ctx))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn process_generic(&mut self, ctx: &GenericContextAll<'_>) -> ast::Generic {
+        let variance = ctx
+            .variance
+            .as_ref()
+            .map(|ctx| self.process_variance_spec(ctx));
+
+        let name = self.process_name(ctx.name.as_ref().unwrap());
+
+        ast::Generic { variance, name }
+    }
+
+    fn process_variance_spec(&mut self, ctx: &VarianceSpecContextAll<'_>) -> ast::Variance {
+        match ctx {
+            VarianceSpecContextAll::CovariantContext(_) => ast::Variance::Covariant,
+            VarianceSpecContextAll::ContravariantContext(_) => ast::Variance::Contravariant,
+            VarianceSpecContextAll::InvariantContext(_) => ast::Variance::Invariant,
+            VarianceSpecContextAll::Error(_) => unreachable!(),
+        }
+    }
+
+    fn process_atomic_type_expr(&mut self, ctx: &AtomicTypeExprContextAll<'_>) -> Result<TyExprId> {
+        match ctx {
+            AtomicTypeExprContextAll::TypeExprNameContext(ctx) => {
+                self.process_name_type_expr(&ctx.nameTypeExpr().unwrap())
+            }
+
+            AtomicTypeExprContextAll::TypeExprPrimitiveLitContext(ctx) => {
+                self.process_type_expr_primitive_lit(ctx)
+            }
+
+            AtomicTypeExprContextAll::TypeExprPointerContext(ctx) => {
+                self.process_pointer_type_expr(&ctx.pointerTypeExpr().unwrap())
+            }
+
+            AtomicTypeExprContextAll::TypeExprParenContext(ctx) => {
+                self.process_type_expr(ctx.inner.as_ref().unwrap())
+            }
+
+            AtomicTypeExprContextAll::Error(_) => unreachable!(),
+        }
+    }
+
+    fn process_type_expr(&mut self, ctx: &TypeExprContextAll<'_>) -> Result<TyExprId> {
+        match ctx {
+            TypeExprContextAll::TypeExprAtomicContext(ctx) => {
+                self.process_atomic_type_expr(ctx.atomicTypeExpr().as_ref().unwrap())
+            }
+
+            TypeExprContextAll::TypeExprIntersectionContext(ctx) => {
+                self.process_type_expr_intersection(ctx)
+            }
+
+            TypeExprContextAll::TypeExprUnionContext(ctx) => self.process_type_expr_union(ctx),
+
+            TypeExprContextAll::Error(_) => unreachable!(),
+        }
+    }
+
+    fn process_type_expr_primitive_lit(
+        &mut self,
+        ctx: &TypeExprPrimitiveLitContext<'_>,
+    ) -> Result<TyExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let lit = self.process_primitive_lit(ctx.lit.as_ref().unwrap())?;
+
+        Ok(self.libsl.ty_exprs.insert_with_key(|id| ast::TyExpr {
+            id,
+            loc,
+            kind: ast::TyExprPrimitiveLit { lit }.into(),
+        }))
+    }
+
+    fn process_name_type_expr(&mut self, ctx: &NameTypeExprContextAll<'_>) -> Result<TyExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let ty_name = self.process_full_name(ctx.typeName.as_ref().unwrap());
+
+        let generics = ctx
+            .typeArgs
+            .as_ref()
+            .map(|ctx| self.process_type_arg_spec(ctx))
+            .transpose()?;
+
+        Ok(self.libsl.ty_exprs.insert_with_key(|id| ast::TyExpr {
+            id,
+            loc,
+            kind: ast::TyExprName { ty_name, generics }.into(),
+        }))
+    }
+
+    fn process_pointer_type_expr(
+        &mut self,
+        ctx: &PointerTypeExprContextAll<'_>,
+    ) -> Result<TyExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let base = self.process_atomic_type_expr(ctx.base.as_ref().unwrap())?;
+
+        Ok(self.libsl.ty_exprs.insert_with_key(|id| ast::TyExpr {
+            id,
+            loc,
+            kind: ast::TyExprPointer { base }.into(),
+        }))
+    }
+
+    fn process_type_expr_intersection(
+        &mut self,
+        ctx: &TypeExprIntersectionContext<'_>,
+    ) -> Result<TyExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let lhs = self.process_type_expr(ctx.lhs.as_ref().unwrap())?;
+        let rhs = self.process_type_expr(ctx.rhs.as_ref().unwrap())?;
+
+        Ok(self.libsl.ty_exprs.insert_with_key(|id| ast::TyExpr {
+            id,
+            loc,
+            kind: ast::TyExprIntersection { lhs, rhs }.into(),
+        }))
+    }
+
+    fn process_type_expr_union(&mut self, ctx: &TypeExprUnionContext<'_>) -> Result<TyExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let lhs = self.process_type_expr(ctx.lhs.as_ref().unwrap())?;
+        let rhs = self.process_type_expr(ctx.rhs.as_ref().unwrap())?;
+
+        Ok(self.libsl.ty_exprs.insert_with_key(|id| ast::TyExpr {
+            id,
+            loc,
+            kind: ast::TyExprUnion { lhs, rhs }.into(),
+        }))
+    }
+
+    fn process_type_arg_spec(
+        &mut self,
+        ctx: &TypeArgSpecContextAll<'_>,
+    ) -> Result<Vec<ast::TyArg>> {
+        Ok(ctx
+            .list
+            .as_ref()
+            .map(|ctx| {
+                ctx.typeArgs
+                    .iter()
+                    .map(|ctx| self.process_type_arg(ctx))
+                    .collect()
+            })
+            .transpose()?
+            .unwrap_or_default())
+    }
+
+    fn process_type_arg(&mut self, ctx: &TypeArgContextAll<'_>) -> Result<ast::TyArg> {
+        Ok(match ctx {
+            TypeArgContextAll::TypeArgTypeExprContext(ctx) => {
+                let variance = ctx
+                    .variance
+                    .as_ref()
+                    .map(|ctx| self.process_variance_spec(ctx));
+
+                ast::TyArg::TyExpr(variance, self.process_type_expr(&ctx.typeExpr().unwrap())?)
+            }
+
+            TypeArgContextAll::TypeArgWildcardContext(ctx) => {
+                ast::TyArg::Wildcard(self.get_loc(&ctx.start(), &ctx.stop()))
+            }
+
+            TypeArgContextAll::Error(_) => unreachable!(),
+        })
+    }
+
+    fn process_block(&mut self, ctx: &BlockContextAll<'_>) -> Result<Vec<StmtId>> {
+        Ok(match ctx {
+            BlockContextAll::BlockLoneStmtContext(ctx) => {
+                vec![self.process_stmt(&ctx.stmt().unwrap())?]
+            }
+
+            BlockContextAll::BlockBracedContext(ctx) => ctx
+                .stmts
+                .iter()
+                .map(|ctx| self.process_stmt(ctx))
+                .collect::<Result<_>>()?,
+
+            BlockContextAll::Error(_) => unreachable!(),
+        })
+    }
+
+    fn process_stmt(&mut self, ctx: &StmtContextAll<'_>) -> Result<StmtId> {
+        match ctx {
+            StmtContextAll::StmtVariableDeclContext(ctx) => self.process_stmt_variable_decl(ctx),
+
+            StmtContextAll::StmtIfContext(ctx) => self.process_if_stmt(&ctx.ifStmt().unwrap()),
+
+            StmtContextAll::StmtAssignContext(ctx) => {
+                self.process_assign_stmt(&ctx.assignStmt().unwrap())
+            }
+
+            StmtContextAll::StmtCancelContext(ctx) => {
+                self.process_cancel_stmt(&ctx.cancelStmt().unwrap())
+            }
+
+            StmtContextAll::StmtExprContext(ctx) => self.process_stmt_expr(ctx),
+
+            StmtContextAll::Error(_) => unreachable!(),
+        }
+    }
+
+    fn process_stmt_variable_decl(&mut self, ctx: &StmtVariableDeclContext<'_>) -> Result<StmtId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let decl_id = self.process_variable_decl(&ctx.variableDecl().unwrap())?;
 
         Ok(self.libsl.stmts.insert_with_key(|id| ast::Stmt {
             id,
             loc,
-            kind: decl.into(),
+            kind: decl_id.into(),
         }))
     }
 
-    fn process_stmt_if(&mut self, ctx: &IfStatementContextAll<'_>) -> Result<StmtId> {
-        let cond = self.process_expr(&ctx.expression().unwrap())?;
-
-        let then_branch = ctx
-            .functionBodyStatement_all()
-            .into_iter()
-            .map(|s| self.process_stmt(&s))
-            .collect::<Result<Vec<_>>>()?;
+    fn process_if_stmt(&mut self, ctx: &IfStmtContextAll<'_>) -> Result<StmtId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let cond = self.process_expr(ctx.condition.as_ref().unwrap())?;
+        let then_branch = self.process_block(ctx.thenBranch.as_ref().unwrap())?;
 
         let else_branch = ctx
-            .elseStatement()
-            .into_iter()
-            .flat_map(|e| e.functionBodyStatement_all())
-            .map(|s| self.process_stmt(&s))
-            .collect::<Result<Vec<_>>>()?;
-
-        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+            .elseBranch
+            .as_ref()
+            .map(|ctx| self.process_block(ctx))
+            .transpose()?
+            .unwrap_or_default();
 
         Ok(self.libsl.stmts.insert_with_key(|id| ast::Stmt {
             id,
@@ -1351,29 +1964,26 @@ impl<'a> AstConstructor<'a> {
         }))
     }
 
-    fn process_stmt_assign(&mut self, ctx: &VariableAssignmentContextAll<'_>) -> Result<StmtId> {
-        let lhs = self
-            .process_qualified_access(&ctx.qualifiedAccess().unwrap())?
-            .to_qualified_access(self.libsl)?;
+    fn process_assign_stmt(&mut self, ctx: &AssignStmtContextAll<'_>) -> Result<StmtId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let lhs = self.process_assignee(ctx.lhs.as_ref().unwrap())?;
 
-        let op = ctx.op.as_ref().unwrap();
-        let in_place_op = match op.token_type {
-            grammar::parser::ASSIGN_OP => None,
-            grammar::parser::PLUS_EQ => Some(ast::InPlaceOp::Add),
-            grammar::parser::MINUS_EQ => Some(ast::InPlaceOp::Sub),
-            grammar::parser::ASTERISK_EQ => Some(ast::InPlaceOp::Mul),
-            grammar::parser::SLASH_EQ => Some(ast::InPlaceOp::Div),
-            grammar::parser::PERCENT_EQ => Some(ast::InPlaceOp::Mod),
-            grammar::parser::AMPERSAND_EQ => Some(ast::InPlaceOp::BitAnd),
-            grammar::parser::OR_EQ => Some(ast::InPlaceOp::BitOr),
-            grammar::parser::XOR_EQ => Some(ast::InPlaceOp::BitXor),
-            grammar::parser::R_SHIFT_EQ => Some(ast::InPlaceOp::Sar),
-            grammar::parser::L_SHIFT_EQ => Some(ast::InPlaceOp::Sal),
-            _ => panic!("unrecognized assignment operator: `{}`", op.text),
+        let in_place_op = match &**ctx.op.as_ref().unwrap() {
+            AssignOpContextAll::OpAssignContext(_) => None,
+            AssignOpContextAll::OpAddAssignContext(_) => Some(ast::InPlaceOp::Add),
+            AssignOpContextAll::OpSubAssignContext(_) => Some(ast::InPlaceOp::Sub),
+            AssignOpContextAll::OpMulAssignContext(_) => Some(ast::InPlaceOp::Mul),
+            AssignOpContextAll::OpDivAssignContext(_) => Some(ast::InPlaceOp::Div),
+            AssignOpContextAll::OpModAssignContext(_) => Some(ast::InPlaceOp::Mod),
+            AssignOpContextAll::OpBitAndAssignContext(_) => Some(ast::InPlaceOp::BitAnd),
+            AssignOpContextAll::OpBitOrAssignContext(_) => Some(ast::InPlaceOp::BitOr),
+            AssignOpContextAll::OpBitXorAssignContext(_) => Some(ast::InPlaceOp::BitXor),
+            AssignOpContextAll::OpLShiftAssignContext(_) => Some(ast::InPlaceOp::Sal),
+            AssignOpContextAll::OpRShiftAssignContext(_) => Some(ast::InPlaceOp::Sar),
+            AssignOpContextAll::Error(_) => unreachable!(),
         };
 
-        let rhs = self.process_expr(&ctx.assignmentRight().unwrap().expression().unwrap())?;
-        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let rhs = self.process_expr(ctx.rhs.as_ref().unwrap())?;
 
         Ok(self.libsl.stmts.insert_with_key(|id| ast::Stmt {
             id,
@@ -1387,101 +1997,105 @@ impl<'a> AstConstructor<'a> {
         }))
     }
 
-    fn process_stmt_expr(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<StmtId> {
-        let expr = self.process_expr(ctx)?;
+    fn process_assignee(&mut self, ctx: &AssigneeContextAll<'_>) -> Result<ExprId> {
+        match ctx {
+            AssigneeContextAll::AssigneeNameContext(ctx) => self.process_assignee_name(ctx),
+            AssigneeContextAll::AssigneeFieldContext(ctx) => self.process_assignee_field(ctx),
+            AssigneeContextAll::AssigneeIndexContext(ctx) => self.process_assignee_index(ctx),
+            AssigneeContextAll::Error(_) => unreachable!(),
+        }
+    }
+
+    fn process_assignee_name(&mut self, ctx: &AssigneeNameContext<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let name = self.process_name(ctx.name.as_ref().unwrap());
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprName { name }.into(),
+        }))
+    }
+
+    fn process_assignee_field(&mut self, ctx: &AssigneeFieldContext<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let base = self.process_expr(ctx.base.as_ref().unwrap())?;
+        let field = self.process_name(ctx.field.as_ref().unwrap());
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprField { base, field }.into(),
+        }))
+    }
+
+    fn process_assignee_index(&mut self, ctx: &AssigneeIndexContext<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let base = self.process_expr(ctx.base.as_ref().unwrap())?;
+        let index = self.process_expr(ctx.index.as_ref().unwrap())?;
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprIndex { base, index }.into(),
+        }))
+    }
+
+    fn process_cancel_stmt(&mut self, ctx: &CancelStmtContextAll<'_>) -> Result<StmtId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
         Ok(self.libsl.stmts.insert_with_key(|id| ast::Stmt {
             id,
             loc,
-            kind: expr.into(),
+            kind: ast::StmtCancel.into(),
         }))
     }
 
-    fn process_ty_expr(&mut self, ctx: &TypeExpressionContextAll<'_>) -> Result<TyExprId> {
-        if let Some(ty) = ctx.typeIdentifier() {
-            self.process_ty_identifier_as_ty_expr(&ty)
-        } else if ctx.AMPERSAND().is_some() {
-            let lhs = self.process_ty_expr(&ctx.typeExpression(0).unwrap())?;
-            let rhs = self.process_ty_expr(&ctx.typeExpression(1).unwrap())?;
-            let loc = self.get_loc(&ctx.start(), &ctx.stop());
-
-            Ok(self.libsl.ty_exprs.insert_with_key(|id| ast::TyExpr {
-                id,
-                loc,
-                kind: ast::TyExprIntersection { lhs, rhs }.into(),
-            }))
-        } else if ctx.BIT_OR().is_some() {
-            let lhs = self.process_ty_expr(&ctx.typeExpression(0).unwrap())?;
-            let rhs = self.process_ty_expr(&ctx.typeExpression(1).unwrap())?;
-            let loc = self.get_loc(&ctx.start(), &ctx.stop());
-
-            Ok(self.libsl.ty_exprs.insert_with_key(|id| ast::TyExpr {
-                id,
-                loc,
-                kind: ast::TyExprUnion { lhs, rhs }.into(),
-            }))
-        } else {
-            panic!("unrecognized typeExpression node: {ctx:?}");
-        }
-    }
-
-    fn process_expr(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ExprId> {
-        if let Some(expr) = ctx.expressionAtomic() {
-            self.process_expr_atomic(&expr)
-        } else if ctx.apostrophe.is_some() {
-            self.process_expr_prev(ctx)
-        } else if let Some(expr) = ctx.procUsage() {
-            self.process_expr_proc_call(&expr, QualifiedAccessBase::None)
-        } else if let Some(expr) = ctx.actionUsage() {
-            self.process_expr_action_call(&expr)
-        } else if let Some(expr) = ctx.callAutomatonConstructorWithNamedArgs() {
-            self.process_expr_instantiate(&expr)
-        } else if ctx.lbracket.is_some() {
-            self.process_expr(&ctx.expression(0).unwrap())
-        } else if let Some(expr) = ctx.hasAutomatonConcept() {
-            self.process_expr_has_concept(&expr)
-        } else if ctx.unaryOp.is_some() {
-            self.process_expr_unary(ctx)
-        } else if ctx
-            .typeOp
-            .as_ref()
-            .is_some_and(|token| token.token_type == grammar::parser::AS)
-        {
-            self.process_expr_cast(ctx)
-        } else if ctx.op.is_some() {
-            self.process_expr_binary(ctx)
-        } else if ctx.bitShiftOp().is_some() {
-            self.process_expr_shift(ctx)
-        } else if ctx
-            .typeOp
-            .as_ref()
-            .is_some_and(|token| token.token_type == grammar::parser::IS)
-        {
-            self.process_expr_ty_compare(ctx)
-        } else {
-            panic!("unrecognized expression node: {ctx:?}");
-        }
-    }
-
-    fn process_expr_atomic(&mut self, ctx: &ExpressionAtomicContextAll<'_>) -> Result<ExprId> {
-        if let Some(expr) = ctx.primitiveLiteral() {
-            self.process_expr_primitive_lit(&expr)
-        } else if let Some(expr) = ctx.arrayLiteral() {
-            self.process_expr_array_lit(&expr)
-        } else if let Some(expr) = ctx.qualifiedAccess() {
-            self.process_expr_qualified_access(&expr)
-        } else {
-            panic!("unrecognized expressionAtomic node: {ctx:?}");
-        }
-    }
-
-    fn process_expr_primitive_lit(
-        &mut self,
-        ctx: &PrimitiveLiteralContextAll<'_>,
-    ) -> Result<ExprId> {
-        let lit = self.process_primitive_lit(ctx)?;
+    fn process_stmt_expr(&mut self, ctx: &StmtExprContext<'_>) -> Result<StmtId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let expr_id = self.process_expr(ctx.inner.as_ref().unwrap())?;
+
+        Ok(self.libsl.stmts.insert_with_key(|id| ast::Stmt {
+            id,
+            loc,
+            kind: expr_id.into(),
+        }))
+    }
+
+    fn process_atomic_expr(&mut self, ctx: &AtomicExprContextAll<'_>) -> Result<ExprId> {
+        match ctx {
+            AtomicExprContextAll::AtomicExprParenContext(ctx) => {
+                self.process_atomic_expr(ctx.inner.as_ref().unwrap())
+            }
+
+            AtomicExprContextAll::AtomicExprPrimitiveLitContext(ctx) => {
+                self.process_atomic_expr_primitive_lit(ctx)
+            }
+
+            AtomicExprContextAll::AtomicExprSignedNumLitContext(ctx) => {
+                self.process_atomic_expr_signed_num_lit(ctx)
+            }
+
+            AtomicExprContextAll::AtomicExprArrayLitContext(ctx) => {
+                self.process_array_lit_expr(&ctx.arrayLitExpr().unwrap())
+            }
+
+            AtomicExprContextAll::AtomicExprSetLitContext(ctx) => {
+                self.process_set_lit_expr(&ctx.setLitExpr().unwrap())
+            }
+
+            AtomicExprContextAll::AtomicExprNameContext(ctx) => self.process_atomic_expr_name(ctx),
+
+            AtomicExprContextAll::Error(_) => unreachable!(),
+        }
+    }
+
+    fn process_atomic_expr_primitive_lit(
+        &mut self,
+        ctx: &AtomicExprPrimitiveLitContext<'_>,
+    ) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let lit = self.process_primitive_lit(ctx.lit.as_ref().unwrap())?;
 
         Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
             id,
@@ -1490,673 +2104,168 @@ impl<'a> AstConstructor<'a> {
         }))
     }
 
-    fn process_expr_array_lit(&mut self, ctx: &ArrayLiteralContextAll<'_>) -> Result<ExprId> {
-        let elems = ctx
-            .expressionsList()
-            .into_iter()
-            .flat_map(|e| e.expression_all())
-            .map(|e| self.process_expr(&e))
-            .collect::<Result<Vec<_>>>()?;
-
-        let loc = self.get_loc(&ctx.start(), &ctx.stop());
-
-        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
-            id,
-            loc,
-            kind: ast::ExprArrayLit { elems }.into(),
-        }))
-    }
-
-    fn process_expr_qualified_access(
+    fn process_atomic_expr_signed_num_lit(
         &mut self,
-        ctx: &QualifiedAccessContextAll<'_>,
+        ctx: &AtomicExprSignedNumLitContext<'_>,
     ) -> Result<ExprId> {
-        let access = match self.process_qualified_access(ctx)? {
-            ParsedQualifiedAccess::QualifiedAccess(access) => access,
-            ParsedQualifiedAccess::ProcCall(expr_id) => return Ok(expr_id),
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let ctx = ctx.signedNumLit().unwrap();
+
+        let lit = match &*ctx {
+            SignedNumLitContextAll::SignedNumLitIntContext(ctx) => {
+                let sign = self.process_sign(&ctx.sign().unwrap());
+
+                self.process_integer_lit(sign, &ctx.IntegerLit().unwrap())?
+                    .into()
+            }
+
+            SignedNumLitContextAll::SignedNumLitFloatContext(ctx) => {
+                let sign = self.process_sign(&ctx.sign().unwrap());
+
+                self.process_float_lit(sign, &ctx.FloatLit().unwrap())?
+                    .into()
+            }
+
+            SignedNumLitContextAll::Error(_) => unreachable!(),
         };
 
-        let loc = self.get_loc(&ctx.start(), &ctx.stop());
-
         Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
             id,
             loc,
-            kind: ast::ExprQualifiedAccess { access }.into(),
+            kind: ast::ExprPrimitiveLit { lit }.into(),
         }))
     }
 
-    fn process_expr_prev(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ExprId> {
-        let access = self
-            .process_qualified_access(&ctx.qualifiedAccess().unwrap())?
-            .to_qualified_access(self.libsl)?;
+    fn process_atomic_expr_name(&mut self, ctx: &AtomicExprNameContext<'_>) -> Result<ExprId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let name = self.process_name(ctx.name.as_ref().unwrap());
 
         Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
             id,
             loc,
-            kind: ast::ExprPrev { access }.into(),
+            kind: ast::ExprName { name }.into(),
         }))
     }
 
-    fn process_expr_proc_call(
-        &mut self,
-        ctx: &ProcUsageContextAll<'_>,
-        base: QualifiedAccessBase,
-    ) -> Result<ExprId> {
-        let callee = self
-            .process_qualified_access_chain(&ctx.qualifiedAccess().unwrap(), base)?
-            .to_qualified_access(self.libsl)?;
+    fn process_expr(&mut self, ctx: &ExprContextAll<'_>) -> Result<ExprId> {
+        match ctx {
+            ExprContextAll::ExprParenContext(ctx) => self.process_expr(ctx.inner.as_ref().unwrap()),
 
-        let generics = ctx
-            .generic()
-            .map(|g| self.process_ty_args(&g))
-            .transpose()?
-            .unwrap_or_default();
+            ExprContextAll::ExprPrimitiveLitContext(ctx) => self.process_expr_primitive_lit(ctx),
 
-        let args = ctx
-            .expressionsList()
-            .into_iter()
-            .flat_map(|e| e.expression_all())
-            .map(|e| self.process_expr(&e))
-            .collect::<Result<Vec<_>>>()?;
-
-        let loc = self.get_loc(&ctx.start(), &ctx.stop());
-
-        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
-            id,
-            loc,
-            kind: ast::ExprProcCall {
-                callee,
-                generics,
-                args,
+            ExprContextAll::ExprArrayLitContext(ctx) => {
+                self.process_array_lit_expr(&ctx.arrayLitExpr().unwrap())
             }
-            .into(),
-        }))
-    }
 
-    fn process_expr_action_call(&mut self, ctx: &ActionUsageContextAll<'_>) -> Result<ExprId> {
-        let name = self.process_identifier(&ctx.Identifier().unwrap())?;
-        let generics = ctx
-            .generic()
-            .map(|g| self.process_ty_args(&g))
-            .transpose()?
-            .unwrap_or_default();
-
-        let args = ctx
-            .expressionsList()
-            .into_iter()
-            .flat_map(|e| e.expression_all())
-            .map(|e| self.process_expr(&e))
-            .collect::<Result<Vec<_>>>()?;
-
-        let loc = self.get_loc(&ctx.start(), &ctx.stop());
-
-        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
-            id,
-            loc,
-            kind: ast::ExprActionCall {
-                name,
-                generics,
-                args,
+            ExprContextAll::ExprSetLitContext(ctx) => {
+                self.process_set_lit_expr(&ctx.setLitExpr().unwrap())
             }
-            .into(),
-        }))
-    }
 
-    fn process_expr_instantiate(
-        &mut self,
-        ctx: &CallAutomatonConstructorWithNamedArgsContextAll<'_>,
-    ) -> Result<ExprId> {
-        let name =
-            self.process_period_separated_full_name(&ctx.periodSeparatedFullName().unwrap())?;
-
-        let generics = ctx
-            .generic()
-            .map(|g| self.process_ty_args(&g))
-            .transpose()?
-            .unwrap_or_default();
-
-        let args = ctx
-            .namedArgs()
-            .into_iter()
-            .flat_map(|a| a.argPair_all())
-            .map(|a| {
-                Ok(if a.STATE().is_some() {
-                    ast::ConstructorArg::State(
-                        self.process_expr_atomic(&a.expressionAtomic().unwrap())?,
-                    )
-                } else if let Some(id) = a.Identifier() {
-                    ast::ConstructorArg::Var(
-                        self.process_identifier(&id)?,
-                        self.process_expr(&a.expression().unwrap())?,
-                    )
-                } else {
-                    panic!("unrecognized argPair node: {a:?}");
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        let loc = self.get_loc(&ctx.start(), &ctx.stop());
-
-        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
-            id,
-            loc,
-            kind: ast::ExprInstantiate {
-                name,
-                generics,
-                args,
+            ExprContextAll::ExprProcCallUnqualifiedContext(ctx) => {
+                self.process_expr_proc_call_unqualified(ctx)
             }
-            .into(),
-        }))
-    }
 
-    fn process_expr_has_concept(
-        &mut self,
-        ctx: &HasAutomatonConceptContextAll<'_>,
-    ) -> Result<ExprId> {
-        let scrutinee = self
-            .process_qualified_access(&ctx.qualifiedAccess().unwrap())?
-            .to_qualified_access(self.libsl)?;
-        let has = ctx.has.as_ref().unwrap();
+            ExprContextAll::ExprActionCallContext(ctx) => {
+                self.process_action_call_expr(&ctx.actionCallExpr().unwrap())
+            }
 
-        if !has.text.eq_ignore_ascii_case("has") {
-            return Err(ParseError::Syntax {
-                line: has.line,
-                column: has.column,
-                msg: format!("expected 'has', got '{}'", has.text),
-            });
+            ExprContextAll::ExprInstantiationContext(ctx) => {
+                self.process_instantiation_expr(&ctx.instantiationExpr().unwrap())
+            }
+
+            ExprContextAll::ExprNameContext(ctx) => self.process_expr_name(ctx),
+
+            ExprContextAll::ExprPrevContext(ctx) => self.process_expr_prev(ctx),
+
+            ExprContextAll::ExprProcCallQualifiedContext(ctx) => {
+                self.process_expr_proc_call_qualified(ctx)
+            }
+
+            ExprContextAll::ExprFieldContext(ctx) => self.process_expr_field(ctx),
+
+            ExprContextAll::ExprDerefContext(ctx) => self.process_expr_deref(ctx),
+
+            ExprContextAll::ExprIndexContext(ctx) => self.process_expr_index(ctx),
+
+            ExprContextAll::ExprUnaryContext(ctx) => self.process_expr_unary(ctx),
+
+            ExprContextAll::ExprHasConceptContext(ctx) => self.process_expr_has_concept(ctx),
+
+            ExprContextAll::ExprTypeComparisonContext(ctx) => {
+                self.process_expr_type_comparison(ctx)
+            }
+
+            ExprContextAll::ExprCastContext(ctx) => self.process_expr_cast(ctx),
+
+            ExprContextAll::ExprMultiplicativeContext(ctx) => self.process_expr_multiplicative(ctx),
+
+            ExprContextAll::ExprAdditiveContext(ctx) => self.process_expr_additive(ctx),
+
+            ExprContextAll::ExprShiftContext(ctx) => self.process_expr_shift(ctx),
+
+            ExprContextAll::ExprBitAndContext(ctx) => self.process_expr_bit_and(ctx),
+
+            ExprContextAll::ExprBitXorContext(ctx) => self.process_expr_bit_xor(ctx),
+
+            ExprContextAll::ExprBitOrContext(ctx) => self.process_expr_bit_or(ctx),
+
+            ExprContextAll::ExprRelationalContext(ctx) => self.process_expr_relational(ctx),
+
+            ExprContextAll::ExprAndContext(ctx) => self.process_expr_and(ctx),
+
+            ExprContextAll::ExprOrContext(ctx) => self.process_expr_or(ctx),
+
+            ExprContextAll::Error(_) => unreachable!(),
         }
-
-        let concept = self.process_identifier(&Terminal::new(ctx.name.clone().unwrap()))?;
-        let loc = self.get_loc(&ctx.start(), &ctx.stop());
-
-        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
-            id,
-            loc,
-            kind: ast::ExprHasConcept { scrutinee, concept }.into(),
-        }))
     }
 
-    fn process_expr_cast(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ExprId> {
-        let expr = self.process_expr(&ctx.expression(0).unwrap())?;
-        let ty_expr = self.process_ty_identifier_as_ty_expr(&ctx.typeIdentifier().unwrap())?;
+    fn process_expr_primitive_lit(&mut self, ctx: &ExprPrimitiveLitContext<'_>) -> Result<ExprId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let lit = self.process_primitive_lit(&ctx.primitiveLit().unwrap())?;
 
         Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
             id,
             loc,
-            kind: ast::ExprCast { expr, ty_expr }.into(),
-        }))
-    }
-
-    fn process_expr_ty_compare(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ExprId> {
-        let expr = self.process_expr(&ctx.expression(0).unwrap())?;
-        let ty_expr = self.process_ty_identifier_as_ty_expr(&ctx.typeIdentifier().unwrap())?;
-        let loc = self.get_loc(&ctx.start(), &ctx.stop());
-
-        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
-            id,
-            loc,
-            kind: ast::ExprTyCompare { expr, ty_expr }.into(),
-        }))
-    }
-
-    fn process_expr_unary(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ExprId> {
-        let op = ctx.unaryOp.as_ref().unwrap();
-
-        let op = match op.token_type {
-            grammar::parser::PLUS => ast::UnOp::Plus,
-            grammar::parser::MINUS => ast::UnOp::Neg,
-            grammar::parser::TILDE => ast::UnOp::BitNot,
-            grammar::parser::EXCLAMATION => ast::UnOp::Not,
-            _ => panic!("unrecognized unary operator: `{}`", op.text),
-        };
-
-        let expr = self.process_expr(&ctx.expression(0).unwrap())?;
-        let loc = self.get_loc(&ctx.start(), &ctx.stop());
-
-        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
-            id,
-            loc,
-            kind: ast::ExprUnary { op, expr }.into(),
-        }))
-    }
-
-    fn process_expr_shift(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ExprId> {
-        let op_ctx = ctx.bitShiftOp().unwrap();
-
-        let op = if op_ctx.lShift().is_some() {
-            ast::BinOp::Sal
-        } else if op_ctx.rShift().is_some() {
-            ast::BinOp::Sar
-        } else if op_ctx.uRShift().is_some() {
-            ast::BinOp::Shr
-        } else if op_ctx.uLShift().is_some() {
-            ast::BinOp::Shl
-        } else {
-            panic!("unrecognized bitShiftOp node: {op_ctx:?}");
-        };
-
-        let lhs = self.process_expr(&ctx.expression(0).unwrap())?;
-        let rhs = self.process_expr(&ctx.expression(1).unwrap())?;
-        let loc = self.get_loc(&ctx.start(), &ctx.stop());
-
-        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
-            id,
-            loc,
-            kind: ast::ExprBinary { lhs, op, rhs }.into(),
-        }))
-    }
-
-    fn process_expr_binary(&mut self, ctx: &ExpressionContextAll<'_>) -> Result<ExprId> {
-        let op_ctx = ctx.op.as_ref().unwrap();
-
-        let op = match op_ctx.token_type {
-            grammar::parser::ASTERISK => ast::BinOp::Mul,
-            grammar::parser::SLASH => ast::BinOp::Div,
-            grammar::parser::PERCENT => ast::BinOp::Mod,
-            grammar::parser::PLUS => ast::BinOp::Add,
-            grammar::parser::MINUS => ast::BinOp::Sub,
-            grammar::parser::L_ARROW => ast::BinOp::Lt,
-            grammar::parser::R_ARROW => ast::BinOp::Gt,
-            grammar::parser::L_ARROW_EQ => ast::BinOp::Le,
-            grammar::parser::R_ARROW_EQ => ast::BinOp::Ge,
-            grammar::parser::EQ => ast::BinOp::Eq,
-            grammar::parser::EXCLAMATION_EQ => ast::BinOp::Ne,
-            grammar::parser::BIT_OR => ast::BinOp::BitOr,
-            grammar::parser::XOR => ast::BinOp::BitXor,
-            grammar::parser::AMPERSAND => ast::BinOp::BitAnd,
-            grammar::parser::LOGIC_OR => ast::BinOp::Or,
-            grammar::parser::DOUBLE_AMPERSAND => ast::BinOp::And,
-            _ => panic!("unrecognized binary expression operator: `{}`", op_ctx.text),
-        };
-
-        let lhs = self.process_expr(&ctx.expression(0).unwrap())?;
-        let rhs = self.process_expr(&ctx.expression(1).unwrap())?;
-        let loc = self.get_loc(&ctx.start(), &ctx.stop());
-
-        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
-            id,
-            loc,
-            kind: ast::ExprBinary { lhs, op, rhs }.into(),
+            kind: ast::ExprPrimitiveLit { lit }.into(),
         }))
     }
 
     fn process_primitive_lit(
         &mut self,
-        ctx: &PrimitiveLiteralContextAll<'_>,
+        ctx: &PrimitiveLitContextAll<'_>,
     ) -> Result<ast::PrimitiveLit> {
-        if let Some(lit) = ctx.integerNumber() {
-            Ok(self.process_int_lit(&lit)?.into())
-        } else if let Some(lit) = ctx.floatNumber() {
-            Ok(self.process_float_lit(&lit)?.into())
-        } else if let Some(token) = ctx.DoubleQuotedString() {
-            Ok(ast::PrimitiveLit::String(parse_string_lit(&token.symbol)))
-        } else if let Some(token) = ctx.CHARACTER() {
-            let s = strip_surrounding(&token.symbol.text, '\'', '\'');
+        match ctx {
+            PrimitiveLitContextAll::PrimitiveLitIntContext(ctx) => self
+                .process_integer_lit(Sign::Plus, &ctx.IntegerLit().unwrap())
+                .map(Into::into),
 
-            let c = if let Some(escape) = s.strip_prefix('\\') {
-                parse_char_escape(escape)
-            } else {
-                s.chars().next().unwrap() as u32
-            };
+            PrimitiveLitContextAll::PrimitiveLitFloatContext(ctx) => self
+                .process_float_lit(Sign::Plus, &ctx.FloatLit().unwrap())
+                .map(Into::into),
 
-            Ok(ast::PrimitiveLit::Char(c))
-        } else if let Some(token) = &ctx.bool {
-            Ok(ast::PrimitiveLit::Bool(match token.token_type {
-                grammar::parser::TRUE => true,
-                grammar::parser::FALSE => false,
-                _ => panic!("unrecognized boolean literal: `{}`", token.text),
-            }))
-        } else if ctx.nullLiteral.is_some() {
-            Ok(ast::PrimitiveLit::Null)
-        } else {
-            panic!("unrecognized primitiveLiteral node: {ctx:?}");
-        }
-    }
+            PrimitiveLitContextAll::PrimitiveLitStringLitContext(ctx) => Ok(
+                ast::PrimitiveLit::String(parse_string_lit(&ctx.StringLit().unwrap().symbol)),
+            ),
 
-    fn process_qualified_access(
-        &mut self,
-        ctx: &QualifiedAccessContextAll<'_>,
-    ) -> Result<ParsedQualifiedAccess> {
-        self.process_qualified_access_chain(ctx, QualifiedAccessBase::None)
-    }
-
-    fn process_qualified_access_chain(
-        &mut self,
-        ctx: &QualifiedAccessContextAll<'_>,
-        mut base: QualifiedAccessBase,
-    ) -> Result<ParsedQualifiedAccess> {
-        if let Some(names) = ctx.periodSeparatedFullName() {
-            if let Some(token) = names.UNBOUNDED() {
-                return Err(ParseError::Syntax {
-                    line: token.symbol.line,
-                    column: token.symbol.column,
-                    msg: "unexpected token `?`".into(),
-                });
+            PrimitiveLitContextAll::PrimitiveLitCharContext(ctx) => {
+                Ok(self.process_char_lit(&ctx.CharacterLit().unwrap()))
             }
 
-            for id in names.Identifier_all() {
-                let name = self.process_identifier(&id)?;
+            PrimitiveLitContextAll::PrimitiveLitTrueContext(_) => Ok(ast::PrimitiveLit::Bool(true)),
 
-                base = QualifiedAccessBase::QualifiedAccess(match base {
-                    QualifiedAccessBase::None => {
-                        self.libsl
-                            .qualified_accesses
-                            .insert_with_key(|id| ast::QualifiedAccess {
-                                id,
-                                loc: name.loc.clone(),
-                                kind: ast::QualifiedAccessName { name }.into(),
-                            })
-                    }
-
-                    QualifiedAccessBase::Automaton {
-                        automaton,
-                        generics,
-                        arg,
-                    } => self
-                        .libsl
-                        .qualified_accesses
-                        .insert_with_key(|id| ast::QualifiedAccess {
-                            id,
-                            loc: automaton.loc.clone(),
-                            kind: ast::QualifiedAccessAutomatonVar {
-                                automaton,
-                                generics,
-                                arg,
-                                field: name,
-                            }
-                            .into(),
-                        }),
-
-                    QualifiedAccessBase::QualifiedAccess(base) => self
-                        .libsl
-                        .qualified_accesses
-                        .insert_with_key(|id| ast::QualifiedAccess {
-                            id,
-                            loc: name.loc.clone(),
-                            kind: ast::QualifiedAccessField { base, field: name }.into(),
-                        }),
-                });
+            PrimitiveLitContextAll::PrimitiveLitFalseContext(_) => {
+                Ok(ast::PrimitiveLit::Bool(false))
             }
 
-            let QualifiedAccessBase::QualifiedAccess(access) = base else {
-                unreachable!();
-            };
+            PrimitiveLitContextAll::PrimitiveLitNullContext(_) => Ok(ast::PrimitiveLit::Null),
 
-            Ok(access.into())
-        } else if ctx.L_SQUARE_BRACKET().is_some() {
-            let base = self
-                .process_qualified_access_chain(&ctx.qualifiedAccess(0).unwrap(), base)?
-                .to_qualified_access(self.libsl)?;
-            let index = self.process_expr(&ctx.expression().unwrap())?;
-
-            let loc = self.get_loc(
-                &ctx.L_SQUARE_BRACKET().unwrap().symbol,
-                &ctx.R_SQUARE_BRACKET().unwrap().symbol,
-            );
-
-            let base = self
-                .libsl
-                .qualified_accesses
-                .insert_with_key(|id| ast::QualifiedAccess {
-                    id,
-                    loc,
-                    kind: ast::QualifiedAccessIndex { base, index }.into(),
-                });
-
-            if let Some(suffix) = ctx.qualifiedAccess(1) {
-                self.process_qualified_access_chain(
-                    &suffix,
-                    QualifiedAccessBase::QualifiedAccess(base),
-                )
-            } else {
-                Ok(base.into())
-            }
-        } else if let Some(simple_call) = ctx.simpleCall() {
-            match base {
-                QualifiedAccessBase::None => {}
-                QualifiedAccessBase::Automaton { .. } | QualifiedAccessBase::QualifiedAccess(_) => {
-                    return Err(ParseError::Syntax {
-                        line: simple_call.start().line,
-                        column: simple_call.start().column,
-                        msg: "unexpected call".into(),
-                    });
-                }
-            }
-
-            let automaton = self.process_identifier(&simple_call.Identifier().unwrap())?;
-
-            let generics = simple_call
-                .generic()
-                .map(|g| self.process_ty_args(&g))
-                .transpose()?
-                .unwrap_or_default();
-
-            let arg = self
-                .process_qualified_access(&simple_call.qualifiedAccess().unwrap())?
-                .to_qualified_access(self.libsl)?;
-
-            let base = QualifiedAccessBase::Automaton {
-                automaton,
-                generics,
-                arg,
-            };
-
-            if let Some(proc) = ctx.procUsage() {
-                self.process_expr_proc_call(&proc, base).map(Into::into)
-            } else {
-                self.process_qualified_access_chain(&ctx.qualifiedAccess(0).unwrap(), base)
-            }
-        } else {
-            panic!("unrecognized qualifiedAccess node: {ctx:?}");
+            PrimitiveLitContextAll::Error(_) => unreachable!(),
         }
     }
 
-    fn process_annotation_usage_list(
-        &mut self,
-        annotations: Vec<Rc<AnnotationUsageContextAll<'_>>>,
-    ) -> Result<Vec<ast::Annotation>> {
-        annotations
-            .into_iter()
-            .map(|a| self.process_annotation(&a))
-            .collect()
-    }
+    fn process_integer_lit(&mut self, sign: Sign, ctx: &Terminal<'_>) -> Result<ast::IntLit> {
+        debug_assert_eq!(ctx.symbol.token_type, grammar::parser::IntegerLit);
 
-    fn process_annotation(
-        &mut self,
-        ctx: &AnnotationUsageContextAll<'_>,
-    ) -> Result<ast::Annotation> {
-        let name = self.process_identifier(&ctx.Identifier().unwrap())?;
-
-        let args = ctx
-            .annotationArgs_all()
-            .into_iter()
-            .map(|a| {
-                let name = a
-                    .argName()
-                    .map(|n| self.process_identifier(&Terminal::new(n.name.clone().unwrap())))
-                    .transpose()?;
-                let expr = self.process_expr(&a.expression().unwrap())?;
-
-                Ok(ast::AnnotationArg { name, expr })
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        Ok(ast::Annotation { name, args })
-    }
-
-    fn process_ty_identifier_as_qualified_ty_name(
-        &mut self,
-        ctx: &TypeIdentifierContextAll<'_>,
-    ) -> Result<ast::QualifiedTyName> {
-        if let Some(token) = &ctx.asterisk {
-            return Err(ParseError::Syntax {
-                line: token.line,
-                column: token.column,
-                msg: "unexpected token `*`".into(),
-            });
-        }
-
-        let name_ctx = ctx.typeIdentifierName().unwrap();
-        let ty_name = if let Some(name_ctx) = name_ctx.periodSeparatedFullName() {
-            self.process_period_separated_full_name(&name_ctx)?
-        } else if let Some(lit_ctx) = name_ctx.primitiveLiteral() {
-            return Err(ParseError::Syntax {
-                line: lit_ctx.start().line,
-                column: lit_ctx.start().line,
-                msg: "unexpected primitive literal expression".into(),
-            });
-        } else {
-            panic!("unrecognized typeIdentifierName node: {name_ctx:?}");
-        };
-
-        let generics = ctx
-            .generic()
-            .map(|g| self.process_generics(&g))
-            .transpose()?
-            .unwrap_or_default();
-
-        Ok(ast::QualifiedTyName { ty_name, generics })
-    }
-
-    fn process_identifier_as_qualified_ty_name(
-        &mut self,
-        ctx: &Terminal<'_>,
-    ) -> Result<ast::QualifiedTyName> {
-        let ty_name = self.process_identifier(ctx)?;
-
-        Ok(ast::QualifiedTyName {
-            ty_name: ast::FullName {
-                components: vec![ty_name],
-            },
-            generics: vec![],
-        })
-    }
-
-    fn process_ty_identifier_as_ty_expr(
-        &mut self,
-        ctx: &TypeIdentifierContextAll<'_>,
-    ) -> Result<TyExprId> {
-        let name_ctx = ctx.typeIdentifierName().unwrap();
-
-        let ty_expr = if let Some(name_ctx) = name_ctx.periodSeparatedFullName() {
-            let ty_name = self.process_period_separated_full_name(&name_ctx)?;
-
-            let generics = ctx
-                .generic()
-                .map(|g| self.process_ty_args(&g))
-                .transpose()?
-                .unwrap_or_default();
-
-            let loc = self.get_loc(&name_ctx.start(), &ctx.stop());
-
-            self.libsl.ty_exprs.insert_with_key(|id| ast::TyExpr {
-                id,
-                loc,
-                kind: ast::TyExprName { ty_name, generics }.into(),
-            })
-        } else if let Some(lit_ctx) = name_ctx.primitiveLiteral() {
-            let lit = self.process_primitive_lit(&lit_ctx)?;
-
-            if let Some(g) = ctx.generic() {
-                return Err(ParseError::Syntax {
-                    line: g.start().line,
-                    column: g.start().column,
-                    msg: "a primitive literal type expression cannot have type parameters".into(),
-                });
-            }
-
-            let loc = self.get_loc(&name_ctx.start(), &lit_ctx.stop());
-
-            self.libsl.ty_exprs.insert_with_key(|id| ast::TyExpr {
-                id,
-                loc,
-                kind: ast::TyExprPrimitiveLit { lit }.into(),
-            })
-        } else {
-            panic!("unrecognized typeIdentifierName node: {name_ctx:?}");
-        };
-
-        if let Some(token) = &ctx.asterisk {
-            let loc = self.get_loc(token, &ctx.stop());
-
-            Ok(self.libsl.ty_exprs.insert_with_key(|id| ast::TyExpr {
-                id,
-                loc,
-                kind: ast::TyExprPointer { base: ty_expr }.into(),
-            }))
-        } else {
-            Ok(ty_expr)
-        }
-    }
-
-    fn process_period_separated_full_name(
-        &mut self,
-        ctx: &PeriodSeparatedFullNameContextAll<'_>,
-    ) -> Result<ast::FullName> {
-        if let Some(token) = &ctx.UNBOUNDED() {
-            return Err(ParseError::Syntax {
-                line: token.symbol.line,
-                column: token.symbol.column,
-                msg: "unexpected token `?`".into(),
-            });
-        }
-
-        let components = ctx
-            .Identifier_all()
-            .into_iter()
-            .map(|id| self.process_identifier(&id))
-            .collect::<Result<Vec<_>>>()?;
-
-        Ok(ast::FullName { components })
-    }
-
-    fn process_period_separated_full_name_as_qualified_ty_name(
-        &mut self,
-        ctx: &PeriodSeparatedFullNameContextAll<'_>,
-    ) -> Result<ast::QualifiedTyName> {
-        let ty_name = self.process_period_separated_full_name(ctx)?;
-
-        Ok(ast::QualifiedTyName {
-            ty_name,
-            generics: vec![],
-        })
-    }
-
-    fn process_period_separated_full_name_as_plain_name(
-        &mut self,
-        ctx: &PeriodSeparatedFullNameContextAll<'_>,
-    ) -> Result<ast::Name> {
-        if let Some(token) = &ctx.UNBOUNDED() {
-            return Err(ParseError::Syntax {
-                line: token.symbol.line,
-                column: token.symbol.column,
-                msg: "unexpected token `?`".into(),
-            });
-        }
-
-        if let Some(token) = ctx.DOT(0) {
-            return Err(ParseError::Syntax {
-                line: token.symbol.line,
-                column: token.symbol.column,
-                msg: "unexpected token `.`".into(),
-            });
-        }
-
-        let id = ctx.Identifier(0).unwrap();
-
-        self.process_identifier(&id)
-    }
-
-    fn process_identifier(&mut self, ctx: &Terminal<'_>) -> Result<ast::Name> {
-        Ok(ast::Name {
-            loc: self.get_loc(&ctx.symbol, &ctx.symbol),
-            name: parse_ident(&ctx.symbol),
-        })
-    }
-
-    fn process_int_lit(&mut self, ctx: &IntegerNumberContextAll<'_>) -> Result<ast::IntLit> {
         enum Suffix {
             Byte,
             UByte,
@@ -2168,8 +2277,7 @@ impl<'a> AstConstructor<'a> {
             ULong,
         }
 
-        let lit = ctx.IntegerLiteral().unwrap();
-        let s = &lit.symbol.text;
+        let s = &ctx.symbol.text;
 
         let (s, suffix) = if let Some(s) = s.strip_suffix("uL") {
             (s, Suffix::ULong)
@@ -2201,12 +2309,9 @@ impl<'a> AstConstructor<'a> {
             (s, Radix::Decimal)
         };
 
-        let s = if ctx.MINUS().is_some() {
-            format!("-{s}")
-        } else if ctx.PLUS().is_some() {
-            format!("+{s}")
-        } else {
-            s.into()
+        let s = match sign {
+            Sign::Plus => format!("+{s}"),
+            Sign::Minus => format!("-{s}"),
         };
 
         let n: Result<ast::IntLit, _> = match suffix {
@@ -2222,20 +2327,23 @@ impl<'a> AstConstructor<'a> {
 
         n.map_err(|inner| ParseError::Int {
             radix,
-            line: ctx.start().line,
-            column: ctx.start().column,
+            file_id: self.file_id,
+            line: parse_line(ctx.symbol.line),
+            col: parse_col(ctx.symbol.column),
+            len: ctx.symbol.text.len(),
             inner,
         })
     }
 
-    fn process_float_lit(&mut self, ctx: &FloatNumberContextAll<'_>) -> Result<ast::FloatLit> {
+    fn process_float_lit(&mut self, sign: Sign, ctx: &Terminal<'_>) -> Result<ast::FloatLit> {
+        debug_assert_eq!(ctx.symbol.token_type, grammar::parser::FloatLit);
+
         enum Suffix {
             Float,
             Double,
         }
 
-        let lit = ctx.FloatingPointLiteral().unwrap();
-        let s = &*lit.symbol.text;
+        let s = &*ctx.symbol.text;
 
         let (s, suffix) = if let Some(s) = s.strip_suffix(['f', 'F']) {
             (s, Suffix::Float)
@@ -2245,12 +2353,9 @@ impl<'a> AstConstructor<'a> {
             (s, Suffix::Double)
         };
 
-        let s = if ctx.MINUS().is_some() {
-            format!("-{s}")
-        } else if ctx.PLUS().is_some() {
-            format!("+{s}")
-        } else {
-            s.into()
+        let s = match sign {
+            Sign::Plus => format!("+{s}"),
+            Sign::Minus => format!("-{s}"),
         };
 
         Ok(match suffix {
@@ -2259,146 +2364,555 @@ impl<'a> AstConstructor<'a> {
         })
     }
 
-    fn process_name_with_ty(
-        &mut self,
-        ctx: &NameWithTypeContextAll<'_>,
-    ) -> Result<(ast::Name, TyExprId)> {
-        let name = self.process_identifier(&Terminal::new(ctx.name.clone().unwrap()))?;
-        let ty_expr = self.process_ty_expr(&ctx.typeExpression().unwrap())?;
+    fn process_char_lit(&mut self, ctx: &Terminal<'_>) -> ast::PrimitiveLit {
+        debug_assert_eq!(ctx.symbol.token_type, grammar::parser::CharacterLit);
 
-        Ok((name, ty_expr))
+        let s = strip_surrounding(&ctx.symbol.text, '\'', '\'');
+
+        let c = if let Some(escape) = s.strip_prefix('\\') {
+            parse_char_escape(escape)
+        } else {
+            s.chars().next().unwrap() as u32
+        };
+
+        ast::PrimitiveLit::Char(c)
     }
 
-    fn process_where_constraints(
-        &mut self,
-        ctx: &WhereConstraintsContextAll,
-    ) -> Result<Vec<ast::TyConstraint>> {
-        ctx.typeConstraint_all()
-            .into_iter()
-            .map(|c| {
-                let param =
-                    self.process_identifier(&Terminal::new(c.paramName.clone().unwrap()))?;
-                let (variance, bound) =
-                    self.process_ty_arg(c.paramConstraint.as_ref().unwrap(), true)?;
+    fn process_array_lit_expr(&mut self, ctx: &ArrayLitExprContextAll<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
-                Ok(ast::TyConstraint {
-                    param,
-                    variance,
-                    bound,
-                })
+        let elems = ctx
+            .elems
+            .as_ref()
+            .map(|ctx| {
+                ctx.exprs
+                    .iter()
+                    .map(|ctx| self.process_expr(ctx))
+                    .collect::<Result<_>>()
             })
-            .collect()
+            .transpose()?
+            .unwrap_or_default();
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprArrayLit { elems }.into(),
+        }))
     }
 
-    fn process_generics(&mut self, ctx: &GenericContextAll<'_>) -> Result<Vec<ast::Generic>> {
-        ctx.typeArgument_all()
-            .into_iter()
-            .map(|t| {
-                let (ty_ident, variance) = if let Some(i) = t.typeIdentifier() {
-                    (i, None)
-                } else if let Some(i) = t.typeIdentifierBounded() {
-                    let variance = self.process_generic_bound(&i.genericBound().unwrap())?;
+    fn process_set_lit_expr(&mut self, ctx: &SetLitExprContextAll<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
 
-                    (i.typeIdentifier().unwrap(), Some(variance))
-                } else {
-                    panic!("unrecognized typeArgument node: {t:?}");
-                };
-
-                if let Some(token) = &ty_ident.asterisk {
-                    return Err(ParseError::Syntax {
-                        line: token.line,
-                        column: token.column,
-                        msg: "unexpected token `*`".into(),
-                    });
-                }
-
-                if let Some(g) = ty_ident.generic() {
-                    return Err(ParseError::Syntax {
-                        line: g.start().line,
-                        column: g.start().column,
-                        msg: "a generic declaration cannot have type parameters".into(),
-                    });
-                }
-
-                let name_ctx = ty_ident.name.as_ref().unwrap();
-
-                let name = if let Some(name) = name_ctx.periodSeparatedFullName() {
-                    self.process_period_separated_full_name_as_plain_name(&name)?
-                } else if let Some(lit) = name_ctx.primitiveLiteral() {
-                    return Err(ParseError::Syntax {
-                        line: lit.start().line,
-                        column: lit.start().column,
-                        msg: "unexpected primitive literal expression".into(),
-                    });
-                } else {
-                    panic!("unrecognized typeIdentifierName node: {name_ctx:?}");
-                };
-
-                Ok(ast::Generic { variance, name })
+        let elems = ctx
+            .elems
+            .as_ref()
+            .map(|ctx| {
+                ctx.exprs
+                    .iter()
+                    .map(|ctx| self.process_expr(ctx))
+                    .collect::<Result<_>>()
             })
-            .collect()
+            .transpose()?
+            .unwrap_or_default();
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprSetLit { elems }.into(),
+        }))
     }
 
-    fn process_ty_args(&mut self, ctx: &GenericContextAll<'_>) -> Result<Vec<ast::TyArg>> {
-        ctx.typeArgument_all()
-            .into_iter()
-            .map(|a| Ok(self.process_ty_arg(&a, false)?.1))
-            .collect()
-    }
-
-    fn process_ty_arg(
+    fn process_expr_proc_call_unqualified(
         &mut self,
-        ctx: &TypeArgumentContextAll<'_>,
-        allow_variance: bool,
-    ) -> Result<(Option<ast::Variance>, ast::TyArg)> {
-        let mut variance = None;
+        ctx: &ExprProcCallUnqualifiedContext<'_>,
+    ) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let name = self.process_name(ctx.name.as_ref().unwrap());
 
-        let ty_ident = if let Some(i) = ctx.typeIdentifier() {
-            i
-        } else if let Some(i) = ctx.typeIdentifierBounded() {
-            if !allow_variance {
-                return Err(ParseError::Syntax {
-                    line: i.start().line,
-                    column: i.start().column,
-                    msg: "unexpected variance specifier".into(),
-                });
+        let generics = ctx
+            .typeArgs
+            .as_ref()
+            .map(|ctx| self.process_type_arg_spec(ctx))
+            .transpose()?;
+
+        let args = ctx
+            .args
+            .as_ref()
+            .map(|ctx| {
+                ctx.exprs
+                    .iter()
+                    .map(|ctx| self.process_expr(ctx))
+                    .collect::<Result<_>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprProcCall {
+                recv: None,
+                name,
+                generics,
+                args,
+            }
+            .into(),
+        }))
+    }
+
+    fn process_action_call_expr(&mut self, ctx: &ActionCallExprContextAll<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let name = self.process_name(ctx.name.as_ref().unwrap());
+
+        let generics = ctx
+            .typeArgs
+            .as_ref()
+            .map(|ctx| self.process_type_arg_spec(ctx))
+            .transpose()?;
+
+        let args = ctx
+            .args
+            .as_ref()
+            .map(|ctx| {
+                ctx.exprs
+                    .iter()
+                    .map(|ctx| self.process_expr(ctx))
+                    .collect::<Result<_>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprActionCall {
+                name,
+                generics,
+                args,
+            }
+            .into(),
+        }))
+    }
+
+    fn process_instantiation_expr(
+        &mut self,
+        ctx: &InstantiationExprContextAll<'_>,
+    ) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let name = self.process_full_name(ctx.name.as_ref().unwrap());
+
+        let generics = ctx
+            .typeArgs
+            .as_ref()
+            .map(|ctx| self.process_type_arg_spec(ctx))
+            .transpose()?;
+
+        let args = ctx
+            .args
+            .as_ref()
+            .map(|ctx| {
+                ctx.args
+                    .iter()
+                    .map(|ctx| self.process_constructor_arg(ctx))
+                    .collect::<Result<_>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprInstantiate {
+                name,
+                generics,
+                args,
+            }
+            .into(),
+        }))
+    }
+
+    fn process_constructor_arg(
+        &mut self,
+        ctx: &ConstructorArgContextAll<'_>,
+    ) -> Result<ast::ConstructorArg> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+
+        Ok(match ctx {
+            ConstructorArgContextAll::ConstructorArgStateContext(ctx) => {
+                let value = self.process_name(ctx.state.as_ref().unwrap());
+
+                ast::ConstructorArg::State(loc, value)
             }
 
-            variance = Some(self.process_generic_bound(&i.genericBound().unwrap())?);
+            ConstructorArgContextAll::ConstructorArgVarContext(ctx) => {
+                let name = self.process_name(ctx.name.as_ref().unwrap());
+                let value = self.process_expr(ctx.value.as_ref().unwrap())?;
 
-            i.typeIdentifier().unwrap()
-        } else {
-            panic!("unrecognized typeArgument node: {ctx:?}");
-        };
+                ast::ConstructorArg::Var(loc, name, value)
+            }
 
-        let ty_arg = if let Some(token) = ty_ident
-            .name
-            .as_ref()
-            .unwrap()
-            .periodSeparatedFullName()
-            .and_then(|name| name.UNBOUNDED())
-        {
-            Ok(ast::TyArg::Wildcard(
-                self.get_loc(&token.symbol, &token.symbol),
-            ))
-        } else {
-            self.process_ty_identifier_as_ty_expr(&ty_ident)
-                .map(ast::TyArg::TyExpr)
-        };
-
-        ty_arg.map(|t| (variance, t))
+            ConstructorArgContextAll::Error(_) => unreachable!(),
+        })
     }
 
-    fn process_generic_bound(&mut self, ctx: &GenericBoundContextAll<'_>) -> Result<ast::Variance> {
-        let variance = ctx.bound.as_ref().unwrap();
+    fn process_expr_name(&mut self, ctx: &ExprNameContext<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let name = self.process_name(ctx.name.as_ref().unwrap());
 
-        Ok(match variance.token_type {
-            grammar::parser::IN => ast::Variance::Contravariant,
-            grammar::parser::OUT => ast::Variance::Covariant,
-            _ => panic!(
-                "unrecognized token for `bound` field in rule `genericBound`: {}",
-                variance.text,
-            ),
-        })
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprName { name }.into(),
+        }))
+    }
+
+    fn process_expr_prev(&mut self, ctx: &ExprPrevContext<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let base = self.process_expr(ctx.base.as_ref().unwrap())?;
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprPrev { base }.into(),
+        }))
+    }
+
+    fn process_expr_proc_call_qualified(
+        &mut self,
+        ctx: &ExprProcCallQualifiedContext<'_>,
+    ) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let recv = self.process_expr(ctx.base.as_ref().unwrap())?;
+        let name = self.process_name(ctx.name.as_ref().unwrap());
+
+        let generics = ctx
+            .typeArgs
+            .as_ref()
+            .map(|ctx| self.process_type_arg_spec(ctx))
+            .transpose()?;
+
+        let args = ctx
+            .args
+            .as_ref()
+            .map(|ctx| {
+                ctx.exprs
+                    .iter()
+                    .map(|ctx| self.process_expr(ctx))
+                    .collect::<Result<_>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprProcCall {
+                recv: Some(recv),
+                name,
+                generics,
+                args,
+            }
+            .into(),
+        }))
+    }
+
+    fn process_expr_field(&mut self, ctx: &ExprFieldContext<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let base = self.process_expr(ctx.base.as_ref().unwrap())?;
+        let field = self.process_name(ctx.field.as_ref().unwrap());
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprField { base, field }.into(),
+        }))
+    }
+
+    fn process_expr_deref(&mut self, ctx: &ExprDerefContext<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let base = self.process_expr(ctx.base.as_ref().unwrap())?;
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprDeref { base }.into(),
+        }))
+    }
+
+    fn process_expr_index(&mut self, ctx: &ExprIndexContext<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let base = self.process_expr(ctx.base.as_ref().unwrap())?;
+        let index = self.process_expr(ctx.index.as_ref().unwrap())?;
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprIndex { base, index }.into(),
+        }))
+    }
+
+    fn process_expr_unary(&mut self, ctx: &ExprUnaryContext<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+
+        let (sign, op) = match &**ctx.op.as_ref().unwrap() {
+            UnOpContextAll::UnOpNegContext(_) => (Some(Sign::Minus), ast::UnOp::Neg),
+            UnOpContextAll::UnOpPlusContext(_) => (Some(Sign::Plus), ast::UnOp::Plus),
+            UnOpContextAll::UnOpBitNotContext(_) => (None, ast::UnOp::BitNot),
+            UnOpContextAll::UnOpNotContext(_) => (None, ast::UnOp::Not),
+            UnOpContextAll::Error(_) => unreachable!(),
+        };
+
+        'signed_lit: {
+            if let Some(sign) = sign
+                && let ExprContextAll::ExprPrimitiveLitContext(ctx) = &**ctx.rhs.as_ref().unwrap()
+            {
+                let lit = match &**ctx.lit.as_ref().unwrap() {
+                    PrimitiveLitContextAll::PrimitiveLitIntContext(ctx) => self
+                        .process_integer_lit(sign, &ctx.IntegerLit().unwrap())?
+                        .into(),
+
+                    PrimitiveLitContextAll::PrimitiveLitFloatContext(ctx) => self
+                        .process_float_lit(sign, &ctx.FloatLit().unwrap())?
+                        .into(),
+
+                    _ => break 'signed_lit,
+                };
+
+                return Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+                    id,
+                    loc,
+                    kind: ast::ExprPrimitiveLit { lit }.into(),
+                }));
+            }
+        }
+
+        let expr = self.process_expr(ctx.rhs.as_ref().unwrap())?;
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprUnary { op, expr }.into(),
+        }))
+    }
+
+    fn process_expr_has_concept(&mut self, ctx: &ExprHasConceptContext<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let scrutinee = self.process_expr(ctx.lhs.as_ref().unwrap())?;
+        let concept = self.process_name(ctx.concept.as_ref().unwrap());
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprHasConcept {
+                scrutinee,
+                negate: ctx.not.is_some(),
+                concept,
+            }
+            .into(),
+        }))
+    }
+
+    fn process_expr_type_comparison(
+        &mut self,
+        ctx: &ExprTypeComparisonContext<'_>,
+    ) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let expr = self.process_expr(ctx.lhs.as_ref().unwrap())?;
+        let ty_expr = self.process_type_expr(ctx.r#type.as_ref().unwrap())?;
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprTyCompare {
+                expr,
+                negate: ctx.not.is_some(),
+                ty_expr,
+            }
+            .into(),
+        }))
+    }
+
+    fn process_expr_cast(&mut self, ctx: &ExprCastContext<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let expr = self.process_expr(ctx.lhs.as_ref().unwrap())?;
+        let ty_expr = self.process_type_expr(ctx.r#type.as_ref().unwrap())?;
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprCast { expr, ty_expr }.into(),
+        }))
+    }
+
+    fn process_expr_multiplicative(
+        &mut self,
+        ctx: &ExprMultiplicativeContext<'_>,
+    ) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let lhs = self.process_expr(ctx.lhs.as_ref().unwrap())?;
+
+        let op = match &**ctx.op.as_ref().unwrap() {
+            MulBinOpContextAll::BinOpMulContext(_) => ast::BinOp::Mul,
+            MulBinOpContextAll::BinOpDivContext(_) => ast::BinOp::Div,
+            MulBinOpContextAll::BinOpModContext(_) => ast::BinOp::Mod,
+            MulBinOpContextAll::Error(_) => unreachable!(),
+        };
+
+        let rhs = self.process_expr(ctx.rhs.as_ref().unwrap())?;
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprBinary { lhs, op, rhs }.into(),
+        }))
+    }
+
+    fn process_expr_additive(&mut self, ctx: &ExprAdditiveContext<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let lhs = self.process_expr(ctx.lhs.as_ref().unwrap())?;
+
+        let op = match &**ctx.op.as_ref().unwrap() {
+            AddBinOpContextAll::BinOpAddContext(_) => ast::BinOp::Add,
+            AddBinOpContextAll::BinOpSubContext(_) => ast::BinOp::Sub,
+            AddBinOpContextAll::Error(_) => unreachable!(),
+        };
+
+        let rhs = self.process_expr(ctx.rhs.as_ref().unwrap())?;
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprBinary { lhs, op, rhs }.into(),
+        }))
+    }
+
+    fn process_expr_shift(&mut self, ctx: &ExprShiftContext<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let lhs = self.process_expr(ctx.lhs.as_ref().unwrap())?;
+
+        let op = match &**ctx.op.as_ref().unwrap() {
+            BitShiftOpContextAll::BinOpLogicalLeftContext(_) => ast::BinOp::Shl,
+            BitShiftOpContextAll::BinOpLogicalRightContext(_) => ast::BinOp::Shr,
+            BitShiftOpContextAll::BinOpArithmeticLeftContext(_) => ast::BinOp::Sal,
+            BitShiftOpContextAll::BinOpArithmeticRightContext(_) => ast::BinOp::Sar,
+            BitShiftOpContextAll::Error(_) => unreachable!(),
+        };
+
+        let rhs = self.process_expr(ctx.rhs.as_ref().unwrap())?;
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprBinary { lhs, op, rhs }.into(),
+        }))
+    }
+
+    fn process_expr_bit_and(&mut self, ctx: &ExprBitAndContext<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let lhs = self.process_expr(ctx.lhs.as_ref().unwrap())?;
+        let rhs = self.process_expr(ctx.rhs.as_ref().unwrap())?;
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprBinary {
+                lhs,
+                op: ast::BinOp::BitAnd,
+                rhs,
+            }
+            .into(),
+        }))
+    }
+
+    fn process_expr_bit_xor(&mut self, ctx: &ExprBitXorContext<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let lhs = self.process_expr(ctx.lhs.as_ref().unwrap())?;
+        let rhs = self.process_expr(ctx.rhs.as_ref().unwrap())?;
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprBinary {
+                lhs,
+                op: ast::BinOp::BitXor,
+                rhs,
+            }
+            .into(),
+        }))
+    }
+
+    fn process_expr_bit_or(&mut self, ctx: &ExprBitOrContext<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let lhs = self.process_expr(ctx.lhs.as_ref().unwrap())?;
+        let rhs = self.process_expr(ctx.rhs.as_ref().unwrap())?;
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprBinary {
+                lhs,
+                op: ast::BinOp::BitOr,
+                rhs,
+            }
+            .into(),
+        }))
+    }
+
+    fn process_expr_relational(&mut self, ctx: &ExprRelationalContext<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let lhs = self.process_expr(ctx.lhs.as_ref().unwrap())?;
+        let op = match &**ctx.op.as_ref().unwrap() {
+            RelOpContextAll::BinOpLessEqualsContext(_) => ast::BinOp::Le,
+            RelOpContextAll::BinOpGreaterEqualsContext(_) => ast::BinOp::Ge,
+            RelOpContextAll::BinOpLessContext(_) => ast::BinOp::Lt,
+            RelOpContextAll::BinOpGreaterContext(_) => ast::BinOp::Gt,
+            RelOpContextAll::BinOpEqualsContext(_) => ast::BinOp::Eq,
+            RelOpContextAll::BinOpNotEqualsContext(_) => ast::BinOp::Ne,
+            RelOpContextAll::BinOpInContext(ctx) if ctx.not.is_some() => ast::BinOp::NotIn,
+            RelOpContextAll::BinOpInContext(_) => ast::BinOp::In,
+            RelOpContextAll::Error(_) => unreachable!(),
+        };
+
+        let rhs = self.process_expr(ctx.rhs.as_ref().unwrap())?;
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprBinary { lhs, op, rhs }.into(),
+        }))
+    }
+
+    fn process_expr_and(&mut self, ctx: &ExprAndContext<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let lhs = self.process_expr(ctx.lhs.as_ref().unwrap())?;
+        let rhs = self.process_expr(ctx.rhs.as_ref().unwrap())?;
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprBinary {
+                lhs,
+                op: ast::BinOp::And,
+                rhs,
+            }
+            .into(),
+        }))
+    }
+
+    fn process_expr_or(&mut self, ctx: &ExprOrContext<'_>) -> Result<ExprId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let lhs = self.process_expr(ctx.lhs.as_ref().unwrap())?;
+        let rhs = self.process_expr(ctx.rhs.as_ref().unwrap())?;
+
+        Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
+            id,
+            loc,
+            kind: ast::ExprBinary {
+                lhs,
+                op: ast::BinOp::Or,
+                rhs,
+            }
+            .into(),
+        }))
     }
 }

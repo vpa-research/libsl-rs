@@ -38,6 +38,13 @@ Ok(File(
         annotations: [],
         ty_name: QualifiedTyName(
           ty_name: FullName(
+            loc: Span(
+              start: 71,
+              len: 5,
+              file: "tests/parser/test-data/semantic-tys.libsl",
+              line: Some(9),
+              col: Some(4),
+            ),
             components: [
               Name(
                 loc: Span(
@@ -63,6 +70,13 @@ Ok(File(
           ),
           kind: Name(TyExprName(
             ty_name: FullName(
+              loc: Span(
+                start: 78,
+                len: 5,
+                file: "tests/parser/test-data/semantic-tys.libsl",
+                line: Some(9),
+                col: Some(11),
+              ),
               components: [
                 Name(
                   loc: Span(
@@ -76,7 +90,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         kind: Simple,
@@ -94,6 +108,13 @@ Ok(File(
         annotations: [],
         ty_name: QualifiedTyName(
           ty_name: FullName(
+            loc: Span(
+              start: 92,
+              len: 9,
+              file: "tests/parser/test-data/semantic-tys.libsl",
+              line: Some(11),
+              col: Some(4),
+            ),
             components: [
               Name(
                 loc: Span(
@@ -119,6 +140,13 @@ Ok(File(
           ),
           kind: Name(TyExprName(
             ty_name: FullName(
+              loc: Span(
+                start: 103,
+                len: 5,
+                file: "tests/parser/test-data/semantic-tys.libsl",
+                line: Some(11),
+                col: Some(15),
+              ),
               components: [
                 Name(
                   loc: Span(
@@ -132,7 +160,7 @@ Ok(File(
                 ),
               ],
             ),
-            generics: [],
+            generics: None,
           )),
         ),
         kind: Enumerated([

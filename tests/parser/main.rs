@@ -20,7 +20,7 @@ fn test_snapshots() {
         let _guard = settings.bind_to_scope();
 
         let mut libsl = LibSl::new();
-        let ast = libsl.parse_file(
+        let result = libsl.parse_file(
             diff_paths(path, env!("CARGO_MANIFEST_DIR"))
                 .unwrap()
                 .display()
@@ -28,8 +28,8 @@ fn test_snapshots() {
             &contents,
         );
 
-        assert_ron_snapshot!(match &ast {
-            Ok(file) => Ok(file.with_libsl(&libsl)),
+        assert_ron_snapshot!(match result {
+            Ok(file_id) => Ok(libsl.file_by_id(file_id).with_libsl(&libsl)),
             Err(e) => Err(e.to_string()),
         });
     });

@@ -1,0 +1,5 @@
+libsl "2.0.0";
+
+library decl_proc_pure;
+
+pure proc pure() {}

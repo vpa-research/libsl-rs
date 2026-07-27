@@ -2,12 +2,14 @@
 //!
 //! The top-level struct is [`File`]; all other nodes are descendants of it.
 
+use libsl_derive::Walkable;
+
 use crate::loc::Loc;
-use crate::{DeclId, ExprId, QualifiedAccessId, StmtId, TyExprId, WithLibSl};
+use crate::{AnnotationId, DeclId, ExprId, PredId, StmtId, TyExprId, WithLibSl};
 
 /// A single LibSL file.
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct File {
     /// The file's location in the source text.
     pub loc: Loc,
@@ -83,7 +85,7 @@ pub struct Decl {
 impl WithLibSl for Decl {}
 
 /// An enumeration of all possible declaration kinds.
-#[derive(Debug, Default, Clone)]
+#[derive(Walkable, Debug, Default, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub enum DeclKind {
     /// A dummy declaration, the default value of `DeclKind`.
@@ -93,10 +95,10 @@ pub enum DeclKind {
     Dummy,
 
     /// An import declaration.
-    Import(DeclImport),
+    Import(#[no_walk] DeclImport),
 
     /// An include declaration.
-    Include(DeclInclude),
+    Include(#[no_walk] DeclInclude),
 
     /// A semantic type declared in a `types` section.
     SemanticTy(DeclSemanticTy),
@@ -126,7 +128,7 @@ pub enum DeclKind {
     Variable(DeclVariable),
 
     /// An automaton state declaration.
-    State(DeclState),
+    State(#[no_walk] DeclState),
 
     /// An automaton state transfer function declaration.
     Shift(DeclShift),
@@ -139,6 +141,136 @@ pub enum DeclKind {
 
     /// An automaton procedure declaration.
     Proc(DeclProc),
+}
+
+impl DeclKind {
+    /// Checks if this is an import declaration and returns it.
+    pub fn as_import(&self) -> Option<&DeclImport> {
+        match self {
+            Self::Import(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this is an include declaration and returns it.
+    pub fn as_include(&self) -> Option<&DeclInclude> {
+        match self {
+            Self::Include(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this is a semantic type declaration and returns it.
+    pub fn as_semantic_ty(&self) -> Option<&DeclSemanticTy> {
+        match self {
+            Self::SemanticTy(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this is a type alias declaration and returns it.
+    pub fn as_ty_alias(&self) -> Option<&DeclTyAlias> {
+        match self {
+            Self::TyAlias(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this is a struct declaration and returns it.
+    pub fn as_struct(&self) -> Option<&DeclStruct> {
+        match self {
+            Self::Struct(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this is an enum declaration and returns it.
+    pub fn as_enum(&self) -> Option<&DeclEnum> {
+        match self {
+            Self::Enum(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this is an annotation declaration and returns it.
+    pub fn as_annotation(&self) -> Option<&DeclAnnotation> {
+        match self {
+            Self::Annotation(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this is an action declaration and returns it.
+    pub fn as_action(&self) -> Option<&DeclAction> {
+        match self {
+            Self::Action(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this is an automaton declaration and returns it.
+    pub fn as_automaton(&self) -> Option<&DeclAutomaton> {
+        match self {
+            Self::Automaton(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this is a function declaration and returns it.
+    pub fn as_function(&self) -> Option<&DeclFunction> {
+        match self {
+            Self::Function(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this is a variable declaration and returns it.
+    pub fn as_variable(&self) -> Option<&DeclVariable> {
+        match self {
+            Self::Variable(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this is a state declaration and returns it.
+    pub fn as_state(&self) -> Option<&DeclState> {
+        match self {
+            Self::State(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this is a state transition declaration and returns it.
+    pub fn as_shift(&self) -> Option<&DeclShift> {
+        match self {
+            Self::Shift(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this a constructor declaration and returns it.
+    pub fn as_constructor(&self) -> Option<&DeclConstructor> {
+        match self {
+            Self::Constructor(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this is a destructor declaration and returns it.
+    pub fn as_destructor(&self) -> Option<&DeclDestructor> {
+        match self {
+            Self::Destructor(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Checks if this is a procedure declaration and returns it.
+    pub fn as_proc(&self) -> Option<&DeclProc> {
+        match self {
+            Self::Proc(d) => Some(d),
+            _ => None,
+        }
+    }
 }
 
 impl From<DeclImport> for DeclKind {
@@ -262,11 +394,11 @@ pub struct DeclInclude {
 impl WithLibSl for DeclInclude {}
 
 /// A semantic type declaration.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct DeclSemanticTy {
     /// A list of annotations for this declaration.
-    pub annotations: Vec<Annotation>,
+    pub annotations: Vec<AnnotationId>,
 
     /// The name of the semantic type.
     pub ty_name: QualifiedTyName,
@@ -281,7 +413,7 @@ pub struct DeclSemanticTy {
 impl WithLibSl for DeclSemanticTy {}
 
 /// An enumeration of possible semantic type kinds.
-#[derive(Debug, Default, Clone)]
+#[derive(Walkable, Debug, Default, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub enum SemanticTyKind {
     /// A simple semantic type.
@@ -295,10 +427,11 @@ pub enum SemanticTyKind {
 impl WithLibSl for SemanticTyKind {}
 
 /// A named value of an enumerated semantic type.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct SemanticTyEnumValue {
     /// The name of the semantic type's value.
+    #[no_walk]
     pub name: Name,
 
     /// The underlying value represented by this entry.
@@ -308,11 +441,11 @@ pub struct SemanticTyEnumValue {
 impl WithLibSl for SemanticTyEnumValue {}
 
 /// A type alias declaration.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct DeclTyAlias {
     /// A list of annotations for this declaration.
-    pub annotations: Vec<Annotation>,
+    pub annotations: Vec<AnnotationId>,
 
     /// The alias's name.
     pub ty_name: QualifiedTyName,
@@ -324,11 +457,11 @@ pub struct DeclTyAlias {
 impl WithLibSl for DeclTyAlias {}
 
 /// A structure type declaration.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct DeclStruct {
     /// A list of annotations for this declaration.
-    pub annotations: Vec<Annotation>,
+    pub annotations: Vec<AnnotationId>,
 
     /// The declared type's name.
     pub ty_name: QualifiedTyName,
@@ -342,23 +475,24 @@ pub struct DeclStruct {
     /// Type parameter constraints, specified in a `where`-clause.
     pub ty_constraints: Vec<TyConstraint>,
 
-    /// Entities (variables and functions) defined as members of this type.
+    /// Entities (variables, functions, and procedures) defined as members of this type.
     pub decls: Vec<DeclId>,
 }
 
 impl WithLibSl for DeclStruct {}
 
 /// An enum type declaration.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct DeclEnum {
     /// A list of annotations for this declaration.
-    pub annotations: Vec<Annotation>,
+    pub annotations: Vec<AnnotationId>,
 
     /// The declared type's name.
     pub ty_name: QualifiedTyName,
 
-    /// Possibles values of the type.
+    /// Possible values of the type.
+    #[no_walk]
     pub variants: Vec<EnumVariant>,
 }
 
@@ -374,15 +508,19 @@ pub struct EnumVariant {
     /// The value of the variant.
     #[cfg_attr(feature = "serde", no_wrap)]
     pub value: IntLit,
+
+    /// The [`Loc`] associated with the value expression.
+    pub value_loc: Loc,
 }
 
 impl WithLibSl for EnumVariant {}
 
 /// An annotation declaration.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct DeclAnnotation {
     /// The name of the annotation.
+    #[no_walk]
     pub name: Name,
 
     /// A list of parameters declared for this annotation.
@@ -392,10 +530,11 @@ pub struct DeclAnnotation {
 impl WithLibSl for DeclAnnotation {}
 
 /// An annotation parameter.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct AnnotationParam {
     /// The name of the parameter.
+    #[no_walk]
     pub name: Name,
 
     /// The type of the parameter.
@@ -408,17 +547,19 @@ pub struct AnnotationParam {
 impl WithLibSl for AnnotationParam {}
 
 /// An action declaration.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct DeclAction {
     /// A list of annotations for this declaration.
-    pub annotations: Vec<Annotation>,
-
-    /// A list of type parameter (generic) declarations.
-    pub generics: Vec<Generic>,
+    pub annotations: Vec<AnnotationId>,
 
     /// The name of the action.
+    #[no_walk]
     pub name: Name,
+
+    /// A list of type parameter (generic) declarations.
+    #[no_walk]
+    pub generics: Vec<Generic>,
 
     /// A list of parameters declared for this action.
     pub params: Vec<ActionParam>,
@@ -433,13 +574,14 @@ pub struct DeclAction {
 impl WithLibSl for DeclAction {}
 
 /// An action parameter.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct ActionParam {
     /// A list of annotations for this parameter declaration.
-    pub annotations: Vec<Annotation>,
+    pub annotations: Vec<AnnotationId>,
 
     /// The name of the parameter.
+    #[no_walk]
     pub name: Name,
 
     /// The type of the parameter.
@@ -449,14 +591,15 @@ pub struct ActionParam {
 impl WithLibSl for ActionParam {}
 
 /// An automaton declaration.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct DeclAutomaton {
     /// A list of annotations for this declaration.
-    pub annotations: Vec<Annotation>,
+    pub annotations: Vec<AnnotationId>,
 
     /// Whether this is an automaton concept declaration.
     #[cfg_attr(feature = "serde", no_wrap)]
+    #[no_walk]
     pub is_concept: bool,
 
     /// The name of the automaton, possibly qualified with type parameter (generic) declarations.
@@ -465,40 +608,49 @@ pub struct DeclAutomaton {
     /// Automaton constructor variable declarations.
     pub constructor_variables: Vec<DeclId>,
 
-    /// The type modelled by this automaton.
+    /// The type modeled by this automaton.
     pub ty_expr: TyExprId,
 
     /// A list of concepts implemented by this automaton.
+    #[no_walk]
     pub implemented_concepts: Vec<Name>,
 
-    /// Entities defines as members of this automaton.
+    /// Type parameter constraints, specified in a `where`-clause.
+    pub ty_constraints: Vec<TyConstraint>,
+
+    /// Entities defined as members of this automaton.
     pub decls: Vec<DeclId>,
 }
 
 impl WithLibSl for DeclAutomaton {}
 
 /// A function declaration.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct DeclFunction {
     /// A list of annotations for this declaration.
-    pub annotations: Vec<Annotation>,
+    pub annotations: Vec<AnnotationId>,
 
     /// Whether the function has a `static` modifier.
     #[cfg_attr(feature = "serde", no_wrap)]
+    #[no_walk]
     pub is_static: bool,
 
     /// If present, signifies an extension function for an automaton with the specified name.
+    #[no_walk]
     pub extension_for: Option<FullName>,
 
     /// Whether the function is a method (uses `*.` in its name).
     #[cfg_attr(feature = "serde", no_wrap)]
+    #[no_walk]
     pub is_method: bool,
 
     /// The function's name.
+    #[no_walk]
     pub name: Name,
 
     /// A list of type parameter (generic) declarations.
+    #[no_walk]
     pub generics: Vec<Generic>,
 
     /// A list of the function's parameters.
@@ -524,21 +676,23 @@ impl WithLibSl for DeclFunction {}
 /// - an automaton constructor variable
 /// - a type's member variable
 /// - or a local variable
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct DeclVariable {
-    /// A list of annotations for this declarations.
-    pub annotations: Vec<Annotation>,
+    /// A list of annotations for this declaration.
+    pub annotations: Vec<AnnotationId>,
 
     /// The kind of variable: `var` or `val`.
     #[cfg_attr(feature = "serde", no_wrap)]
+    #[no_walk]
     pub kind: VariableKind,
 
     /// The name of the variable.
+    #[no_walk]
     pub name: Name,
 
     /// The type of the variable.
-    pub ty_expr: TyExprId,
+    pub ty_expr: Option<TyExprId>,
 
     /// An optional variable initializer expression.
     pub init: Option<ExprId>,
@@ -603,12 +757,14 @@ impl WithLibSl for StateKind {}
 
 /// An automaton state transfer function declaration.
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 pub struct DeclShift {
     /// A list of previous states covered by this declaration.
+    #[no_walk]
     pub from: Vec<Name>,
 
     /// A target state for this declaration.
+    #[no_walk]
     pub to: Name,
 
     /// A list of functions that trigger this transition.
@@ -618,10 +774,11 @@ pub struct DeclShift {
 impl WithLibSl for DeclShift {}
 
 /// A function name or its specific overload.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct QualifiedFunctionName {
     /// The name of the function.
+    #[no_walk]
     pub name: Name,
 
     /// Optional parameter type qualification to disambiguate overloads.
@@ -631,18 +788,24 @@ pub struct QualifiedFunctionName {
 impl WithLibSl for QualifiedFunctionName {}
 
 /// An automaton constructor declaration.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct DeclConstructor {
     /// A list of annotations for this declaration.
-    pub annotations: Vec<Annotation>,
+    pub annotations: Vec<AnnotationId>,
 
     /// Whether the constructor is a method (uses `*.` in its name).
     #[cfg_attr(feature = "serde", no_wrap)]
+    #[no_walk]
     pub is_method: bool,
 
     /// The constructor's name.
+    #[no_walk]
     pub name: Option<Name>,
+
+    /// The location of the `constructor` keyword (to refer succinctly to if `name` is `None`).
+    #[no_walk]
+    pub kw_loc: Loc,
 
     /// A list of the constructor's parameters.
     pub params: Vec<FunctionParam>,
@@ -657,18 +820,24 @@ pub struct DeclConstructor {
 impl WithLibSl for DeclConstructor {}
 
 /// An automaton destructor declaration.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct DeclDestructor {
     /// A list of annotations for this declaration.
-    pub annotations: Vec<Annotation>,
+    pub annotations: Vec<AnnotationId>,
 
     /// Whether the destructor is a method (uses `*.` in its name).
     #[cfg_attr(feature = "serde", no_wrap)]
+    #[no_walk]
     pub is_method: bool,
 
     /// The destructor's name.
+    #[no_walk]
     pub name: Option<Name>,
+
+    /// The location of the `destructor` keyword (to refer succinctly to if `name` is `None`).
+    #[no_walk]
+    pub kw_loc: Loc,
 
     /// A list of the destructor's parameters.
     pub params: Vec<FunctionParam>,
@@ -683,20 +852,28 @@ pub struct DeclDestructor {
 impl WithLibSl for DeclDestructor {}
 
 /// An automaton procedure declaration.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct DeclProc {
     /// A list of annotations for this declaration.
-    pub annotations: Vec<Annotation>,
+    pub annotations: Vec<AnnotationId>,
 
-    /// Whether the procedure has a `static` modifier.
+    /// Whether the procedure is marked as `pure`.
     #[cfg_attr(feature = "serde", no_wrap)]
+    #[no_walk]
+    pub is_pure: bool,
+
+    /// Whether the procedure is a method (uses `*.` in its name).
+    #[cfg_attr(feature = "serde", no_wrap)]
+    #[no_walk]
     pub is_method: bool,
 
     /// The procedure's name.
+    #[no_walk]
     pub name: Name,
 
     /// A list of type parameter (generic) declarations.
+    #[no_walk]
     pub generics: Vec<Generic>,
 
     /// A list of the procedure's parameters.
@@ -715,13 +892,14 @@ pub struct DeclProc {
 impl WithLibSl for DeclProc {}
 
 /// A function parameter declaration.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct FunctionParam {
     /// A list of annotations for this parameter declaration.
-    pub annotations: Vec<Annotation>,
+    pub annotations: Vec<AnnotationId>,
 
     /// The name of the parameter.
+    #[no_walk]
     pub name: Name,
 
     /// The type of the parameter.
@@ -731,7 +909,7 @@ pub struct FunctionParam {
 impl WithLibSl for FunctionParam {}
 
 /// The body of a function.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct FunctionBody {
     /// The function's contract specifications.
@@ -744,7 +922,7 @@ pub struct FunctionBody {
 impl WithLibSl for FunctionBody {}
 
 /// A function contract specification.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub enum Contract {
     /// A precondition specification.
@@ -778,36 +956,31 @@ impl From<ContractAssigns> for Contract {
 impl WithLibSl for Contract {}
 
 /// A precondition specification.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct ContractRequires {
-    /// The contract's name.
-    pub name: Option<Name>,
-
-    /// The contract expression.
-    pub expr: ExprId,
+    /// The contract predicate.
+    pub pred: PredId,
 }
 
 impl WithLibSl for ContractRequires {}
 
 /// A postcondition specification.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct ContractEnsures {
-    /// The contract's name.
-    pub name: Option<Name>,
-
-    /// The contract expression.
-    pub expr: ExprId,
+    /// The contract predicate.
+    pub pred: PredId,
 }
 
 impl WithLibSl for ContractEnsures {}
 
 /// A write set specification.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct ContractAssigns {
     /// The contract's name.
+    #[no_walk]
     pub name: Option<Name>,
 
     /// The contract expression.
@@ -817,9 +990,14 @@ pub struct ContractAssigns {
 impl WithLibSl for ContractAssigns {}
 
 /// An annotation use.
-#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 #[derive(Debug, Clone)]
 pub struct Annotation {
+    /// The identifier of this annotation.
+    pub id: AnnotationId,
+
+    /// The annotation use's location in the source text.
+    pub loc: Loc,
+
     /// The name of the annotation.
     pub name: Name,
 
@@ -830,10 +1008,11 @@ pub struct Annotation {
 impl WithLibSl for Annotation {}
 
 /// An annotation argument supplied at the point of an annotation's use.
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-#[derive(Debug, Clone)]
 pub struct AnnotationArg {
     /// The name of the parameter.
+    #[no_walk]
     pub name: Option<Name>,
 
     /// The argument expression.
@@ -843,22 +1022,27 @@ pub struct AnnotationArg {
 impl WithLibSl for AnnotationArg {}
 
 /// A type name qualified with type parameter declarations.
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-#[derive(Debug, Clone)]
 pub struct QualifiedTyName {
     /// The name of the type.
+    #[no_walk]
     pub ty_name: FullName,
 
     /// A list of type parameter (generic) declarations.
+    #[no_walk]
     pub generics: Vec<Generic>,
 }
 
 impl WithLibSl for QualifiedTyName {}
 
 /// A full name to an entity, consisting of several components separated with a period.
-#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct FullName {
+    /// The name's location in the source text.
+    pub loc: Loc,
+
     /// A list of the name's components.
     ///
     /// Each component is a single identifier in the period-separated sequence.
@@ -868,8 +1052,8 @@ pub struct FullName {
 impl WithLibSl for FullName {}
 
 /// A name in the source file paired with its location information.
-#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct Name {
     /// The name's location in the source text.
     pub loc: Loc,
@@ -884,18 +1068,15 @@ pub struct Name {
 impl WithLibSl for Name {}
 
 /// A constraint on a type parameter.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct TyConstraint {
     /// The name of the type parameter bounded by this constraint.
+    #[no_walk]
     pub param: Name,
 
-    /// An explicit variance specification, if any.
-    #[cfg_attr(feature = "serde", no_wrap)]
-    pub variance: Option<Variance>,
-
     /// The bound for the type parameter.
-    pub bound: TyArg,
+    pub bound: TyExprId,
 }
 
 impl WithLibSl for TyConstraint {}
@@ -915,7 +1096,7 @@ pub struct Generic {
 impl WithLibSl for Generic {}
 
 /// An enumeration of possible variance specifications.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum Variance {
     /// Covariant: `U <: V` implies `T[U] <: T[V]`.
@@ -958,7 +1139,7 @@ pub struct TyExpr {
 impl WithLibSl for TyExpr {}
 
 /// An enumeration of all possible type expression kinds.
-#[derive(Debug, Default, Clone)]
+#[derive(Walkable, Debug, Default, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub enum TyExprKind {
     /// A dummy type expression, the default value of `TyExprKind`.
@@ -968,7 +1149,7 @@ pub enum TyExprKind {
     Dummy,
 
     /// A literal expression of a primitive type.
-    PrimitiveLit(TyExprPrimitiveLit),
+    PrimitiveLit(#[no_walk] TyExprPrimitiveLit),
 
     /// A type name expression.
     Name(TyExprName),
@@ -1027,20 +1208,21 @@ pub struct TyExprPrimitiveLit {
 impl WithLibSl for TyExprPrimitiveLit {}
 
 /// A type name expression.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct TyExprName {
     /// The referred type's name.
+    #[no_walk]
     pub ty_name: FullName,
 
     /// A list of type arguments for the referred type.
-    pub generics: Vec<TyArg>,
+    pub generics: Option<Vec<TyArg>>,
 }
 
 impl WithLibSl for TyExprName {}
 
 /// A pointer type expression.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct TyExprPointer {
     /// A base type the pointer refers to.
@@ -1050,7 +1232,7 @@ pub struct TyExprPointer {
 impl WithLibSl for TyExprPointer {}
 
 /// An intersection type expression.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct TyExprIntersection {
     /// The left type expression.
@@ -1063,7 +1245,7 @@ pub struct TyExprIntersection {
 impl WithLibSl for TyExprIntersection {}
 
 /// A union type expression.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct TyExprUnion {
     /// The left type expression.
@@ -1076,18 +1258,141 @@ pub struct TyExprUnion {
 impl WithLibSl for TyExprUnion {}
 
 /// A type argument for a generic type's type parameter.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub enum TyArg {
     /// An arbitrary type expression.
-    TyExpr(TyExprId),
+    TyExpr(
+        #[cfg_attr(feature = "serde", no_wrap)]
+        #[no_walk]
+        Option<Variance>,
+        TyExprId,
+    ),
 
     /// A type wildcard, useful in situations where the exact type for the parameter is not
     /// required.
-    Wildcard(Loc),
+    Wildcard(#[no_walk] Loc),
 }
 
 impl WithLibSl for TyArg {}
+
+/// A predicate in a contract's specification.
+#[derive(Debug, Default, Clone)]
+pub struct Pred {
+    /// A unique identifier for this predicate, usable as a (secondary) slotmap key.
+    ///
+    /// This allowed to associate additional information with the statement as well as refer to it
+    /// without violating borrowing rules.
+    pub id: PredId,
+
+    /// The predicate's location in the source text.
+    pub loc: Loc,
+
+    /// What kind of predicate this is.
+    ///
+    /// The variants hold data specific to each predicate kind.
+    pub kind: PredKind,
+}
+
+impl WithLibSl for Pred {}
+
+/// An enumeration of all possible predicate kinds.
+#[derive(Walkable, Debug, Default, Clone)]
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
+pub enum PredKind {
+    /// A dummy predicate, the default value of `PredKind`.
+    /// Allows using `mem::take` to take ownership of the value.
+    #[default]
+    Dummy,
+
+    /// A predicate block, representing a conjunction of predicates.
+    Block(PredBlock),
+
+    /// A predicate prefixed with a name.
+    Named(PredNamed),
+
+    /// A variable declaration.
+    Decl(DeclId),
+
+    /// A conditional predicate (representing an implication).
+    If(PredIf),
+
+    /// An expression predicate.
+    Expr(ExprId),
+}
+
+impl WithLibSl for PredKind {}
+
+impl From<PredBlock> for PredKind {
+    fn from(value: PredBlock) -> Self {
+        Self::Block(value)
+    }
+}
+
+impl From<PredNamed> for PredKind {
+    fn from(value: PredNamed) -> Self {
+        Self::Named(value)
+    }
+}
+
+impl From<DeclId> for PredKind {
+    fn from(value: DeclId) -> Self {
+        Self::Decl(value)
+    }
+}
+
+impl From<PredIf> for PredKind {
+    fn from(value: PredIf) -> Self {
+        Self::If(value)
+    }
+}
+
+impl From<ExprId> for PredKind {
+    fn from(value: ExprId) -> Self {
+        Self::Expr(value)
+    }
+}
+
+/// A predicate block, representing a conjunction of predicates.
+#[derive(Walkable, Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
+pub struct PredBlock {
+    /// The sub-predicates this predicate is composed of.
+    pub preds: Vec<PredId>,
+}
+
+impl WithLibSl for PredBlock {}
+
+/// A named predicate.
+#[derive(Walkable, Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
+pub struct PredNamed {
+    /// The name assigned to this predicate.
+    #[no_walk]
+    pub name: Name,
+
+    /// The predicate being named.
+    pub pred: PredId,
+}
+
+impl WithLibSl for PredNamed {}
+
+/// A conditional predicate, representing an implication.
+#[derive(Walkable, Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
+pub struct PredIf {
+    /// The condition (the antecedent of the implication).
+    pub cond: ExprId,
+
+    /// The consequent of the implication, which determines the truth value of the predicate when the condition is true.
+    pub then_branch: PredId,
+
+    /// The alternative, which determines the truth value of the predicate when the condition is
+    /// false.
+    pub else_branch: Option<PredId>,
+}
+
+impl WithLibSl for PredIf {}
 
 /// A statement in a function body.
 #[derive(Debug, Default, Clone)]
@@ -1103,14 +1408,14 @@ pub struct Stmt {
 
     /// What kind of statement this is.
     ///
-    /// The variants hold data specific to each declaration kind.
+    /// The variants hold data specific to each statement kind.
     pub kind: StmtKind,
 }
 
 impl WithLibSl for Stmt {}
 
 /// An enumeration of all possible statement kinds.
-#[derive(Debug, Default, Clone)]
+#[derive(Walkable, Debug, Default, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub enum StmtKind {
     /// A dummy statement, the default value of `StmtKind`.
@@ -1126,6 +1431,9 @@ pub enum StmtKind {
 
     /// A variable assignment statement.
     Assign(StmtAssign),
+
+    /// A state transition cancellation statement.
+    Cancel(#[no_walk] StmtCancel),
 
     /// An expression statement.
     Expr(ExprId),
@@ -1149,6 +1457,12 @@ impl From<StmtAssign> for StmtKind {
     }
 }
 
+impl From<StmtCancel> for StmtKind {
+    fn from(stmt: StmtCancel) -> Self {
+        Self::Cancel(stmt)
+    }
+}
+
 impl From<ExprId> for StmtKind {
     fn from(expr_id: ExprId) -> Self {
         Self::Expr(expr_id)
@@ -1158,7 +1472,7 @@ impl From<ExprId> for StmtKind {
 impl WithLibSl for StmtKind {}
 
 /// A conditional statement.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct StmtIf {
     /// The if statement's condition.
@@ -1174,14 +1488,18 @@ pub struct StmtIf {
 impl WithLibSl for StmtIf {}
 
 /// A variable assignment statement.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct StmtAssign {
-    /// The place this statement assigns to.
-    pub lhs: QualifiedAccessId,
+    /// The place this statement assigns to. Either of:
+    /// - [`ExprName`]
+    /// - [`ExprField`]
+    /// - [`ExprIndex`]
+    pub lhs: ExprId,
 
     /// An optional in-place update operator.
     #[cfg_attr(feature = "serde", no_wrap)]
+    #[no_walk]
     pub in_place_op: Option<InPlaceOp>,
 
     /// The expression assigned to the place.
@@ -1227,6 +1545,13 @@ pub enum InPlaceOp {
 
 impl WithLibSl for InPlaceOp {}
 
+/// A state transition cancellation statement.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
+pub struct StmtCancel;
+
+impl WithLibSl for StmtCancel {}
+
 /// A LibSL expression.
 #[derive(Debug, Default, Clone)]
 pub struct Expr {
@@ -1248,7 +1573,7 @@ pub struct Expr {
 impl WithLibSl for Expr {}
 
 /// An enumeration of all possible expression kinds.
-#[derive(Debug, Default, Clone)]
+#[derive(Walkable, Debug, Default, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub enum ExprKind {
     /// A dummy expression, the default value of `ExprKind`.
@@ -1258,16 +1583,13 @@ pub enum ExprKind {
     Dummy,
 
     /// A literal expression of a primitive type.
-    PrimitiveLit(ExprPrimitiveLit),
+    PrimitiveLit(#[no_walk] ExprPrimitiveLit),
 
     /// An array literal expression.
     ArrayLit(ExprArrayLit),
 
-    /// A qualified variable/element access expression.
-    QualifiedAccess(ExprQualifiedAccess),
-
-    /// A previous-state value expression.
-    Prev(ExprPrev),
+    /// A set literal expression.
+    SetLit(ExprSetLit),
 
     /// A procedure call expression.
     ProcCall(ExprProcCall),
@@ -1277,6 +1599,21 @@ pub enum ExprKind {
 
     /// An automaton instantiation expression.
     Instantiate(ExprInstantiate),
+
+    /// A name expression.
+    Name(ExprName),
+
+    /// A previous-state value expression.
+    Prev(ExprPrev),
+
+    /// A field access expression.
+    Field(ExprField),
+
+    /// A pointer dereference expression.
+    Deref(ExprDeref),
+
+    /// An index access expression.
+    Index(ExprIndex),
 
     /// A `has`-concept expression.
     HasConcept(ExprHasConcept),
@@ -1306,15 +1643,9 @@ impl From<ExprArrayLit> for ExprKind {
     }
 }
 
-impl From<ExprQualifiedAccess> for ExprKind {
-    fn from(expr: ExprQualifiedAccess) -> Self {
-        Self::QualifiedAccess(expr)
-    }
-}
-
-impl From<ExprPrev> for ExprKind {
-    fn from(expr: ExprPrev) -> Self {
-        Self::Prev(expr)
+impl From<ExprSetLit> for ExprKind {
+    fn from(expr: ExprSetLit) -> Self {
+        Self::SetLit(expr)
     }
 }
 
@@ -1333,6 +1664,36 @@ impl From<ExprActionCall> for ExprKind {
 impl From<ExprInstantiate> for ExprKind {
     fn from(expr: ExprInstantiate) -> Self {
         Self::Instantiate(expr)
+    }
+}
+
+impl From<ExprName> for ExprKind {
+    fn from(expr: ExprName) -> Self {
+        Self::Name(expr)
+    }
+}
+
+impl From<ExprPrev> for ExprKind {
+    fn from(expr: ExprPrev) -> Self {
+        Self::Prev(expr)
+    }
+}
+
+impl From<ExprField> for ExprKind {
+    fn from(expr: ExprField) -> Self {
+        Self::Field(expr)
+    }
+}
+
+impl From<ExprDeref> for ExprKind {
+    fn from(expr: ExprDeref) -> Self {
+        Self::Deref(expr)
+    }
+}
+
+impl From<ExprIndex> for ExprKind {
+    fn from(expr: ExprIndex) -> Self {
+        Self::Index(expr)
     }
 }
 
@@ -1380,7 +1741,7 @@ pub struct ExprPrimitiveLit {
 impl WithLibSl for ExprPrimitiveLit {}
 
 /// An array literal expression.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct ExprArrayLit {
     /// A list of array elements.
@@ -1389,35 +1750,27 @@ pub struct ExprArrayLit {
 
 impl WithLibSl for ExprArrayLit {}
 
-/// A qualified variable/element access expression.
-#[derive(Debug, Clone)]
+/// A set literal expression.
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-pub struct ExprQualifiedAccess {
-    /// The variable/element accessed by this expression.
-    pub access: QualifiedAccessId,
+pub struct ExprSetLit {
+    /// A list of set elements.
+    pub elems: Vec<ExprId>,
 }
-
-impl WithLibSl for ExprQualifiedAccess {}
-
-/// A previous-state value expression.
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-pub struct ExprPrev {
-    /// The variable/element referred to by this expression.
-    pub access: QualifiedAccessId,
-}
-
-impl WithLibSl for ExprPrev {}
 
 /// A procedure call expression.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct ExprProcCall {
+    /// The receiver expression.
+    pub recv: Option<ExprId>,
+
     /// The procedure called in this expression.
-    pub callee: QualifiedAccessId,
+    #[no_walk]
+    pub name: Name,
 
     /// A list of type arguments for the callee.
-    pub generics: Vec<TyArg>,
+    pub generics: Option<Vec<TyArg>>,
 
     /// A list of arguments to the procedure call.
     pub args: Vec<ExprId>,
@@ -1426,14 +1779,15 @@ pub struct ExprProcCall {
 impl WithLibSl for ExprProcCall {}
 
 /// An action invocation expression.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct ExprActionCall {
     /// The action invoked in this expression.
+    #[no_walk]
     pub name: Name,
 
     /// A list of type arguments for the action.
-    pub generics: Vec<TyArg>,
+    pub generics: Option<Vec<TyArg>>,
 
     /// A list of arguments to the action invocation.
     pub args: Vec<ExprId>,
@@ -1442,14 +1796,15 @@ pub struct ExprActionCall {
 impl WithLibSl for ExprActionCall {}
 
 /// An automaton instantiation expression.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct ExprInstantiate {
     /// The name of an automaton.
+    #[no_walk]
     pub name: FullName,
 
     /// A list of type arguments for the automaton.
-    pub generics: Vec<TyArg>,
+    pub generics: Option<Vec<TyArg>>,
 
     /// A list of arguments to the automaton's constructor.
     pub args: Vec<ConstructorArg>,
@@ -1457,34 +1812,104 @@ pub struct ExprInstantiate {
 
 impl WithLibSl for ExprInstantiate {}
 
+/// A name expression.
+#[derive(Walkable, Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
+pub struct ExprName {
+    /// The variable name.
+    #[no_walk]
+    pub name: Name,
+}
+
+impl WithLibSl for ExprName {}
+
+/// A previous-state value expression.
+#[derive(Walkable, Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
+pub struct ExprPrev {
+    /// The variable/element referred to by this expression.
+    pub base: ExprId,
+}
+
+impl WithLibSl for ExprPrev {}
+
+/// A field access expression.
+#[derive(Walkable, Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
+pub struct ExprField {
+    /// The base part of the expression (preceding the dot).
+    pub base: ExprId,
+
+    /// The name of the field.
+    #[no_walk]
+    pub field: Name,
+}
+
+impl WithLibSl for ExprField {}
+
+/// A pointer dereference expression.
+#[derive(Walkable, Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
+pub struct ExprDeref {
+    /// The base part of the expression (preceding the dot).
+    pub base: ExprId,
+}
+
+/// An index access expression,
+#[derive(Walkable, Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
+pub struct ExprIndex {
+    /// The base part of the expression (preceding the brackets).
+    pub base: ExprId,
+
+    /// The index expression.
+    pub index: ExprId,
+}
+
 /// An argument for an automaton instantiation expression.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub enum ConstructorArg {
     /// An automaton state assignment.
-    State(ExprId),
+    State(#[no_walk] Loc, #[no_walk] Name),
 
     /// A value for a constructor variable.
-    Var(Name, ExprId),
+    Var(#[no_walk] Loc, #[no_walk] Name, ExprId),
+}
+
+impl ConstructorArg {
+    /// Returns the [`Loc`] spanning the argument.
+    pub fn loc(&self) -> &Loc {
+        match self {
+            Self::State(loc, _) => loc,
+            Self::Var(loc, ..) => loc,
+        }
+    }
 }
 
 impl WithLibSl for ConstructorArg {}
 
 /// A `has`-concept expression.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct ExprHasConcept {
-    /// An entity this expression tests for.
-    pub scrutinee: QualifiedAccessId,
+    /// An expression being tested.
+    pub scrutinee: ExprId,
+
+    /// Whether to invert the expectation (testing that the scrutinee does *not* have the concept).
+    #[no_walk]
+    #[cfg_attr(feature = "serde", no_wrap)]
+    pub negate: bool,
 
     /// A concept the scrutinee is tested for.
+    #[no_walk]
     pub concept: Name,
 }
 
 impl WithLibSl for ExprHasConcept {}
 
 /// A cast expression.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct ExprCast {
     /// The expression being cast.
@@ -1497,11 +1922,16 @@ pub struct ExprCast {
 impl WithLibSl for ExprCast {}
 
 /// An type comparison expression.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct ExprTyCompare {
     /// The expression whose type is tested for.
     pub expr: ExprId,
+
+    /// Whether to invert the expectation (testing that the expression does *not* have the type).
+    #[no_walk]
+    #[cfg_attr(feature = "serde", no_wrap)]
+    pub negate: bool,
 
     /// An expected expression type.
     pub ty_expr: TyExprId,
@@ -1510,11 +1940,12 @@ pub struct ExprTyCompare {
 impl WithLibSl for ExprTyCompare {}
 
 /// A unary arithmetic or logical expression.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct ExprUnary {
     /// A unary operator.
     #[cfg_attr(feature = "serde", no_wrap)]
+    #[no_walk]
     pub op: UnOp,
 
     /// The operand of the unary operator.
@@ -1543,7 +1974,7 @@ pub enum UnOp {
 impl WithLibSl for UnOp {}
 
 /// A binary arithmetic or logical expression.
-#[derive(Debug, Clone)]
+#[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct ExprBinary {
     /// The left operand of the operator.
@@ -1551,6 +1982,7 @@ pub struct ExprBinary {
 
     /// A binary operator.
     #[cfg_attr(feature = "serde", no_wrap)]
+    #[no_walk]
     pub op: BinOp,
 
     /// The right operand of the operator.
@@ -1616,6 +2048,12 @@ pub enum BinOp {
 
     /// Not equals.
     Ne,
+
+    /// Member of.
+    In,
+
+    /// Not member of.
+    NotIn,
 
     /// Logical or.
     Or,
@@ -1704,6 +2142,22 @@ pub enum IntLit {
     U64(u64),
 }
 
+impl IntLit {
+    /// Casts the value to `i64`.
+    pub fn to_i64(self) -> i64 {
+        match self {
+            Self::I8(v) => v as _,
+            Self::U8(v) => v as _,
+            Self::I16(v) => v as _,
+            Self::U16(v) => v as _,
+            Self::I32(v) => v as _,
+            Self::U32(v) => v as _,
+            Self::I64(v) => v,
+            Self::U64(v) => v as _,
+        }
+    }
+}
+
 impl From<i8> for IntLit {
     fn from(value: i8) -> Self {
         Self::I8(value)
@@ -1765,128 +2219,25 @@ pub enum FloatLit {
     F64(f64),
 }
 
+impl FloatLit {
+    pub fn to_f64(self) -> f64 {
+        match self {
+            FloatLit::F32(v) => v as _,
+            FloatLit::F64(v) => v,
+        }
+    }
+}
+
+impl From<f32> for FloatLit {
+    fn from(value: f32) -> Self {
+        Self::F32(value)
+    }
+}
+
+impl From<f64> for FloatLit {
+    fn from(value: f64) -> Self {
+        Self::F64(value)
+    }
+}
+
 impl WithLibSl for FloatLit {}
-
-/// A qualified variable/element access.
-#[derive(Debug, Default, Clone)]
-pub struct QualifiedAccess {
-    /// A unique identifier for this qualified access, usable as a (secondary) slotmap key.
-    ///
-    /// This allwos to assicated additional information with the qualified access as well as refer
-    /// to it without violating borrowing rules.
-    pub id: QualifiedAccessId,
-
-    /// The qualified access's location in the source text.
-    pub loc: Loc,
-
-    /// What kind of qualified access this is.
-    ///
-    /// The variants hold data specific to each qualified access kind.
-    pub kind: QualifiedAccessKind,
-}
-
-impl WithLibSl for QualifiedAccess {}
-
-/// An enumeration of all possible qualified access kinds.
-#[derive(Debug, Default, Clone)]
-#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-pub enum QualifiedAccessKind {
-    /// A dummy qualified access, the default value of `QualifiedAccessKind`.
-    ///
-    /// Allows using `mem::take` to take ownership of the value.
-    #[default]
-    Dummy,
-
-    /// A plain identifier.
-    Name(QualifiedAccessName),
-
-    /// A freshly-created automaton's variable.
-    AutomatonVar(QualifiedAccessAutomatonVar),
-
-    /// A field of an outer entity.
-    Field(QualifiedAccessField),
-
-    /// An indexed element of an outer entity: the `[42]` in `foo[42]`.
-    Index(QualifiedAccessIndex),
-}
-
-impl From<QualifiedAccessName> for QualifiedAccessKind {
-    fn from(access: QualifiedAccessName) -> Self {
-        Self::Name(access)
-    }
-}
-
-impl From<QualifiedAccessAutomatonVar> for QualifiedAccessKind {
-    fn from(access: QualifiedAccessAutomatonVar) -> Self {
-        Self::AutomatonVar(access)
-    }
-}
-
-impl From<QualifiedAccessField> for QualifiedAccessKind {
-    fn from(access: QualifiedAccessField) -> Self {
-        Self::Field(access)
-    }
-}
-
-impl From<QualifiedAccessIndex> for QualifiedAccessKind {
-    fn from(access: QualifiedAccessIndex) -> Self {
-        Self::Index(access)
-    }
-}
-
-impl WithLibSl for QualifiedAccessKind {}
-
-/// An access referring to a plain identifier, such as `foo`.
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-pub struct QualifiedAccessName {
-    /// The name this qualified access refers to.
-    pub name: Name,
-}
-
-impl WithLibSl for QualifiedAccessName {}
-
-/// An access referring to a variable of a freshly-created automaton, such as `A(x).foo`.
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-pub struct QualifiedAccessAutomatonVar {
-    /// An automaton name.
-    pub automaton: Name,
-
-    /// A list of type arguments for the automaton.
-    pub generics: Vec<TyArg>,
-
-    /// The qualified access serving as an argument to the automaton.
-    pub arg: QualifiedAccessId,
-
-    /// The automaton's field this qualified access refers to.
-    pub field: Name,
-}
-
-impl WithLibSl for QualifiedAccessAutomatonVar {}
-
-/// An access referring to a field of a base entity, such as `foo.bar`.
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-pub struct QualifiedAccessField {
-    /// The base part of the qualified access (preceding the dot).
-    pub base: QualifiedAccessId,
-
-    /// The field this qualified access refers to.
-    pub field: Name,
-}
-
-impl WithLibSl for QualifiedAccessField {}
-
-/// An access referring to an element of an indexed collection, such as `foo[42]`.
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-pub struct QualifiedAccessIndex {
-    /// The base part of the qualified access (preceding the brackets).
-    pub base: QualifiedAccessId,
-
-    /// An index of the element this qualified access refers to.
-    pub index: ExprId,
-}
-
-impl WithLibSl for QualifiedAccessIndex {}

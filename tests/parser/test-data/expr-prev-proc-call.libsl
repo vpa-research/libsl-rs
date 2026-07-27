@@ -1,6 +1,6 @@
 libsl "1.0.0";
 
-library stmt_assign_to_proc_call;
+library expr_prev_proc_call;
 
 fun test() {
     Automaton(foo).procCall()';

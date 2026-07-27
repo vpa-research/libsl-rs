@@ -9,7 +9,7 @@ pub struct Args {
 
 #[derive(clap::Subcommand, Debug)]
 pub enum Command {
-    /// Parse a file and prints its ANTLR parse tree.
+    /// Parse a file and print its ANTLR parse tree.
     ParseTree {
         /// A path to the input LibSL file.
         path: PathBuf,
@@ -36,6 +36,18 @@ pub enum Command {
     CheckIdempotence {
         /// A path to the input LibSL file.
         path: PathBuf,
+    },
+
+    /// Check a file for errors.
+    Check {
+        /// A path to the input LibSL file.
+        path: PathBuf,
+
+        /// The base directory to load imported modules from.
+        ///
+        /// Defaults to the current directory if not specified.
+        #[arg(short = 'B', long)]
+        base_dir: Option<PathBuf>,
     },
 }
 

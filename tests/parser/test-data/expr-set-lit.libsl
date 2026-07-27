@@ -1,0 +1,10 @@
+libsl "2.0.0";
+
+library expr_set_lit;
+
+fun test() {
+    {};
+    {1};
+    {1, 2, 3};
+    {1, 2, 3,};
+}

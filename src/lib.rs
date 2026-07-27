@@ -12,7 +12,8 @@
 //! # val x: I32 = 42;
 //! # "#;
 //! let mut libsl = LibSl::new();
-//! let file = libsl.parse_file(file_name, contents)?;
+//! let file_id = libsl.parse_file(file_name, contents)?;
+//! let file = libsl.file_by_id(file_id);
 //! # Ok(())
 //! # }
 //! ```
@@ -33,7 +34,8 @@
 //! # val x: I32 = 42;
 //! # "#;
 //! let mut libsl = LibSl::new();
-//! let file = libsl.parse_file(file_name, contents)?;
+//! let file_id = libsl.parse_file(file_name, contents)?;
+//! let file = libsl.file_by_id(file_id);
 //! println!("{:?}", libsl.decls[file.decls[0]]);
 //! # Ok(())
 //! # }
@@ -53,27 +55,44 @@
 //! # val x: I32 = 42;
 //! # "#;
 //! let mut libsl = LibSl::new();
-//! let file = libsl.parse_file(file_name, contents)?;
+//! let file_id = libsl.parse_file(file_name, contents)?;
+//! let file = libsl.file_by_id(file_id);
 //! println!("{}", libsl.decls[file.decls[0]].display(&libsl));
 //! # Ok(())
 //! # }
 //! ```
 
-#![warn(missing_docs)]
+//#![warn(missing_docs)]
 #![warn(missing_debug_implementations)]
 
-use loc::FileId;
-use slotmap::{SlotMap, new_key_type};
-
 pub mod ast;
+pub mod diag;
 pub mod export;
+pub mod file;
 pub mod grammar;
 pub mod loc;
-mod parse;
+pub mod parse;
+pub mod sema;
 #[cfg(feature = "serde")]
 mod serialize;
+mod util;
+pub mod visit;
+
+use std::fmt::{self, Display};
+
+use slotmap::{SecondaryMap, SlotMap, new_key_type};
+
+use crate::loc::{Loc, Span};
+
+// used for internal debugging.
+fn trace_enabled() -> bool {
+    option_env!("LIBSL_ENABLE_TRACE").is_some_and(|s| !s.is_empty())
+}
 
 new_key_type! {
+    /// A file identifier.
+    pub struct FileId;
+
     /// An [entity declaration][ast::Decl] identifier.
     pub struct DeclId;
 
@@ -86,8 +105,11 @@ new_key_type! {
     /// A [statement][ast::Stmt] identifier.
     pub struct StmtId;
 
-    /// A [qualified access][ast::QualifiedAccess] identifier.
-    pub struct QualifiedAccessId;
+    /// A [predicate][ast::Pred] identifier.
+    pub struct PredId;
+
+    /// An [annotation use][ast::Annotation] identifier.
+    pub struct AnnotationId;
 }
 
 /// The top-level struct that stores all parsed AST nodes and allows access to them via an
@@ -97,7 +119,8 @@ new_key_type! {
 /// files.
 #[derive(Debug, Default, Clone)]
 pub struct LibSl {
-    file_names: Vec<String>,
+    files: SlotMap<FileId, ast::File>,
+    file_names: SecondaryMap<FileId, String>,
 
     /// Declaration AST nodes.
     pub decls: SlotMap<DeclId, ast::Decl>,
@@ -111,8 +134,11 @@ pub struct LibSl {
     /// Statement AST nodes.
     pub stmts: SlotMap<StmtId, ast::Stmt>,
 
-    /// Qualified access AST nodes.
-    pub qualified_accesses: SlotMap<QualifiedAccessId, ast::QualifiedAccess>,
+    /// Predicate AST nodes.
+    pub preds: SlotMap<PredId, ast::Pred>,
+
+    /// Annotation use AST nodes.
+    pub annotations: SlotMap<AnnotationId, ast::Annotation>,
 }
 
 impl LibSl {
@@ -123,7 +149,47 @@ impl LibSl {
 
     /// Returns the file name corresponding to the given `id`.
     pub fn filename_by_id(&self, id: FileId) -> &str {
-        &self.file_names[id.0]
+        &self.file_names[id]
+    }
+
+    /// Returns an iterator over all parsed files.
+    pub fn files(&self) -> impl ExactSizeIterator<Item = &ast::File> {
+        self.files.values()
+    }
+
+    /// Returns a reference to the [parsed file][ast::File] with the given `id`.
+    pub fn file_by_id(&self, id: FileId) -> &ast::File {
+        &self.files[id]
+    }
+
+    /// Returns a mutable reference to the [parsed file][ast::File] with the given `id`.
+    pub fn file_by_id_mut(&mut self, id: FileId) -> &mut ast::File {
+        &mut self.files[id]
+    }
+
+    /// Formats a [`Span`].
+    pub fn format_span(&self, span: &Span) -> impl Display {
+        fmt::from_fn(|f| {
+            write!(f, "{}", self.filename_by_id(span.file_id))?;
+
+            if let Some(line) = span.line {
+                write!(f, ":{line}")?;
+
+                if let Some(col) = span.col {
+                    write!(f, ":{col}")?;
+                }
+            }
+
+            Ok(())
+        })
+    }
+
+    /// Formats a [`Loc`].
+    pub fn format_loc(&self, loc: &Loc) -> impl Display {
+        fmt::from_fn(move |f| match loc {
+            Loc::Synthetic => write!(f, "<built-in>"),
+            Loc::Span(span) => write!(f, "{}", self.format_span(span)),
+        })
     }
 }
 

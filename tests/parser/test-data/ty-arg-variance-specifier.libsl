@@ -1,0 +1,5 @@
+libsl "1.0.0";
+
+library ty_arg_variance_specifier;
+
+typealias Foo = HasVarianceSpecifier<in TypeArg>;

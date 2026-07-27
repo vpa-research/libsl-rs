@@ -1,0 +1,45 @@
+libsl "2.0.0";
+
+library contract_pred;
+
+fun test() {
+    // expression predicate.
+    ensures x == 10;
+
+    // named contract.
+    requires spam: 2 * 2 == 4;
+
+    // if predicate.
+    ensures if (x > 10) {
+        y > 10;
+    }
+
+    // block predicate.
+    ensures {
+        // nested block predicate.
+        {
+            x > 10;
+            y < 10;
+        }
+
+        // named predicate.
+        foo: x > 10;
+
+        // if predicate.
+        if (x > 10) {
+            // empty body.
+        }
+
+        // if predicate with else-branches.
+        if (x > 0) {
+            y > 0;
+        } else if (y > 0) {
+            z > 0;
+        } else {
+            x < 0;
+        }
+
+        // variable declaration.
+        val x: int = 42;
+    }
+}

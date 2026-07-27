@@ -1,0 +1,7 @@
+libsl "1.0.0";
+
+library expr_negated_infix;
+
+var a: bool = a !is bool;
+var b: bool = b !has Concept;
+var c: bool = c !in c;

@@ -23,8 +23,8 @@ use crate::grammar::parser::{
     AssigneeContextAll, AssigneeFieldContext, AssigneeIndexContext, AssigneeNameContext,
     AssignsContractContextAll, AtomicExprArrayLitContextAttrs, AtomicExprContextAll,
     AtomicExprNameContext, AtomicExprPrimitiveLitContext, AtomicExprSetLitContextAttrs,
-    AtomicExprSignedNumLitContext, AtomicExprSignedNumLitContextAttrs, AutomatonDeclContextAll,
-    AutomatonDefDeclConstructorContextAttrs, AutomatonDefDeclContextAll,
+    AtomicExprSignedNumLitContext, AtomicExprSignedNumLitContextAttrs, AtomicTypeExprContextAll,
+    AutomatonDeclContextAll, AutomatonDefDeclConstructorContextAttrs, AutomatonDefDeclContextAll,
     AutomatonDefDeclDestructorContextAttrs, AutomatonDefDeclFunctionContextAttrs,
     AutomatonDefDeclProcContextAttrs, AutomatonDefDeclShiftContextAttrs,
     AutomatonDefDeclStateContextAttrs, AutomatonDefDeclVariableContextAttrs, BitShiftOpContextAll,
@@ -72,9 +72,10 @@ use crate::grammar::parser::{
     StructDefDeclContextAll, StructDefDeclFunctionContextAttrs, StructDefDeclProcContextAttrs,
     StructDefDeclVariableContextAttrs, TypeAliasDeclContextAll, TypeArgContextAll,
     TypeArgSpecContextAll, TypeArgTypeExprContextAttrs, TypeConstraintContextAll,
-    TypeExprContextAll, TypeExprIntersectionContext, TypeExprNameContextAttrs,
-    TypeExprPointerContextAttrs, TypeExprPrimitiveLitContext, TypeExprUnionContext, UnOpContextAll,
-    VariableDeclContextAll, VariableKindContextAll, VarianceSpecContextAll, WhereClauseContextAll,
+    TypeExprAtomicContextAttrs, TypeExprContextAll, TypeExprIntersectionContext,
+    TypeExprNameContextAttrs, TypeExprPointerContextAttrs, TypeExprPrimitiveLitContext,
+    TypeExprUnionContext, UnOpContextAll, VariableDeclContextAll, VariableKindContextAll,
+    VarianceSpecContextAll, WhereClauseContextAll,
 };
 use crate::loc::{Loc, Span};
 use crate::{AnnotationId, DeclId, ExprId, FileId, LibSl, PredId, StmtId, TyExprId, ast, grammar};
@@ -1746,18 +1747,32 @@ impl<'a> AstConstructor<'a> {
         }
     }
 
-    fn process_type_expr(&mut self, ctx: &TypeExprContextAll<'_>) -> Result<TyExprId> {
+    fn process_atomic_type_expr(&mut self, ctx: &AtomicTypeExprContextAll<'_>) -> Result<TyExprId> {
         match ctx {
-            TypeExprContextAll::TypeExprPrimitiveLitContext(ctx) => {
-                self.process_type_expr_primitive_lit(ctx)
-            }
-
-            TypeExprContextAll::TypeExprNameContext(ctx) => {
+            AtomicTypeExprContextAll::TypeExprNameContext(ctx) => {
                 self.process_name_type_expr(&ctx.nameTypeExpr().unwrap())
             }
 
-            TypeExprContextAll::TypeExprPointerContext(ctx) => {
+            AtomicTypeExprContextAll::TypeExprPrimitiveLitContext(ctx) => {
+                self.process_type_expr_primitive_lit(ctx)
+            }
+
+            AtomicTypeExprContextAll::TypeExprPointerContext(ctx) => {
                 self.process_pointer_type_expr(&ctx.pointerTypeExpr().unwrap())
+            }
+
+            AtomicTypeExprContextAll::TypeExprParenContext(ctx) => {
+                self.process_type_expr(ctx.inner.as_ref().unwrap())
+            }
+
+            AtomicTypeExprContextAll::Error(_) => unreachable!(),
+        }
+    }
+
+    fn process_type_expr(&mut self, ctx: &TypeExprContextAll<'_>) -> Result<TyExprId> {
+        match ctx {
+            TypeExprContextAll::TypeExprAtomicContext(ctx) => {
+                self.process_atomic_type_expr(ctx.atomicTypeExpr().as_ref().unwrap())
             }
 
             TypeExprContextAll::TypeExprIntersectionContext(ctx) => {
@@ -1806,7 +1821,7 @@ impl<'a> AstConstructor<'a> {
         ctx: &PointerTypeExprContextAll<'_>,
     ) -> Result<TyExprId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
-        let base = self.process_type_expr(ctx.base.as_ref().unwrap())?;
+        let base = self.process_atomic_type_expr(ctx.base.as_ref().unwrap())?;
 
         Ok(self.libsl.ty_exprs.insert_with_key(|id| ast::TyExpr {
             id,

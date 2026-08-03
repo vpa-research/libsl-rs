@@ -21,6 +21,9 @@ use similar::{ChangeTag, TextDiff};
 use yansi::{Paint, Style};
 
 mod args;
+mod regenerate_grammar;
+
+use regenerate_grammar::regenerate_grammar;
 
 #[derive(Default)]
 struct PrintListener {
@@ -280,6 +283,7 @@ fn main() -> ExitCode {
         Command::Ouroboros { path, diff } => ouroboros(path, diff).map(|_| ExitCode::SUCCESS),
         Command::CheckIdempotence { path } => check_idempotence(path),
         Command::Check { path, base_dir } => check(path, base_dir),
+        Command::RegenerateGrammar { grammar, output, antlr } => regenerate_grammar(grammar, output, antlr),
     } {
         Ok(code) => code,
 

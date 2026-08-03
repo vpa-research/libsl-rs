@@ -6,4 +6,5 @@
 #![allow(missing_docs)]
 #![allow(missing_debug_implementations)]
 
-include!(concat!(env!("OUT_DIR"), "/grammar/mod.rs"));
+// to regenerate, run `eyelvl regenerate-grammar`.
+include!("grammar/generated/mod.rs");

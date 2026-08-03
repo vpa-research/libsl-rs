@@ -49,6 +49,23 @@ pub enum Command {
         #[arg(short = 'B', long)]
         base_dir: Option<PathBuf>,
     },
+
+    /// Regenerate the parser code from the grammar.
+    ///
+    /// Run this in the repository's root directory after having built the ANTLR jar.
+    RegenerateGrammar {
+        /// A path to the grammar directory.
+        #[arg(short = 'g', long, default_value = "grammar/")]
+        grammar: PathBuf,
+
+        /// A path to the output directory.
+        #[arg(short = 'o', long, default_value = "src/grammar/generated/")]
+        output: PathBuf,
+
+        /// A path to the ANTLR jar.
+        #[arg(long, default_value = "tool/antlr4-rust-target/tool/target/antlr4-4.13.2-complete.jar")]
+        antlr: PathBuf,
+    },
 }
 
 pub fn parse() -> Args {

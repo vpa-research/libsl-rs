@@ -2,76 +2,65 @@ use std::ffi::OsStr;
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
-use std::sync::LazyLock;
 use std::{env, fs, io};
 
-type Result<T = (), E = String> = std::result::Result<T, E>;
+use color_eyre::eyre::{Context, Result, bail, eyre};
 
-static GRAMMAR_DIR: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("grammar/"));
-const ANTLR_PATH_ENV: &str = "ANTLR_PATH";
-const DEFAULT_ANTLR_PATH: &str = "tool/antlr4-rust-target/tool/target/antlr4-4.13.2-complete.jar";
-
-fn main() -> ExitCode {
-    println!("cargo::rerun-if-changed=build.rs");
-
-    if let Err(e) = generate_grammar() {
-        eprintln!("Encountered a failure: {e}");
-
-        return ExitCode::FAILURE;
-    }
-
-    ExitCode::SUCCESS
-}
-
-fn generate_grammar() -> Result {
+pub fn regenerate_grammar(
+    grammar_dir: PathBuf,
+    output_dir: PathBuf,
+    antlr_path: PathBuf,
+) -> Result<ExitCode> {
     eprintln!("Generating a parser from the ANTLR grammar files...");
 
-    println!("cargo::rerun-if-changed={}", GRAMMAR_DIR.display());
+    match fs::create_dir_all(&output_dir) {
+        Ok(_) => {}
 
-    println!("cargo::rerun-if-env-changed={ANTLR_PATH_ENV}");
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
 
-    let antlr_path = if let Some(path) = env::var_os(ANTLR_PATH_ENV) {
-        let path = PathBuf::from(path);
-        eprintln!(
-            "Read `ANTLR_PATH` from the environment: `{}`",
-            path.display(),
-        );
-
-        path
-    } else {
-        let path = PathBuf::from(DEFAULT_ANTLR_PATH);
-        eprintln!("Using the default ANTLR path: `{}`", path.display());
-
-        path
-    };
-
-    println!("cargo::rerun-if-changed={}", antlr_path.display());
-
-    let grammar_files = find_files_with_ext(&*GRAMMAR_DIR, "g4")?;
-
-    if grammar_files.is_empty() {
-        return Err("no grammar files found (did you init the submodule?)".to_string());
+        Err(e) => {
+            return Err(eyre!(
+                "could not create the output directory `{}`",
+                output_dir.display()
+            )
+            .wrap_err(e));
+        }
     }
 
-    let out_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap());
-    let gen_grammar_dir = out_dir.join(&*GRAMMAR_DIR);
-    fs::create_dir_all(&gen_grammar_dir).map_err(|e| {
+    let _ = grammar_dir;
+    let output_dir = output_dir
+        .canonicalize()
+        .wrap_err_with(|| format!("could not canonicalize `{}`", output_dir.display()))?;
+    let antlr_path = antlr_path
+        .canonicalize()
+        .wrap_err_with(|| format!("could not canonicalize `{}`", antlr_path.display()))?;
+
+    env::set_current_dir(&grammar_dir).wrap_err_with(|| {
         format!(
-            "could not create the output directory `{}`: {e}",
-            gen_grammar_dir.display()
+            "could not change the current directory to `{}",
+            grammar_dir.display(),
         )
     })?;
+
+    let grammar_files = find_files_with_ext(".", "g4")?;
+
+    if grammar_files.is_empty() {
+        bail!(
+            "no grammar files found in {} (did you init the submodule?)",
+            grammar_dir.display(),
+        );
+    }
 
     let mut cmd = Command::new("java");
     cmd.arg("-jar")
         .arg(&antlr_path)
         .arg("-Dlanguage=Rust")
         .arg("-o")
-        .arg(&out_dir)
+        .arg(&output_dir)
         .arg("-lib")
-        .arg(&*GRAMMAR_DIR)
+        .arg("./")
         .arg("-lib")
-        .arg(out_dir.join(&*GRAMMAR_DIR))
+        .arg(&output_dir)
         .args(grammar_files)
         .stdout(io::stderr());
 
@@ -91,22 +80,20 @@ fn generate_grammar() -> Result {
 
     let status = cmd
         .spawn()
-        .map_err(|e| format!("could not run the ANTLR tool: {e}"))?
+        .wrap_err("could not run the ANTLR tool")?
         .wait()
-        .map_err(|e| format!("could not retrieve the exit status of the ANTLR tool: {e}"))?;
+        .wrap_err("could not retrieve the exit status of the ANTLR tool")?;
 
     if !status.success() {
-        return Err(format!(
-            "encountered a failure running the ANTLR tool: {status}"
-        ));
+        bail!("encountered a failure running the ANTLR tool: {status}");
     }
 
     eprintln!("The ANTLR tool finished successfully with {status}");
 
-    rename_generated_files(&gen_grammar_dir)?;
-    generate_grammar_mod_rs(&gen_grammar_dir)?;
+    rename_generated_files(&output_dir)?;
+    generate_grammar_mod_rs(&output_dir)?;
 
-    Ok(())
+    Ok(ExitCode::SUCCESS)
 }
 
 static NAME_MAP: &[(&str, &str)] = &[
@@ -115,17 +102,14 @@ static NAME_MAP: &[(&str, &str)] = &[
     ("libslparserlistener.rs", "parser_listener.rs"),
 ];
 
-fn rename_generated_files(path: impl AsRef<Path>) -> Result {
+fn rename_generated_files(path: impl AsRef<Path>) -> Result<()> {
     let path = path.as_ref();
 
     for entry in
-        fs::read_dir(path).map_err(|e| format!("could not list `{}`: {e}", path.display()))?
+        fs::read_dir(path).wrap_err_with(|| format!("could not list `{}`", path.display()))?
     {
-        let entry = entry.map_err(|e| {
-            format!(
-                "failed to read a directory entry of `{}`: {e}",
-                path.display(),
-            )
+        let entry = entry.wrap_err_with(|| {
+            format!("failed to read a directory entry of `{}`", path.display(),)
         })?;
 
         let Some((_, rename_to)) = NAME_MAP
@@ -138,9 +122,9 @@ fn rename_generated_files(path: impl AsRef<Path>) -> Result {
 
         let src = entry.path();
         let dst = src.with_file_name(rename_to);
-        fs::rename(&src, &dst).map_err(|e| {
+        fs::rename(&src, &dst).wrap_err_with(|| {
             format!(
-                "could not rename `{}` to `{}`: {e}",
+                "could not rename `{}` to `{}`",
                 src.display(),
                 dst.display(),
             )
@@ -150,13 +134,12 @@ fn rename_generated_files(path: impl AsRef<Path>) -> Result {
     Ok(())
 }
 
-fn generate_grammar_mod_rs(path: impl AsRef<Path>) -> Result {
+fn generate_grammar_mod_rs(path: impl AsRef<Path>) -> Result<()> {
     let path = path.as_ref();
     let mod_rs_path = path.join("mod.rs");
     eprintln!("Generating `{}`...", mod_rs_path.display());
 
-    let rs_files = find_files_with_ext(path, "rs")
-        .map_err(|e| format!("could not list generated sources: {e}"))?;
+    let rs_files = find_files_with_ext(path, "rs").wrap_err("could not list generated sources")?;
     let mut mod_rs = String::new();
 
     for path in rs_files {
@@ -186,7 +169,7 @@ fn generate_grammar_mod_rs(path: impl AsRef<Path>) -> Result {
     }
 
     fs::write(&mod_rs_path, mod_rs)
-        .map_err(|e| format!("could not write to `{}`: {e}", mod_rs_path.display()))?;
+        .wrap_err_with(|| format!("could not write to `{}`", mod_rs_path.display()))?;
 
     Ok(())
 }
@@ -196,13 +179,10 @@ fn find_files_with_ext(path: impl AsRef<Path>, ext: impl AsRef<OsStr>) -> Result
     let ext = ext.as_ref();
 
     fs::read_dir(path)
-        .map_err(|e| format!("could not list `{}`: {e}", path.display()))?
+        .wrap_err_with(|| format!("could not list `{}`", path.display()))?
         .map(|r| {
-            r.map(|entry| entry.path()).map_err(|e| {
-                format!(
-                    "failed to read a directory entry of `{}`: {e}",
-                    path.display(),
-                )
+            r.map(|entry| entry.path()).wrap_err_with(|| {
+                format!("failed to read a directory entry of `{}`", path.display())
             })
         })
         .filter(|res| match res {

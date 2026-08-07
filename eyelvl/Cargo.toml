@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-clap = { version = "4.5.47", features = ["derive"] }
+clap = { version = "4.6.6", features = ["derive"] }
 color-eyre = "0.6.5"
 libsl = { path = ".." }
 antlr-rust = { path = "../tool/antlr4-rust-target/runtime/Rust" }
-similar = "2.7.0"
+similar = "3.1.2"
 yansi = "1.0.1"
 relative-path = "2.0.1"

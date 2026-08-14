@@ -9,6 +9,7 @@ use slotmap::{SecondaryMap, SlotMap, SparseSecondaryMap};
 
 use crate::ast::Variance;
 use crate::diag::{Diag, DiagCtx, Label};
+use crate::export::{Prec, define_prec, display_parens};
 use crate::loc::Loc;
 use crate::sema::def::{
     Def, DefAction, DefAnnotation, DefAutomaton, DefEnum, DefFunction, DefId, DefKind,
@@ -592,27 +593,45 @@ impl TyCk {
     }
 }
 
+define_prec! {
+    /// A precedence level of types when formatted with [`Sema::format_ty_prec`].
+    pub enum TyPrec {
+        /// Union types.
+        Union,
+
+        /// Pointer types.
+        Pointer,
+
+        /// Base types.
+        Base,
+    }
+}
+
 impl Sema<'_> {
     /// Performs type checking and inference.
     pub fn tyck(&mut self, diag: &mut impl DiagCtx) -> Result {
         Pass::new(self, diag).run()
     }
 
-    /// Formats a type.
-    pub fn format_ty(&self, ty_id: TyId) -> impl Display {
+    /// Formats a type at a given precedence level.
+    pub fn format_ty_prec(&self, prec: TyPrec, ty_id: TyId) -> impl Display {
         let ty = &self.tyck.tys[ty_id];
 
         fmt::from_fn(move |f| {
             match ty {
-                Ty::Error => write!(f, "[error]"),
+                Ty::Error => display_parens(f, TyPrec::Base, prec, |f| write!(f, "[error]")),
 
-                &Ty::Param(n) => write!(f, "{}", self.tyck.ty_params[n].name),
+                &Ty::Param(n) => display_parens(f, TyPrec::Base, prec, |f| {
+                    write!(f, "{}", self.tyck.ty_params[n].name)
+                }),
 
                 Ty::Ctor(t) if t.ctor == self.name_res.prelude_defs.pointer => {
-                    write!(f, "*({})", self.format_ty(t.args[0]))
+                    display_parens(f, TyPrec::Pointer, prec, |f| {
+                        write!(f, "*{}", self.format_ty_prec(TyPrec::Pointer, t.args[0]))
+                    })
                 }
 
-                Ty::Ctor(t) => {
+                Ty::Ctor(t) => display_parens(f, TyPrec::Base, prec, |f| {
                     write!(f, "{}", self.name_res.defs[t.ctor].name)?;
 
                     if !t.args.is_empty() {
@@ -623,35 +642,38 @@ impl Sema<'_> {
                                 write!(f, ", ")?;
                             }
 
-                            write!(f, "{}", self.format_ty(arg))?;
+                            write!(f, "{}", self.format_ty_prec(TyPrec::Base, arg))?;
                         }
 
                         write!(f, ">")?;
                     }
 
                     Ok(())
-                }
+                }),
 
                 // TODO: store a readable name for inference variables.
-                Ty::Var(n) => write!(f, "?T{n}"),
+                Ty::Var(n) => display_parens(f, TyPrec::Base, prec, |f| write!(f, "?T{n}")),
 
-                Ty::Null => write!(f, "null"),
+                Ty::Null => display_parens(f, TyPrec::Base, prec, |f| write!(f, "null")),
 
-                Ty::Union(t) => {
-                    write!(f, "(")?;
-
+                Ty::Union(t) => display_parens(f, TyPrec::Union, prec, |f| {
                     for (idx, &ty_id) in t.elems.iter().enumerate() {
                         if idx > 0 {
                             write!(f, " | ")?;
                         }
 
-                        write!(f, "{}", self.format_ty(ty_id))?;
+                        write!(f, "{}", self.format_ty_prec(TyPrec::Union.higher(), ty_id))?;
                     }
 
-                    write!(f, ")")
-                }
+                    Ok(())
+                }),
             }
         })
+    }
+
+    /// Formats a type.
+    pub fn format_ty(&self, ty_id: TyId) -> impl Display {
+        self.format_ty_prec(TyPrec::MIN, ty_id)
     }
 
     /// Formats the function signature of a [`DefFunction`].
@@ -905,7 +927,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         let defs = &self.ctx.sema.name_res.prelude_defs;
         let prelude_scope_id = self.ctx.sema.name_res.prelude_scope_id;
 
-        #[allow(clippy::type_complexity, reason = "it's here for illustrative purposes")]
+        #[allow(
+            clippy::type_complexity,
+            reason = "it's here for illustrative purposes"
+        )]
         let builtins: &[(fn(&mut BuiltinTys) -> &mut TyId, DefId, BuiltinTyCtor)] = &[
             (
                 |t| &mut t.int8,

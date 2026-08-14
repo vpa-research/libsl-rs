@@ -68,9 +68,9 @@ macro_rules! define_prec {
             }
         }
 
-        impl Prec for $name {
+        impl $crate::export::Prec for $name {
             const MAX: Self = Self::Max;
-            const MIN: Self = define_prec!(@first $(Self::$variant,)+);
+            const MIN: Self = $crate::export::define_prec!(@first $(Self::$variant,)+);
 
             fn higher(self) -> Self {
                 (self as u8)
@@ -90,6 +90,8 @@ macro_rules! define_prec {
 
     (@first $expr:expr, $($rest:expr,)*) => ($expr);
 }
+
+pub(crate) use define_prec;
 
 define_prec! {
     /// Precedence levels of type expressions.
@@ -327,7 +329,7 @@ impl<W: fmt::Write> fmt::Write for IndentedWriter<'_, W> {
     }
 }
 
-fn display_list<W: fmt::Write, F>(
+pub(crate) fn display_list<W: fmt::Write, F>(
     w: &mut W,
     (left, sep, right): (&str, &str, &str),
     blank_line_between_items: bool,
@@ -370,7 +372,7 @@ where
     write!(w, "{right}")
 }
 
-fn display_parens<W: fmt::Write, P: Prec, F>(
+pub(crate) fn display_parens<W: fmt::Write, P: Prec, F>(
     w: &mut W,
     self_prec: P,
     outer_prec: P,

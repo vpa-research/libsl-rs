@@ -1750,7 +1750,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             },
         );
 
-        self.result = self.result.or(result);
+        self.result = self.result.and(result);
 
         result
     }
@@ -1766,7 +1766,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             },
         );
 
-        self.result = self.result.or(result);
+        self.result = self.result.and(result);
 
         result
     }
@@ -1781,7 +1781,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             },
         );
 
-        self.result = self.result.or(result);
+        self.result = self.result.and(result);
 
         result
     }

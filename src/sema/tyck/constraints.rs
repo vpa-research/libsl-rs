@@ -1107,6 +1107,18 @@ impl ConstrSet {
     ) -> Result {
         use slotmap::sparse_secondary::Entry;
 
+        if trace_enabled() {
+            match kind {
+                SubtypeBoundKind::Lower => {
+                    eprintln!("incorporate(`{}` <: {idx})", sema.format_ty(ty_id))
+                }
+
+                SubtypeBoundKind::Upper => {
+                    eprintln!("incorporate({idx} <: `{}`)", sema.format_ty(ty_id))
+                }
+            }
+        }
+
         let ty_id = self.repr(ty_id);
         self.update_bounds(idx);
 
@@ -1114,6 +1126,10 @@ impl ConstrSet {
 
         // α <: α: true by reflexivity.
         if ty_id == var_ty_id {
+            if trace_enabled() {
+                eprintln!("  refl");
+            }
+
             return Ok(());
         }
 
@@ -1121,6 +1137,10 @@ impl ConstrSet {
 
         // check if we already have such a bound.
         let Entry::Vacant(entry) = var.subtype_bounds_mut(kind).entry(ty_id).unwrap() else {
+            if trace_enabled() {
+                eprintln!("  already processed");
+            }
+
             return Ok(());
         };
 
@@ -1140,6 +1160,20 @@ impl ConstrSet {
                 diag,
                 Constr {
                     provenance: ConstrProvenance::SubBound { idx },
+                    kind: ConstrKind::Sub(lower_ty_id, upper_ty_id),
+                },
+            )?;
+        }
+
+        // also check the equality bound if we have one.
+        if let Some((bound_ty_id, _)) = self.bounds.var(idx).eq {
+            let (lower_ty_id, upper_ty_id) = kind.order_subtype(ty_id, bound_ty_id);
+
+            self.add(
+                sema,
+                diag,
+                Constr {
+                    provenance: ConstrProvenance::EqBound { idx },
                     kind: ConstrKind::Sub(lower_ty_id, upper_ty_id),
                 },
             )?;

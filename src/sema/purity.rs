@@ -78,7 +78,7 @@ where
     fn visit_decl(&mut self, _: (), decl: &'ast ast::Decl) -> ControlFlow<()> {
         match &decl.kind {
             ast::DeclKind::Proc(decl) if decl.is_pure => {
-                let mut checker = ProcChecker { pass: self };
+                let mut checker = BodyChecker { pass: self };
                 decl.walk(&mut checker, AccessMode::Read)?;
 
                 ControlFlow::Continue(())
@@ -100,16 +100,17 @@ where
             | ast::DeclKind::State(_)
             | ast::DeclKind::Shift(_)
             | ast::DeclKind::Constructor(_)
-            | ast::DeclKind::Destructor(_) => ControlFlow::Continue(()),
+            | ast::DeclKind::Destructor(_)
+            | ast::DeclKind::Pred(_) => ControlFlow::Continue(()),
         }
     }
 }
 
-struct ProcChecker<'ast, 'diag, 'ctx, D> {
+struct BodyChecker<'ast, 'diag, 'ctx, D> {
     pass: &'ctx mut Pass<'ast, 'diag, D>,
 }
 
-impl<'ast, D: DiagCtx> ProcChecker<'ast, '_, '_, D> {
+impl<'ast, D: DiagCtx> BodyChecker<'ast, '_, '_, D> {
     fn check_proc_call(&mut self, expr: &'ast ast::Expr) {
         let (_, call_target) = self.pass.sema.tyck.call_targets[expr.id];
 
@@ -155,7 +156,7 @@ impl<'ast, D: DiagCtx> ProcChecker<'ast, '_, '_, D> {
     }
 }
 
-impl<'ast, D: DiagCtx> Visitor<'ast, AccessMode> for ProcChecker<'ast, '_, '_, D> {
+impl<'ast, D: DiagCtx> Visitor<'ast, AccessMode> for BodyChecker<'ast, '_, '_, D> {
     fn libsl(&self) -> &'ast LibSl {
         self.pass.libsl()
     }

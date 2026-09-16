@@ -157,6 +157,18 @@ fn enter_GlobalDeclProc(&mut self, _ctx: &GlobalDeclProcContext<'input>) { }
  */
 fn exit_GlobalDeclProc(&mut self, _ctx: &GlobalDeclProcContext<'input>) { }
 /**
+ * Enter a parse tree produced by the {@code GlobalDeclPred}
+ * labeled alternative in {@link LibSLParser#globalDecl}.
+ * @param ctx the parse tree
+ */
+fn enter_GlobalDeclPred(&mut self, _ctx: &GlobalDeclPredContext<'input>) { }
+/**
+ * Exit a parse tree produced by the {@code GlobalDeclPred}
+ * labeled alternative in {@link LibSLParser#globalDecl}.
+ * @param ctx the parse tree
+ */
+fn exit_GlobalDeclPred(&mut self, _ctx: &GlobalDeclPredContext<'input>) { }
+/**
  * Enter a parse tree produced by the {@code GlobalDeclVariable}
  * labeled alternative in {@link LibSLParser#globalDecl}.
  * @param ctx the parse tree
@@ -332,6 +344,18 @@ fn enter_StructDefDeclProc(&mut self, _ctx: &StructDefDeclProcContext<'input>) {
  * @param ctx the parse tree
  */
 fn exit_StructDefDeclProc(&mut self, _ctx: &StructDefDeclProcContext<'input>) { }
+/**
+ * Enter a parse tree produced by the {@code StructDefDeclPred}
+ * labeled alternative in {@link LibSLParser#structDefDecl}.
+ * @param ctx the parse tree
+ */
+fn enter_StructDefDeclPred(&mut self, _ctx: &StructDefDeclPredContext<'input>) { }
+/**
+ * Exit a parse tree produced by the {@code StructDefDeclPred}
+ * labeled alternative in {@link LibSLParser#structDefDecl}.
+ * @param ctx the parse tree
+ */
+fn exit_StructDefDeclPred(&mut self, _ctx: &StructDefDeclPredContext<'input>) { }
 /**
  * Enter a parse tree produced by {@link LibSLParser#enumDecl}.
  * @param ctx the parse tree
@@ -547,6 +571,18 @@ fn enter_AutomatonDefDeclProc(&mut self, _ctx: &AutomatonDefDeclProcContext<'inp
  */
 fn exit_AutomatonDefDeclProc(&mut self, _ctx: &AutomatonDefDeclProcContext<'input>) { }
 /**
+ * Enter a parse tree produced by the {@code AutomatonDefDeclPred}
+ * labeled alternative in {@link LibSLParser#automatonDefDecl}.
+ * @param ctx the parse tree
+ */
+fn enter_AutomatonDefDeclPred(&mut self, _ctx: &AutomatonDefDeclPredContext<'input>) { }
+/**
+ * Exit a parse tree produced by the {@code AutomatonDefDeclPred}
+ * labeled alternative in {@link LibSLParser#automatonDefDecl}.
+ * @param ctx the parse tree
+ */
+fn exit_AutomatonDefDeclPred(&mut self, _ctx: &AutomatonDefDeclPredContext<'input>) { }
+/**
  * Enter a parse tree produced by the {@code AutomatonDefDeclFunction}
  * labeled alternative in {@link LibSLParser#automatonDefDecl}.
  * @param ctx the parse tree
@@ -626,6 +662,16 @@ fn enter_FunctionDefSemicolon(&mut self, _ctx: &FunctionDefSemicolonContext<'inp
  * @param ctx the parse tree
  */
 fn exit_FunctionDefSemicolon(&mut self, _ctx: &FunctionDefSemicolonContext<'input>) { }
+/**
+ * Enter a parse tree produced by {@link LibSLParser#predDecl}.
+ * @param ctx the parse tree
+ */
+fn enter_predDecl(&mut self, _ctx: &PredDeclContext<'input>) { }
+/**
+ * Exit a parse tree produced by {@link LibSLParser#predDecl}.
+ * @param ctx the parse tree
+ */
+fn exit_predDecl(&mut self, _ctx: &PredDeclContext<'input>) { }
 /**
  * Enter a parse tree produced by {@link LibSLParser#variableDecl}.
  * @param ctx the parse tree

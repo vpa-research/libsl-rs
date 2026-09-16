@@ -16,67 +16,7 @@ use antlr_rust::tree::{ParseTree, TerminalNode};
 use antlr_rust::{InputStream, Parser};
 
 use crate::grammar::lexer::LibSLLexer;
-use crate::grammar::parser::{
-    ActionCallExprContextAll, ActionDeclContextAll, ActionParamContextAll, AddBinOpContextAll,
-    AnnotationArgContextAll, AnnotationContextAll, AnnotationDeclContextAll,
-    AnnotationParamContextAll, ArrayLitExprContextAll, AssignOpContextAll, AssignStmtContextAll,
-    AssigneeContextAll, AssigneeFieldContext, AssigneeIndexContext, AssigneeNameContext,
-    AssignsContractContextAll, AtomicExprArrayLitContextAttrs, AtomicExprContextAll,
-    AtomicExprNameContext, AtomicExprPrimitiveLitContext, AtomicExprSetLitContextAttrs,
-    AtomicExprSignedNumLitContext, AtomicExprSignedNumLitContextAttrs, AtomicTypeExprContextAll,
-    AutomatonDeclContextAll, AutomatonDefDeclConstructorContextAttrs, AutomatonDefDeclContextAll,
-    AutomatonDefDeclDestructorContextAttrs, AutomatonDefDeclFunctionContextAttrs,
-    AutomatonDefDeclProcContextAttrs, AutomatonDefDeclShiftContextAttrs,
-    AutomatonDefDeclStateContextAttrs, AutomatonDefDeclVariableContextAttrs, BitShiftOpContextAll,
-    BlockContextAll, BlockLoneStmtContextAttrs, BlockPredicateContextAll, CancelStmtContextAll,
-    ConstructorArgContextAll, ConstructorDeclContextAll, ConstructorDeclContextAttrs,
-    ConstructorVariableContextAll, ContractAssignsContextAttrs, ContractContextAll,
-    ContractEnsuresContextAttrs, ContractPredicateBlockContextAttrs, ContractPredicateContextAll,
-    ContractPredicateExprContextAttrs, ContractPredicateIfContextAttrs,
-    ContractRequiresContextAttrs, DestructorDeclContextAll, DestructorDeclContextAttrs,
-    EnsuresContractContextAll, EnumDeclContextAll, EnumDeclVariantContextAll,
-    EnumSemanticTypeValueContextAll, ExprActionCallContextAttrs, ExprAdditiveContext,
-    ExprAndContext, ExprArrayLitContextAttrs, ExprBitAndContext, ExprBitOrContext,
-    ExprBitXorContext, ExprCastContext, ExprContextAll, ExprDerefContext, ExprFieldContext,
-    ExprHasConceptContext, ExprIndexContext, ExprInstantiationContextAttrs,
-    ExprMultiplicativeContext, ExprNameContext, ExprOrContext, ExprPredicateBlockContextAttrs,
-    ExprPredicateContextAll, ExprPredicateExprContextAttrs, ExprPrevContext,
-    ExprPrimitiveLitContext, ExprPrimitiveLitContextAttrs, ExprProcCallQualifiedContext,
-    ExprProcCallUnqualifiedContext, ExprRelationalContext, ExprSetLitContextAttrs,
-    ExprShiftContext, ExprTypeComparisonContext, ExprUnaryContext, FileContextAll,
-    FileContextAttrs, FullNameContextAll, FunctionBodyContextAll, FunctionDeclContextAll,
-    FunctionDefBracedContextAttrs, FunctionDefContextAll, FunctionModifierContextAll,
-    FunctionParamContextAll, FunctionSignatureContextAll, GenericContextAll, GenericsContextAll,
-    GlobalDeclActionContextAttrs, GlobalDeclAnnotationContextAttrs,
-    GlobalDeclAutomatonContextAttrs, GlobalDeclContextAll, GlobalDeclEnumContextAttrs,
-    GlobalDeclFunctionContextAttrs, GlobalDeclImportContextAttrs, GlobalDeclIncludeContextAttrs,
-    GlobalDeclProcContextAttrs, GlobalDeclSemanticTypeSectionContextAttrs,
-    GlobalDeclStructContextAttrs, GlobalDeclTypeAliasContextAttrs, GlobalDeclVariableContextAttrs,
-    HeaderContextAll, IdentContextAll, IfPredicateContextAll, IfStmtContextAll,
-    ImportDeclContextAll, ImportDeclContextAttrs, IncludeDeclContextAll, IncludeDeclContextAttrs,
-    InstantiationExprContextAll, LibSLParser, LibSLParserContextType, MulBinOpContextAll,
-    NameTypeExprContextAll, PathBareContextAttrs, PathContextAll, PathStringLitContextAttrs,
-    PointerTypeExprContextAll, PredicateBlockContextAttrs, PredicateContextAll,
-    PredicateExprContextAttrs, PredicateIfContextAttrs, PredicateNamedContext,
-    PredicateNamedContextAttrs, PredicateVariableDeclContextAttrs, PrimitiveLitCharContextAttrs,
-    PrimitiveLitContextAll, PrimitiveLitFloatContextAttrs, PrimitiveLitIntContextAttrs,
-    PrimitiveLitStringLitContextAttrs, ProcDeclContextAll, ProcModifierContextAll,
-    QualifiedTypeNameContextAll, RelOpContextAll, RequiresContractContextAll,
-    SemanticTypeDeclContextAll, SemanticTypeDeclContextAttrs, SemanticTypeDefContextAll,
-    SetLitExprContextAll, ShiftByContextAll, ShiftDeclContextAll, ShiftSourceStateContextAll,
-    ShiftSourceStateShorthandContextAttrs, SignContextAll, SignedIntLitContextAll,
-    SignedIntLitContextAttrs, SignedNumLitContextAll, SignedNumLitFloatContextAttrs,
-    SignedNumLitIntContextAttrs, StateDeclContextAll, StateKindContextAll, StmtAssignContextAttrs,
-    StmtCancelContextAttrs, StmtContextAll, StmtExprContext, StmtIfContextAttrs,
-    StmtVariableDeclContext, StmtVariableDeclContextAttrs, StructDeclContextAll,
-    StructDefDeclContextAll, StructDefDeclFunctionContextAttrs, StructDefDeclProcContextAttrs,
-    StructDefDeclVariableContextAttrs, TypeAliasDeclContextAll, TypeArgContextAll,
-    TypeArgSpecContextAll, TypeArgTypeExprContextAttrs, TypeConstraintContextAll,
-    TypeExprAtomicContextAttrs, TypeExprContextAll, TypeExprIntersectionContext,
-    TypeExprNameContextAttrs, TypeExprPointerContextAttrs, TypeExprPrimitiveLitContext,
-    TypeExprUnionContext, UnOpContextAll, VariableDeclContextAll, VariableKindContextAll,
-    VarianceSpecContextAll, WhereClauseContextAll,
-};
+use crate::grammar::parser::*;
 use crate::loc::{Loc, Span};
 use crate::{AnnotationId, DeclId, ExprId, FileId, LibSl, PredId, StmtId, TyExprId, ast, grammar};
 
@@ -527,6 +467,10 @@ impl<'a> AstConstructor<'a> {
                 vec![self.process_proc_decl(&ctx.procDecl().unwrap())?]
             }
 
+            GlobalDeclContextAll::GlobalDeclPredContext(ctx) => {
+                vec![self.process_pred_decl(&ctx.predDecl().unwrap())?]
+            }
+
             GlobalDeclContextAll::GlobalDeclVariableContext(ctx) => {
                 vec![self.process_variable_decl(&ctx.variableDecl().unwrap())?]
             }
@@ -680,6 +624,10 @@ impl<'a> AstConstructor<'a> {
 
                 StructDefDeclContextAll::StructDefDeclProcContext(ctx) => {
                     self.process_proc_decl(&ctx.procDecl().unwrap())
+                }
+
+                StructDefDeclContextAll::StructDefDeclPredContext(ctx) => {
+                    self.process_pred_decl(&ctx.predDecl().unwrap())
                 }
 
                 StructDefDeclContextAll::Error(_) => unreachable!(),
@@ -906,31 +854,35 @@ impl<'a> AstConstructor<'a> {
         for ctx in &ctx.decls {
             match &**ctx {
                 AutomatonDefDeclContextAll::AutomatonDefDeclStateContext(ctx) => {
-                    decls.extend(self.process_state_decl(&ctx.stateDecl().unwrap()))
+                    decls.extend(self.process_state_decl(&ctx.stateDecl().unwrap()));
                 }
 
                 AutomatonDefDeclContextAll::AutomatonDefDeclShiftContext(ctx) => {
-                    decls.push(self.process_shift_decl(&ctx.shiftDecl().unwrap())?)
+                    decls.push(self.process_shift_decl(&ctx.shiftDecl().unwrap())?);
                 }
 
                 AutomatonDefDeclContextAll::AutomatonDefDeclConstructorContext(ctx) => {
-                    decls.push(self.process_constructor_decl(&ctx.constructorDecl().unwrap())?)
+                    decls.push(self.process_constructor_decl(&ctx.constructorDecl().unwrap())?);
                 }
 
                 AutomatonDefDeclContextAll::AutomatonDefDeclDestructorContext(ctx) => {
-                    decls.push(self.process_destructor_decl(&ctx.destructorDecl().unwrap())?)
+                    decls.push(self.process_destructor_decl(&ctx.destructorDecl().unwrap())?);
                 }
 
                 AutomatonDefDeclContextAll::AutomatonDefDeclProcContext(ctx) => {
-                    decls.push(self.process_proc_decl(&ctx.procDecl().unwrap())?)
+                    decls.push(self.process_proc_decl(&ctx.procDecl().unwrap())?);
                 }
 
                 AutomatonDefDeclContextAll::AutomatonDefDeclFunctionContext(ctx) => {
-                    decls.push(self.process_function_decl(&ctx.functionDecl().unwrap())?)
+                    decls.push(self.process_function_decl(&ctx.functionDecl().unwrap())?);
+                }
+
+                AutomatonDefDeclContextAll::AutomatonDefDeclPredContext(ctx) => {
+                    decls.push(self.process_pred_decl(&ctx.predDecl().unwrap())?);
                 }
 
                 AutomatonDefDeclContextAll::AutomatonDefDeclVariableContext(ctx) => {
-                    decls.push(self.process_variable_decl(&ctx.variableDecl().unwrap())?)
+                    decls.push(self.process_variable_decl(&ctx.variableDecl().unwrap())?);
                 }
 
                 AutomatonDefDeclContextAll::Error(_) => unreachable!(),
@@ -1372,6 +1324,57 @@ impl<'a> AstConstructor<'a> {
                 generics,
                 params,
                 ret_ty_expr,
+                ty_constraints,
+                body,
+            }
+            .into(),
+        }))
+    }
+
+    fn process_pred_decl(&mut self, ctx: &PredDeclContextAll<'_>) -> Result<DeclId> {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let annotations = self.process_annotations(&ctx.annotations)?;
+        let name = self.process_name(ctx.name.as_ref().unwrap());
+
+        let generics = ctx
+            .typeParams
+            .as_ref()
+            .map(|ctx| self.process_generics(ctx))
+            .unwrap_or_default();
+
+        let params = ctx
+            .params
+            .as_ref()
+            .map(|ctx| {
+                ctx.params
+                    .iter()
+                    .map(|ctx| self.process_function_param(ctx))
+                    .collect::<Result<_>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+
+        let ty_constraints = ctx
+            .typeConstraints
+            .as_ref()
+            .map(|ctx| self.process_where_clause(ctx))
+            .transpose()?
+            .unwrap_or_default();
+
+        let body = ctx
+            .def
+            .as_ref()
+            .map(|ctx| self.process_block_predicate(ctx))
+            .transpose()?;
+
+        Ok(self.libsl.decls.insert_with_key(|id| ast::Decl {
+            id,
+            loc,
+            kind: ast::DeclPred {
+                annotations,
+                name,
+                generics,
+                params,
                 ty_constraints,
                 body,
             }

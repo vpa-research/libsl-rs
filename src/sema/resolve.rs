@@ -1461,6 +1461,40 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
                 self.record_member_function(ctx, false, decl.is_method, def_id);
             }
+
+            ast::DeclKind::Pred(decl) => {
+                let scope_id = ctx
+                    .outer_instance(self.sema)
+                    .map(|(_, scope_id)| scope_id)
+                    .unwrap_or(outer_scope_id);
+
+                let def_id = self
+                    .add_decl_def(
+                        decl_id,
+                        scope_id,
+                        Ns::Function,
+                        decl.name.to_string(),
+                        decl.name.loc.clone(),
+                        DefFunction::new(
+                            FunctionKind::Pred {
+                                of: match ctx {
+                                    DeclCtx::Global(_) => None,
+                                    DeclCtx::FuncBody { .. } => unreachable!(),
+                                    DeclCtx::Struct(def_id) | DeclCtx::Automaton { def_id, .. } => {
+                                        Some(def_id)
+                                    }
+                                },
+                            },
+                            false,
+                            FunctionBodyUser::new(decl_id).into(),
+                        )
+                        .into(),
+                    )
+                    .0;
+
+                let param_scope_id = self.add_param_scope(def_id, scope_id);
+                self.def_mut::<DefFunction>(def_id).param_scope_id = param_scope_id;
+            }
         }
     }
 }
@@ -1807,6 +1841,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             ast::DeclKind::Constructor(decl) => self.process_decl_constructor(ctx, decl_id, decl),
             ast::DeclKind::Destructor(decl) => self.process_decl_destructor(ctx, decl_id, decl),
             ast::DeclKind::Proc(decl) => self.process_decl_proc(ctx, decl_id, decl),
+            ast::DeclKind::Pred(decl) => self.process_decl_pred(ctx, decl_id, decl),
         }
     }
 
@@ -2300,6 +2335,42 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         if let Some(body) = &decl.body {
             self.process_function_body(def_id, body);
+        }
+    }
+
+    fn process_decl_pred(&mut self, ctx: DeclCtx<'_>, decl_id: DeclId, decl: &'ast ast::DeclPred) {
+        let def_id = self.sema.name_res.decl_defs[decl_id];
+        let param_scope_id = self.def::<DefFunction>(def_id).param_scope_id;
+
+        self.def_mut::<DefFunction>(def_id).annotations =
+            self.process_annotations(def_id, &decl.annotations);
+        self.process_generics(def_id, param_scope_id, &decl.generics);
+
+        self.process_function_params(
+            ctx.outer_def_id().is_some(),
+            def_id,
+            param_scope_id,
+            &decl.params,
+        );
+
+        let scope_id = self.sema.name_res.scopes.insert(Scope::new(
+            Some(param_scope_id),
+            ScopeKind::Block {
+                func: def_id,
+                kind: BlockKind::Body(def_id),
+            },
+        ));
+
+        self.def_mut::<DefFunction>(def_id)
+            .body
+            .as_user_mut()
+            .unwrap()
+            .body_scope_id = scope_id;
+
+        if let Some(pred_id) = decl.body {
+            let mut current_scope_id = scope_id;
+
+            self.process_pred(def_id, &mut current_scope_id, PredKind::Decl, pred_id);
         }
     }
 }

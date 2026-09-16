@@ -139,8 +139,11 @@ pub enum DeclKind {
     /// An automaton destructor declaration.
     Destructor(DeclDestructor),
 
-    /// An automaton procedure declaration.
+    /// A procedure declaration.
     Proc(DeclProc),
+
+    /// A predicate declaration.
+    Pred(DeclPred),
 }
 
 impl DeclKind {
@@ -271,6 +274,14 @@ impl DeclKind {
             _ => None,
         }
     }
+
+    /// Checks if this is a predicate declaration and returns it.
+    pub fn as_pred(&self) -> Option<&DeclPred> {
+        match self {
+            Self::Pred(d) => Some(d),
+            _ => None,
+        }
+    }
 }
 
 impl From<DeclImport> for DeclKind {
@@ -366,6 +377,12 @@ impl From<DeclDestructor> for DeclKind {
 impl From<DeclProc> for DeclKind {
     fn from(decl: DeclProc) -> Self {
         Self::Proc(decl)
+    }
+}
+
+impl From<DeclPred> for DeclKind {
+    fn from(decl: DeclPred) -> Self {
+        Self::Pred(decl)
     }
 }
 
@@ -851,7 +868,7 @@ pub struct DeclDestructor {
 
 impl WithLibSl for DeclDestructor {}
 
-/// An automaton procedure declaration.
+/// A procedure declaration.
 #[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 pub struct DeclProc {
@@ -890,6 +907,33 @@ pub struct DeclProc {
 }
 
 impl WithLibSl for DeclProc {}
+
+/// A predicate declaration.
+#[derive(Walkable, Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
+pub struct DeclPred {
+    /// A list of annotations for this declaration.
+    pub annotations: Vec<AnnotationId>,
+
+    /// The predicate's name.
+    #[no_walk]
+    pub name: Name,
+
+    /// A list of type parameter (generic) declarations.
+    #[no_walk]
+    pub generics: Vec<Generic>,
+
+    /// A list of the predicate's parameters.
+    pub params: Vec<FunctionParam>,
+
+    /// Type parameter constraints, specified in a `where`-clause.
+    pub ty_constraints: Vec<TyConstraint>,
+
+    /// The predicate's body.
+    pub body: Option<PredId>,
+}
+
+impl WithLibSl for DeclPred {}
 
 /// A function parameter declaration.
 #[derive(Walkable, Debug, Clone)]

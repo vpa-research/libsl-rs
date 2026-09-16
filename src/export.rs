@@ -589,6 +589,7 @@ impl Display for DeclDisplay<'_> {
             ast::DeclKind::Constructor(decl) => write!(f, "{}", decl.display(self.libsl)),
             ast::DeclKind::Destructor(decl) => write!(f, "{}", decl.display(self.libsl)),
             ast::DeclKind::Proc(decl) => write!(f, "{}", decl.display(self.libsl)),
+            ast::DeclKind::Pred(decl) => write!(f, "{}", decl.display(self.libsl)),
         }
     }
 }
@@ -1407,6 +1408,69 @@ impl Display for DeclProcDisplay<'_> {
         } else {
             write!(f, ";")
         }
+    }
+}
+
+make_display_struct!(DeclPredDisplay { d } for ast::DeclPred);
+
+impl Display for DeclPredDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for &annotation_id in &self.d.annotations {
+            writeln!(
+                f,
+                "{}",
+                self.libsl.annotations[annotation_id].display(self.libsl),
+            )?;
+        }
+
+        write!(f, "pred {}", self.d.name)?;
+
+        if self.d.generics.is_empty() {
+            write!(
+                f,
+                "{}",
+                GenericsDisplay {
+                    generics: &self.d.generics,
+                },
+            )?;
+        }
+
+        display_list(
+            f,
+            ("(", ",", ")"),
+            false,
+            false,
+            self.d.params.iter().map(|param| {
+                move |f: &mut dyn fmt::Write| write!(f, "{}", param.display(self.libsl))
+            }),
+        )?;
+
+        if !self.d.ty_constraints.is_empty() {
+            let mut f = if self.d.params.is_empty() {
+                writeln!(f)?;
+
+                IndentedWriter::new(INDENT, f)
+            } else {
+                write!(f, " ")?;
+
+                IndentedWriter::new_skipping_first_indent(INDENT, f)
+            };
+
+            write!(
+                f,
+                "{}",
+                WhereClauseDisplay {
+                    ty_constraints: &self.d.ty_constraints,
+                    libsl: self.libsl,
+                }
+            )?;
+        }
+
+        if let Some(pred_id) = self.d.body {
+            write!(f, "{}", self.libsl.preds[pred_id].display(self.libsl))?;
+        }
+
+        Ok(())
     }
 }
 

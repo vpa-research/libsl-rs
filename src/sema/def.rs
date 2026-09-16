@@ -762,6 +762,7 @@ impl DefKindProject for DefFunction {
 pub enum FunctionKind {
     Fun { of: Option<DefId> },
     Proc { of: Option<DefId>, pure: bool },
+    Pred { of: Option<DefId> },
     Constructor { of: DefId },
     Destructor { of: DefId },
 }
@@ -771,6 +772,7 @@ impl FunctionKind {
         match *self {
             Self::Fun { of, .. } => of,
             Self::Proc { of, .. } => of,
+            Self::Pred { of, .. } => of,
             Self::Constructor { of, .. } => Some(of),
             Self::Destructor { of, .. } => Some(of),
         }
@@ -916,4 +918,5 @@ pub enum PredKind {
     ContractEnsures,
     ContractRequires,
     Nested,
+    Decl,
 }

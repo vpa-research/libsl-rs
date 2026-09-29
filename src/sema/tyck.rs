@@ -29,6 +29,7 @@ use crate::{AnnotationId, DeclId, ExprId, PredId, StmtId, TyExprId, ast, trace_e
 
 use self::constraints::{Constr, ConstrKind, SubtypeBoundKind};
 use self::operators::BinOpFnSigProvider;
+use self::overload::ApplicabilityCriteria;
 
 use super::def::FunctionKind;
 
@@ -115,10 +116,11 @@ pub enum ReplaceTyArgs<'a> {
     No,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct ExprCkCtx {
     expected: Option<TyId>,
     is_field_base: bool,
+    is_predicate_top_level: bool,
 }
 
 impl ExprCkCtx {
@@ -126,6 +128,7 @@ impl ExprCkCtx {
         Self {
             expected: None,
             is_field_base: false,
+            is_predicate_top_level: false,
         }
     }
 
@@ -133,6 +136,15 @@ impl ExprCkCtx {
         Self {
             expected: Some(ty),
             is_field_base: false,
+            is_predicate_top_level: false,
+        }
+    }
+
+    fn predicate_top_level(expected: TyId) -> Self {
+        Self {
+            expected: Some(expected),
+            is_field_base: false,
+            is_predicate_top_level: true,
         }
     }
 
@@ -140,6 +152,7 @@ impl ExprCkCtx {
         Self {
             expected: None,
             is_field_base: true,
+            is_predicate_top_level: false,
         }
     }
 
@@ -147,6 +160,7 @@ impl ExprCkCtx {
         Self {
             expected,
             is_field_base: false,
+            is_predicate_top_level: false,
         }
     }
 }
@@ -3126,7 +3140,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn tyck_pred_expr(&mut self, _pred: &'ast ast::Pred, expr_id: ExprId) {
         self.tyck_expr(
             expr_id,
-            ExprCkCtx::expecting(self.ctx.sema.tyck.builtin.bool),
+            ExprCkCtx::predicate_top_level(self.ctx.sema.tyck.builtin.bool),
         );
     }
 
@@ -3249,6 +3263,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             &e.name.to_string(),
             &args,
             &ty_args,
+            &ApplicabilityCriteria::for_proc_call(ctx.is_predicate_top_level),
         ) else {
             self.ctx
                 .sema

@@ -11,6 +11,8 @@ use crate::sema::tyck::overload::{ApplicabilityCriteria, FnSigProvider, Overload
 use crate::sema::tyck::{BuiltinTys, FnSig, Pass, TyCkCtx};
 use crate::util::format_list;
 
+use super::overload::AllowedFnKinds;
+
 #[derive(Debug, Clone)]
 pub enum NumericCmpOpOverload {
     SameSign(IntCtor),
@@ -146,10 +148,12 @@ impl<O: Op> OpFnSigProvider<O> {
 
 impl<O: Op> FnSigProvider for OpFnSigProvider<O> {
     fn satisfies(&self, _sema: &mut Sema<'_>, criteria: &ApplicabilityCriteria) -> bool {
-        let &ApplicabilityCriteria { proc_only } = criteria;
+        let ApplicabilityCriteria { allowed_kinds } = criteria;
 
-        if proc_only {
-            return false;
+        match allowed_kinds {
+            AllowedFnKinds::Any => {}
+            AllowedFnKinds::ProcOnly => return false,
+            AllowedFnKinds::ProcPred => return false,
         }
 
         true

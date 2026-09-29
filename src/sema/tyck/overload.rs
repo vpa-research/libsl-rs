@@ -30,13 +30,27 @@ impl Receiver {
 }
 
 #[derive(Debug, Default, Clone)]
+pub enum AllowedFnKinds {
+    #[default]
+    Any,
+    ProcOnly,
+    ProcPred,
+}
+
+#[derive(Debug, Default, Clone)]
 pub struct ApplicabilityCriteria {
-    pub proc_only: bool,
+    pub allowed_kinds: AllowedFnKinds,
 }
 
 impl ApplicabilityCriteria {
-    pub fn for_proc_call() -> Self {
-        Self { proc_only: true }
+    pub fn for_proc_call(allow_pred: bool) -> Self {
+        Self {
+            allowed_kinds: if allow_pred {
+                AllowedFnKinds::ProcPred
+            } else {
+                AllowedFnKinds::ProcOnly
+            },
+        }
     }
 }
 
@@ -73,15 +87,27 @@ impl DefFnSigProvider {
 
 impl FnSigProvider for DefFnSigProvider {
     fn satisfies(&self, sema: &mut Sema<'_>, criteria: &ApplicabilityCriteria) -> bool {
-        let &ApplicabilityCriteria { proc_only } = criteria;
+        let ApplicabilityCriteria { allowed_kinds } = criteria;
 
-        #[allow(clippy::collapsible_if)]
-        if proc_only {
-            if !matches!(
-                sema.name_res.def::<DefFunction>(self.0).kind,
-                FunctionKind::Proc { .. }
-            ) {
-                return false;
+        match allowed_kinds {
+            AllowedFnKinds::Any => {}
+
+            AllowedFnKinds::ProcOnly => {
+                if !matches!(
+                    sema.name_res.def::<DefFunction>(self.0).kind,
+                    FunctionKind::Proc { .. }
+                ) {
+                    return false;
+                }
+            }
+
+            AllowedFnKinds::ProcPred => {
+                if !matches!(
+                    sema.name_res.def::<DefFunction>(self.0).kind,
+                    FunctionKind::Proc { .. } | FunctionKind::Pred { .. }
+                ) {
+                    return false;
+                }
             }
         }
 
@@ -249,14 +275,15 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         name: &str,
         args: &[TyId],
         ty_args: &[TyId],
+        criteria: &ApplicabilityCriteria,
     ) -> Result<DefId> {
         match recv {
             Receiver::None | Receiver::Implicit(_) => {
-                self.resolve_plain_name_callee(loc, expr_id, recv, name, args, ty_args)
+                self.resolve_plain_name_callee(loc, expr_id, recv, name, args, ty_args, criteria)
             }
 
             Receiver::Explicit(ty_id) => {
-                self.resolve_explicit_recv_callee(loc, name, *ty_id, args, ty_args)
+                self.resolve_explicit_recv_callee(loc, name, *ty_id, args, ty_args, criteria)
             }
         }
     }
@@ -315,10 +342,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         name: &str,
         args: &[TyId],
         ty_args: &[TyId],
+        criteria: &ApplicabilityCriteria,
     ) -> Result<DefId> {
         let mut candidates = vec![];
         let mut next_scope_id = Some(self.ctx.sema.name_res.exprs[expr_id].scope_id);
-        let criteria = ApplicabilityCriteria::for_proc_call();
 
         while let Some(scope_id) = next_scope_id {
             let scope = &self.ctx.sema.name_res.scopes[scope_id];
@@ -381,6 +408,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         recv_ty_id: TyId,
         args: &[TyId],
         ty_args: &[TyId],
+        criteria: &ApplicabilityCriteria,
     ) -> Result<DefId> {
         let recv = Receiver::Explicit(recv_ty_id);
         let mut candidates = vec![];
@@ -393,7 +421,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                     &mut candidates,
                     t.ctor,
                     name,
-                    &ApplicabilityCriteria::for_proc_call(),
+                    criteria,
                     &recv,
                     args,
                     ty_args,

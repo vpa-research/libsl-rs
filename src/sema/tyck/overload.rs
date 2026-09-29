@@ -584,7 +584,7 @@ impl TyCkCtx<'_, '_> {
             .collect::<Vec<_>>();
 
         let recv = match lhs.fn_sig(self.sema).recv {
-            Some(_) => unimplemented!(),
+            Some(def_id) => Receiver::Explicit(self.make_recv_ty(def_id, ReplaceTyArgs::No)),
             None => Receiver::None,
         };
 

@@ -2137,15 +2137,16 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             self.ctx.sema.tyck.def_tys.insert(this_def_id, this_ty_id);
         }
 
-        let ret_ty_id = self.ctx.sema.tyck.sigs[def_id].ret.unwrap();
-        self.ctx.sema.tyck.def_tys.insert(
-            self.ctx
-                .sema
-                .name_res
-                .def::<DefFunction>(def_id)
-                .result_def_id,
-            ret_ty_id,
-        );
+        if let Some(result_def_id) = self
+            .ctx
+            .sema
+            .name_res
+            .def::<DefFunction>(def_id)
+            .result_def_id
+        {
+            let ret_ty_id = self.ctx.sema.tyck.sigs[def_id].ret.unwrap();
+            self.ctx.sema.tyck.def_tys.insert(result_def_id, ret_ty_id);
+        }
     }
 }
 

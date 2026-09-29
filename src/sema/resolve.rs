@@ -533,26 +533,34 @@ impl NameRes {
         instance_scope_id
     }
 
-    pub fn define_special_fn_params(&mut self, def_id: DefId, define_this: bool) {
+    pub fn define_special_fn_params(
+        &mut self,
+        def_id: DefId,
+        define_result: bool,
+        define_this: bool,
+    ) {
         let param_scope_id = self.def::<DefFunction>(def_id).param_scope_id;
 
-        self.def_mut::<DefFunction>(def_id).result_def_id = self
-            .add_def(
-                param_scope_id,
-                Ns::Var,
-                "result".into(),
-                self.defs[def_id].loc.clone(),
-                DefVariable::new(
-                    None,
-                    VariableKind::Param {
-                        kind: ParamKind::Result,
-                        of: def_id,
-                    },
-                    true,
+        if define_result {
+            self.def_mut::<DefFunction>(def_id).result_def_id = Some(
+                self.add_def(
+                    param_scope_id,
+                    Ns::Var,
+                    "result".into(),
+                    self.defs[def_id].loc.clone(),
+                    DefVariable::new(
+                        None,
+                        VariableKind::Param {
+                            kind: ParamKind::Result,
+                            of: def_id,
+                        },
+                        true,
+                    )
+                    .into(),
                 )
-                .into(),
-            )
-            .0;
+                .0,
+            );
+        }
 
         if define_this {
             self.def_mut::<DefFunction>(def_id).this_def_id = Some(
@@ -744,6 +752,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         builtin: FunctionBuiltin,
         kind: FunctionKind,
         generics: &[(&str, Variance)],
+        define_result: bool,
         define_this: bool,
         params: &[&str],
     ) -> DefId {
@@ -781,7 +790,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         self.sema
             .name_res
-            .define_special_fn_params(def_id, define_this);
+            .define_special_fn_params(def_id, define_result, define_this);
 
         for (idx, param) in params.iter().enumerate() {
             let param_def_id = self
@@ -824,6 +833,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             },
             &[],
             true,
+            true,
             &[],
         );
 
@@ -836,6 +846,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 pure: true,
             },
             &[],
+            true,
             true,
             &["from", "to"],
         );
@@ -967,7 +978,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.def_mut::<DefFunction>(fn_def_id).param_scope_id = param_scope_id;
         self.sema
             .name_res
-            .define_special_fn_params(fn_def_id, false);
+            .define_special_fn_params(fn_def_id, true, false);
 
         fn_def_id
     }
@@ -1746,6 +1757,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
     fn process_function_params(
         &mut self,
+        define_result: bool,
         define_this: bool,
         def_id: DefId,
         param_scope_id: ScopeId,
@@ -1753,7 +1765,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     ) {
         self.sema
             .name_res
-            .define_special_fn_params(def_id, define_this);
+            .define_special_fn_params(def_id, define_result, define_this);
 
         for (idx, param) in params.iter().enumerate() {
             let name = param.name.to_string();
@@ -2115,6 +2127,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.process_generics(def_id, param_scope_id, &decl.generics);
 
         self.process_function_params(
+            true,
             ctx.outer_def_id().is_some(),
             def_id,
             param_scope_id,
@@ -2271,6 +2284,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             self.process_annotations(def_id, &decl.annotations);
 
         self.process_function_params(
+            true,
             ctx.outer_def_id().is_some(),
             def_id,
             param_scope_id,
@@ -2299,6 +2313,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             self.process_annotations(def_id, &decl.annotations);
 
         self.process_function_params(
+            true,
             ctx.outer_def_id().is_some(),
             def_id,
             param_scope_id,
@@ -2323,6 +2338,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.process_generics(def_id, param_scope_id, &decl.generics);
 
         self.process_function_params(
+            true,
             ctx.outer_def_id().is_some(),
             def_id,
             param_scope_id,
@@ -2347,6 +2363,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.process_generics(def_id, param_scope_id, &decl.generics);
 
         self.process_function_params(
+            false,
             ctx.outer_def_id().is_some(),
             def_id,
             param_scope_id,

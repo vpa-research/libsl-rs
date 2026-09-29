@@ -730,7 +730,7 @@ pub struct DefFunction {
     pub params: Vec<DefId>,
     pub body: FunctionBody,
     pub this_def_id: Option<DefId>,
-    pub result_def_id: DefId,
+    pub result_def_id: Option<DefId>,
 }
 
 impl DefFunction {

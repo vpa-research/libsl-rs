@@ -1414,6 +1414,12 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         for ty_id in ty_ids {
             *ty_id = self.repr(*ty_id);
+
+            debug_assert!(
+                !self.ctx.sema.tyck.tys[*ty_id].is_var(),
+                "inference variable {} remained unsolved",
+                self.ctx.sema.format_ty(*ty_id),
+            );
         }
 
         self.ctx.sema.tyck.exprs = exprs;
@@ -2958,9 +2964,16 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             self.tyck_annotations(&param.annotations);
         }
 
+        let first_var_idx = self.ctx.sema.tyck.var_provenances.len();
+
         if let Some(pred_id) = d.body {
             self.tyck_pred(pred_id);
         }
+
+        let vars = (first_var_idx..self.ctx.sema.tyck.var_provenances.len()).collect::<Vec<_>>();
+        self.result = self
+            .result
+            .and(self.ctx.constrs.solve(self.ctx.sema, self.diag, vars));
     }
 
     fn tyck_function_body(&mut self, body: &'ast ast::FunctionBody) {

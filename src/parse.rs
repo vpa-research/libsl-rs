@@ -652,7 +652,7 @@ impl<'a> AstConstructor<'a> {
     fn process_enum_decl(&mut self, ctx: &EnumDeclContextAll<'_>) -> Result<DeclId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
         let annotations = self.process_annotations(&ctx.annotations)?;
-        let ty_name = self.process_qualified_type_name(ctx.typeName.as_ref().unwrap())?;
+        let ty_name = self.process_full_name(ctx.typeName.as_ref().unwrap());
         let variants = ctx
             .variants
             .iter()

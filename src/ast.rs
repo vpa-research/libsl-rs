@@ -506,7 +506,8 @@ pub struct DeclEnum {
     pub annotations: Vec<AnnotationId>,
 
     /// The declared type's name.
-    pub ty_name: QualifiedTyName,
+    #[no_walk]
+    pub ty_name: FullName,
 
     /// Possible values of the type.
     #[no_walk]

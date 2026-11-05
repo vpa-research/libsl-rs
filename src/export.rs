@@ -758,7 +758,7 @@ impl Display for DeclEnumDisplay<'_> {
             )?;
         }
 
-        write!(f, "enum {} ", self.d.ty_name.display(self.libsl))?;
+        write!(f, "enum {} ", self.d.ty_name)?;
 
         display_list(
             f,

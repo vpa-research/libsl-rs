@@ -4017,7 +4017,7 @@ pub type EnumDeclContext<'input> = BaseParserRuleContext<'input,EnumDeclContextE
 pub struct EnumDeclContextExt<'input>{
 	pub annotation: Option<Rc<AnnotationContextAll<'input>>>,
 	pub annotations:Vec<Rc<AnnotationContextAll<'input>>>,
-	pub typeName: Option<Rc<QualifiedTypeNameContextAll<'input>>>,
+	pub typeName: Option<Rc<FullNameContextAll<'input>>>,
 	pub enumDeclVariant: Option<Rc<EnumDeclVariantContextAll<'input>>>,
 	pub variants:Vec<Rc<EnumDeclVariantContextAll<'input>>>,
 ph:PhantomData<&'input str>
@@ -4072,7 +4072,7 @@ fn L_BRACE(&self) -> Option<Rc<TerminalNode<'input,LibSLParserContextType>>> whe
 fn R_BRACE(&self) -> Option<Rc<TerminalNode<'input,LibSLParserContextType>>> where Self:Sized{
 	self.get_token(R_BRACE, 0)
 }
-fn qualifiedTypeName(&self) -> Option<Rc<QualifiedTypeNameContextAll<'input>>> where Self:Sized{
+fn fullName(&self) -> Option<Rc<FullNameContextAll<'input>>> where Self:Sized{
 	self.child_of_type(0)
 }
 fn annotation_all(&self) ->  Vec<Rc<AnnotationContextAll<'input>>> where Self:Sized{
@@ -4135,9 +4135,9 @@ where
 			recog.base.set_state(358);
 			recog.base.match_token(ENUM,&mut recog.err_handler)?;
 
-			/*InvokeRule qualifiedTypeName*/
+			/*InvokeRule fullName*/
 			recog.base.set_state(359);
-			let tmp = recog.qualifiedTypeName()?;
+			let tmp = recog.fullName()?;
 			 cast_mut::<_,EnumDeclContext >(&mut _localctx).typeName = Some(tmp.clone());
 			  
 
@@ -27297,7 +27297,7 @@ const _serializedATN: &'static [isize] = &[
     92,46,0,349,351,3,66,33,0,350,346,1,0,0,0,350,347,1,0,0,0,350,348,1,
     0,0,0,350,349,1,0,0,0,351,27,1,0,0,0,352,354,3,120,60,0,353,352,1,0,
     0,0,354,357,1,0,0,0,355,353,1,0,0,0,355,356,1,0,0,0,356,358,1,0,0,0,
-    357,355,1,0,0,0,358,359,5,53,0,0,359,360,3,126,63,0,360,364,5,4,0,0,
+    357,355,1,0,0,0,358,359,5,53,0,0,359,360,3,128,64,0,360,364,5,4,0,0,
     361,363,3,30,15,0,362,361,1,0,0,0,363,366,1,0,0,0,364,362,1,0,0,0,364,
     365,1,0,0,0,365,367,1,0,0,0,366,364,1,0,0,0,367,368,5,5,0,0,368,29,1,
     0,0,0,369,370,3,204,102,0,370,371,5,2,0,0,371,372,3,32,16,0,372,373,

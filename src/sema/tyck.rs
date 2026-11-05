@@ -1488,9 +1488,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn early_tyck_decl_enum(&mut self, decl: &'ast ast::Decl, d: &'ast ast::DeclEnum) {
+    fn early_tyck_decl_enum(&mut self, decl: &'ast ast::Decl, _d: &'ast ast::DeclEnum) {
         let def_id = self.ctx.sema.name_res.decl_defs[decl.id];
-        self.register_parametrized_entity(def_id, &d.ty_name.generics);
+        self.register_parametrized_entity(def_id, &[]);
     }
 
     fn early_tyck_decl_annotation(
@@ -1707,7 +1707,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
                 self.check_enum_value_ty(
                     &mut error_reported,
-                    &d.ty_name.ty_name.loc,
+                    &d.ty_name.loc,
                     prev,
                     prev_variant,
                     &ctor,

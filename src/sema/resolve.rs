@@ -1127,8 +1127,8 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         decl_id,
                         outer_scope_id,
                         Ns::Ty,
-                        decl.ty_name.ty_name.to_string(),
-                        decl.ty_name.ty_name.loc.clone(),
+                        decl.ty_name.to_string(),
+                        decl.ty_name.loc.clone(),
                         DefEnum::new(decl_id).into(),
                     )
                     .0;
@@ -1980,7 +1980,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         self.def_mut::<DefEnum>(def_id).annotations =
             self.process_annotations(def_id, &decl.annotations);
-        self.process_generics(def_id, param_scope_id, &decl.ty_name.generics);
+        self.process_generics(def_id, param_scope_id, &[]);
     }
 
     fn process_decl_annotation(

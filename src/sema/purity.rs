@@ -112,7 +112,7 @@ struct BodyChecker<'ast, 'diag, 'ctx, D> {
 
 impl<'ast, D: DiagCtx> BodyChecker<'ast, '_, '_, D> {
     fn check_call(&mut self, expr: &'ast ast::Expr) {
-        let (_, call_target) = self.pass.sema.tyck.call_targets[expr.id];
+        let call_target = self.pass.sema.tyck.call_info[expr.id].target;
 
         if let FunctionKind::Proc { pure: true, .. } =
             self.pass.sema.name_res.def::<DefFunction>(call_target).kind

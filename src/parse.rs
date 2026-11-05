@@ -1266,11 +1266,16 @@ impl<'a> AstConstructor<'a> {
         let annotations = self.process_annotations(&ctx.annotations)?;
 
         let mut is_pure = false;
+        let mut is_static = false;
 
         for modifier in &ctx.modifiers {
             match &**modifier {
                 ProcModifierContextAll::ProcModifierPureContext(_) => {
                     is_pure = true;
+                }
+
+                ProcModifierContextAll::ProcModifierStaticContext(_) => {
+                    is_static = true;
                 }
 
                 ProcModifierContextAll::Error(_) => unreachable!(),
@@ -1319,6 +1324,7 @@ impl<'a> AstConstructor<'a> {
             kind: ast::DeclProc {
                 annotations,
                 is_pure,
+                is_static,
                 is_method,
                 name,
                 generics,

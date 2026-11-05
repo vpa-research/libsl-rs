@@ -725,6 +725,7 @@ pub enum ParamKind {
 pub struct DefFunction {
     pub annotations: Vec<AnnotationId>,
     pub kind: FunctionKind,
+    pub is_static: bool,
     pub is_method: bool,
     pub param_scope_id: ScopeId,
     pub params: Vec<DefId>,
@@ -734,10 +735,11 @@ pub struct DefFunction {
 }
 
 impl DefFunction {
-    pub fn new(kind: FunctionKind, is_method: bool, body: FunctionBody) -> Self {
+    pub fn new(kind: FunctionKind, is_static: bool, is_method: bool, body: FunctionBody) -> Self {
         Self {
             annotations: Default::default(),
             kind,
+            is_static,
             is_method,
             param_scope_id: Default::default(),
             params: Default::default(),

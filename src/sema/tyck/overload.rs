@@ -7,10 +7,10 @@ use std::iter;
 use crate::diag::{Diag, DiagCtx, DummyDiagCtx, Label};
 use crate::loc::Loc;
 use crate::sema::def::{DefFunction, DefId, FunctionKind};
-use crate::sema::resolve::ScopeKind;
+use crate::sema::resolve::{ScopeId, ScopeKind};
 use crate::sema::ty::{Ty, TyId};
 use crate::sema::tyck::constraints::{Constr, ConstrKind, ConstrProvenance};
-use crate::sema::tyck::{FnSig, Pass, ReplaceTyArgs, TyCkCtx};
+use crate::sema::tyck::{CallKind, FnSig, Pass, ReplaceTyArgs, TyCkCtx};
 use crate::sema::{Result, Sema, SemaError};
 use crate::util::format_sep_list;
 use crate::{ExprId, WithLibSl, trace_enabled};
@@ -271,19 +271,23 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         &mut self,
         loc: &Loc,
         expr_id: ExprId,
+        call_kind: &CallKind,
         recv: &Receiver,
         name: &str,
         args: &[TyId],
         ty_args: &[TyId],
         criteria: &ApplicabilityCriteria,
     ) -> Result<DefId> {
-        match recv {
-            Receiver::None | Receiver::Implicit(_) => {
-                self.resolve_plain_name_callee(loc, expr_id, recv, name, args, ty_args, criteria)
-            }
+        if let CallKind::ScopeQualified(scope_id) = *call_kind {
+            self.resolve_scope_callee(loc, name, scope_id, args, ty_args, criteria)
+        } else {
+            match recv {
+                Receiver::None | Receiver::Implicit(_) => self
+                    .resolve_plain_name_callee(loc, expr_id, recv, name, args, ty_args, criteria),
 
-            Receiver::Explicit(ty_id) => {
-                self.resolve_explicit_recv_callee(loc, name, *ty_id, args, ty_args, criteria)
+                Receiver::Explicit(ty_id) => {
+                    self.resolve_explicit_recv_callee(loc, name, *ty_id, args, ty_args, criteria)
+                }
             }
         }
     }
@@ -446,6 +450,41 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .map(|candidate| candidate.0)
     }
 
+    fn resolve_scope_callee(
+        &mut self,
+        loc: &Loc,
+        name: &str,
+        scope_id: ScopeId,
+        args: &[TyId],
+        ty_args: &[TyId],
+        criteria: &ApplicabilityCriteria,
+    ) -> Result<DefId> {
+        let recv = Receiver::None;
+        let mut candidates = vec![];
+
+        if let Some(overloads) = self.ctx.sema.name_res.scopes[scope_id].functions.get(name) {
+            candidates.extend(overloads.clone().into_iter().filter_map(|def_id| {
+                let def_id = self.ctx.sema.name_res.resolve_import(def_id);
+                let provider = DefFnSigProvider(def_id);
+
+                self.ctx
+                    .is_function_applicable(&provider, criteria, &recv, args, ty_args)
+                    .then_some(provider)
+            }));
+        }
+
+        let diag_provider = CallOverloadDiagProvider {
+            loc,
+            name,
+            recv: &recv,
+            ty_args,
+            args,
+        };
+
+        self.select_overload(&candidates, &diag_provider)
+            .map(|candidate| candidate.0)
+    }
+
     pub fn select_overload<'a, F: FnSigProvider>(
         &mut self,
         candidates: &'a [F],
@@ -546,7 +585,34 @@ impl TyCkCtx<'_, '_> {
                         })?;
                 }
 
-                _ => return Err(SemaError),
+                _ => {
+                    if trace_enabled() {
+                        eprint!("  receiver mismatch: expected ");
+
+                        match sig.recv {
+                            Some(def_id) => {
+                                eprint!("object type of `{}`", self.sema.name_res.defs[def_id].name)
+                            }
+                            None => eprint!("no receiver"),
+                        }
+
+                        eprint!(", got ");
+
+                        match recv {
+                            Receiver::None => eprint!("<none>"),
+                            Receiver::Implicit(ty_id) => {
+                                eprint!("`{}` (explicit)", self.sema.format_ty(*ty_id))
+                            }
+                            Receiver::Explicit(ty_id) => {
+                                eprint!("`{}` (implicit)", self.sema.format_ty(*ty_id))
+                            }
+                        }
+
+                        eprintln!();
+                    }
+
+                    return Err(SemaError);
+                }
             }
 
             for (idx, (&param, &arg)) in iter::zip(&sig.params, args).enumerate() {

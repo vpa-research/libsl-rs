@@ -751,6 +751,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         name: String,
         builtin: FunctionBuiltin,
         kind: FunctionKind,
+        is_static: bool,
         generics: &[(&str, Variance)],
         define_result: bool,
         define_this: bool,
@@ -762,7 +763,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 Ns::Function,
                 name,
                 Loc::Synthetic,
-                DefFunction::new(kind, false, builtin.into()).into(),
+                DefFunction::new(kind, is_static, false, builtin.into()).into(),
             )
             .0;
         let param_scope_id = self.add_param_scope(def_id, scope_id);
@@ -831,6 +832,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 of: Some(def_id),
                 pure: true,
             },
+            false,
             &[],
             true,
             true,
@@ -845,6 +847,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 of: Some(def_id),
                 pure: true,
             },
+            false,
             &[],
             true,
             true,
@@ -967,6 +970,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                         of: None,
                         pure: true,
                     },
+                    false,
                     false,
                     FunctionBody::Constructor { of: def_id },
                 )
@@ -1249,6 +1253,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                             FunctionKind::Fun {
                                 of: ctx.outer_def_id(),
                             },
+                            decl.is_static,
                             decl.is_method,
                             FunctionBodyUser::new(decl_id).into(),
                         )
@@ -1392,6 +1397,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                             FunctionKind::Constructor {
                                 of: outer_def_id.unwrap(),
                             },
+                            false,
                             decl.is_method,
                             FunctionBodyUser::new(decl_id).into(),
                         )
@@ -1423,6 +1429,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                             FunctionKind::Destructor {
                                 of: outer_def_id.unwrap(),
                             },
+                            false,
                             decl.is_method,
                             FunctionBodyUser::new(decl_id).into(),
                         )
@@ -1437,10 +1444,13 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             }
 
             ast::DeclKind::Proc(decl) => {
-                let scope_id = ctx
-                    .outer_instance(self.sema)
-                    .map(|(_, scope_id)| scope_id)
-                    .unwrap_or(outer_scope_id);
+                let scope_id = if decl.is_static {
+                    outer_scope_id
+                } else {
+                    ctx.outer_instance(self.sema)
+                        .map(|(_, scope_id)| scope_id)
+                        .unwrap_or(outer_scope_id)
+                };
 
                 let def_id = self
                     .add_decl_def(
@@ -1460,6 +1470,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                                 },
                                 pure: decl.is_pure,
                             },
+                            decl.is_static,
                             decl.is_method,
                             FunctionBodyUser::new(decl_id).into(),
                         )
@@ -1470,7 +1481,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                 let param_scope_id = self.add_param_scope(def_id, scope_id);
                 self.def_mut::<DefFunction>(def_id).param_scope_id = param_scope_id;
 
-                self.record_member_function(ctx, false, decl.is_method, def_id);
+                self.record_member_function(ctx, decl.is_static, decl.is_method, def_id);
             }
 
             ast::DeclKind::Pred(decl) => {
@@ -1496,6 +1507,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
                                     }
                                 },
                             },
+                            false,
                             false,
                             FunctionBodyUser::new(decl_id).into(),
                         )

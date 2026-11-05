@@ -119,7 +119,7 @@ pub enum ReplaceTyArgs<'a> {
 #[derive(Debug)]
 struct ExprCkCtx {
     expected: Option<TyId>,
-    is_field_base: bool,
+    allow_scope_expr: bool,
     is_predicate_top_level: bool,
 }
 
@@ -127,7 +127,7 @@ impl ExprCkCtx {
     fn empty() -> Self {
         Self {
             expected: None,
-            is_field_base: false,
+            allow_scope_expr: false,
             is_predicate_top_level: false,
         }
     }
@@ -135,7 +135,7 @@ impl ExprCkCtx {
     fn expecting(ty: TyId) -> Self {
         Self {
             expected: Some(ty),
-            is_field_base: false,
+            allow_scope_expr: false,
             is_predicate_top_level: false,
         }
     }
@@ -143,7 +143,7 @@ impl ExprCkCtx {
     fn predicate_top_level(expected: TyId) -> Self {
         Self {
             expected: Some(expected),
-            is_field_base: false,
+            allow_scope_expr: false,
             is_predicate_top_level: true,
         }
     }
@@ -151,7 +151,7 @@ impl ExprCkCtx {
     fn field_base(&self) -> Self {
         Self {
             expected: None,
-            is_field_base: true,
+            allow_scope_expr: true,
             is_predicate_top_level: false,
         }
     }
@@ -159,7 +159,7 @@ impl ExprCkCtx {
     fn nested(&self, expected: Option<TyId>) -> Self {
         Self {
             expected,
-            is_field_base: false,
+            allow_scope_expr: false,
             is_predicate_top_level: false,
         }
     }
@@ -167,9 +167,15 @@ impl ExprCkCtx {
 
 #[derive(Debug, Clone)]
 pub struct ResolvedFieldExpr {
-    pub field_def_id: DefId,
+    pub target: FieldExprTarget,
     pub base_scope_id: ScopeId,
     pub base: FieldExprBase,
+}
+
+#[derive(Debug, Clone)]
+pub enum FieldExprTarget {
+    Field(DefId),
+    Scope(ScopeId),
 }
 
 #[derive(Debug, Clone)]
@@ -184,6 +190,28 @@ pub struct CallSig {
     pub ty_args: Vec<TyId>,
     pub args: Vec<TyId>,
     pub ret: TyId,
+}
+
+#[derive(Debug, Clone)]
+pub struct CallInfo {
+    pub target: DefId,
+    pub recv: Receiver,
+    pub kind: CallKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum CallKind {
+    /// An unqualified non-method call.
+    Plain,
+
+    /// An implicit method call (via an unqualified call expression).
+    ImplicitMethod,
+
+    /// An explicit method call (via a receiver-qualified call expression).
+    ExplicitMethod,
+
+    /// A non-method call via a scope-qualified call expression.
+    ScopeQualified(ScopeId),
 }
 
 #[derive(Debug, Default)]
@@ -202,11 +230,18 @@ pub struct TyCk {
     pub operators: SparseSecondaryMap<ExprId, OpOverload>,
     pub assignments: SparseSecondaryMap<StmtId, AssignmentKind>,
 
-    /// Maps procedure call expressions to their resolved call targets.
-    pub call_targets: SparseSecondaryMap<ExprId, (Receiver, DefId)>,
+    /// Maps call expressions to their resolved call targets.
+    pub call_info: SparseSecondaryMap<ExprId, CallInfo>,
 
     /// Maps calls and operator expressions to resolved signatures.
     pub call_sigs: SparseSecondaryMap<ExprId, CallSig>,
+
+    /// Maps scope expressions to their resolved scopes.
+    ///
+    /// Scope expressions are sequences of `.`-separated identifiers that resolve to a member scope
+    /// instead of being interpreted as actual value-producing expressions. It's always a base
+    /// expression of a field/call expression.
+    pub scope_exprs: SparseSecondaryMap<ExprId, ScopeId>,
 
     /// Maps name expressions to resolved entities.
     pub name_exprs: SparseSecondaryMap<ExprId, ResolvedName>,
@@ -1392,7 +1427,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         let mut exprs = mem::take(&mut self.ctx.sema.tyck.exprs);
         let mut ty_exprs = mem::take(&mut self.ctx.sema.tyck.ty_exprs);
         let mut def_tys = mem::take(&mut self.ctx.sema.tyck.def_tys);
-        let mut call_targets = mem::take(&mut self.ctx.sema.tyck.call_targets);
+        let mut call_info = mem::take(&mut self.ctx.sema.tyck.call_info);
         let mut call_sigs = mem::take(&mut self.ctx.sema.tyck.call_sigs);
 
         let ty_ids = exprs
@@ -1400,9 +1435,9 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             .chain(ty_exprs.values_mut())
             .chain(def_tys.values_mut())
             .chain(
-                call_targets
+                call_info
                     .values_mut()
-                    .flat_map(|(recv, _)| recv_ty_id(recv)),
+                    .flat_map(|info| recv_ty_id(&mut info.recv)),
             )
             .chain(call_sigs.values_mut().flat_map(|sig| {
                 recv_ty_id(&mut sig.recv)
@@ -1425,7 +1460,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.ctx.sema.tyck.exprs = exprs;
         self.ctx.sema.tyck.ty_exprs = ty_exprs;
         self.ctx.sema.tyck.def_tys = def_tys;
-        self.ctx.sema.tyck.call_targets = call_targets;
+        self.ctx.sema.tyck.call_info = call_info;
         self.ctx.sema.tyck.call_sigs = call_sigs;
     }
 }
@@ -2125,7 +2160,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         ret: TyId,
     ) {
         let def = self.ctx.sema.name_res.def::<DefFunction>(def_id);
-        let recv = def.kind.of();
+        let recv = if def.is_static { None } else { def.kind.of() };
         self.tyck_params(def_id, param_ty_exprs, |def: &DefFunction| &def.params);
         self.register_fn_sig::<DefFunction>(def_id, recv, |def| &def.params, Some(ret));
         self.tyck_special_fn_params(def_id);
@@ -3065,11 +3100,18 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             ast::ExprKind::Field(_) => {
                 let resolved = &self.ctx.sema.tyck.field_exprs[s.lhs];
 
+                let def_id = match resolved.target {
+                    FieldExprTarget::Field(def_id) => def_id,
+                    FieldExprTarget::Scope(_) => {
+                        unreachable!("assignee cannot be a scope expression")
+                    }
+                };
+
                 match resolved.base {
-                    FieldExprBase::MemberScopeOf(_) => AssignmentKind::Var(resolved.field_def_id),
+                    FieldExprBase::MemberScopeOf(_) => AssignmentKind::Var(def_id),
                     FieldExprBase::InstanceScopeOf(_) => AssignmentKind::Field {
                         implicit: false,
-                        def_id: resolved.field_def_id,
+                        def_id,
                     },
                 }
             }
@@ -3213,26 +3255,20 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.ctx.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
-    fn tyck_expr_call(
-        &mut self,
-        expr: &'ast ast::Expr,
-        e: &'ast ast::ExprCall,
-        ctx: ExprCkCtx,
-    ) {
+    fn tyck_expr_call(&mut self, expr: &'ast ast::Expr, e: &'ast ast::ExprCall, ctx: ExprCkCtx) {
         self.ctx
             .sema
             .tyck
             .exprs
             .insert(expr.id, self.ctx.sema.tyck.builtin.error);
 
-        let recv = e
-            .recv
-            .map(|expr_id| {
-                let ty_id = self.tyck_expr(expr_id, ctx.nested(None));
+        let recv = if let Some(recv_expr_id) = e.recv {
+            let ty_id = self.tyck_expr(recv_expr_id, ctx.field_base());
 
-                self.solve_ty(ty_id)
-            })
-            .transpose();
+            self.solve_ty(ty_id).map(Some)
+        } else {
+            Ok(None)
+        };
 
         let ty_args = e
             .generics
@@ -3262,17 +3298,22 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             return;
         }
 
-        let recv = match recv {
-            Some(recv) => Receiver::Explicit(recv),
+        let (recv, call_kind) = match recv {
+            Some(recv) => match self.ctx.sema.tyck.scope_exprs.get(e.recv.unwrap()) {
+                Some(&scope_id) => (Receiver::None, CallKind::ScopeQualified(scope_id)),
+                None => (Receiver::Explicit(recv), CallKind::ExplicitMethod),
+            },
+
             None => match self.expr_recv(expr.id, ReplaceTyArgs::No) {
-                Some(recv) => Receiver::Implicit(recv),
-                None => Receiver::None,
+                Some(recv) => (Receiver::Implicit(recv), CallKind::ImplicitMethod),
+                None => (Receiver::None, CallKind::Plain),
             },
         };
 
         let Ok(def_id) = self.resolve_callee(
             &expr.loc,
             expr.id,
+            &call_kind,
             &recv,
             &e.name.to_string(),
             &args,
@@ -3287,11 +3328,14 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             return;
         };
 
-        self.ctx
-            .sema
-            .tyck
-            .call_targets
-            .insert(expr.id, (recv.clone(), def_id));
+        self.ctx.sema.tyck.call_info.insert(
+            expr.id,
+            CallInfo {
+                target: def_id,
+                recv: recv.clone(),
+                kind: call_kind,
+            },
+        );
 
         self.check_ty_arg_arity(&expr.loc, ty_args.len(), self.fn_sig(def_id).generics.len());
         self.check_arg_arity(&expr.loc, args.len(), self.fn_sig(def_id).params.len());
@@ -3538,7 +3582,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
     fn tyck_expr_name(&mut self, expr: &'ast ast::Expr, e: &'ast ast::ExprName, ctx: ExprCkCtx) {
         let scope_id = self.ctx.sema.name_res.exprs[expr.id].scope_id;
 
-        let Ok(res) = self.resolve_expr_name(scope_id, &e.name, ctx.is_field_base) else {
+        let Ok(res) = self.resolve_expr_name(scope_id, &e.name, ctx.allow_scope_expr) else {
             self.ctx
                 .sema
                 .tyck
@@ -3551,15 +3595,14 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         let def_id = res.def_id;
         self.ctx.sema.tyck.name_exprs.insert(expr.id, res);
 
-        if matches!(
-            self.ctx.sema.tyck.name_exprs[expr.id].kind,
-            ResolvedNameKind::MemberScope(_)
-        ) {
+        if let ResolvedNameKind::MemberScope(scope_id) = self.ctx.sema.tyck.name_exprs[expr.id].kind
+        {
             self.ctx
                 .sema
                 .tyck
                 .exprs
                 .insert(expr.id, self.ctx.sema.tyck.builtin.any);
+            self.ctx.sema.tyck.scope_exprs.insert(expr.id, scope_id);
 
             return;
         }
@@ -3593,14 +3636,16 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             return;
         };
 
-        let (base, scope_id, param_map) = match self.ctx.sema.tyck.name_exprs.get(e.base) {
-            Some(&ResolvedName {
-                kind: ResolvedNameKind::MemberScope(scope_id),
-                def_id,
-                ..
-            }) => (Base::MemberScope(def_id), scope_id, Default::default()),
+        let (base, scope_id, param_map) = match self.ctx.sema.tyck.scope_exprs.get(e.base) {
+            Some(&scope_id) => {
+                let ScopeKind::Member(def_id) = self.ctx.sema.name_res.scopes[scope_id].kind else {
+                    unreachable!()
+                };
 
-            _ => match &self.ctx.sema.tyck.tys[base] {
+                (Base::MemberScope(def_id), scope_id, Default::default())
+            }
+
+            None => match &self.ctx.sema.tyck.tys[base] {
                 Ty::Error => return,
 
                 Ty::Ctor(t) => match &self.ctx.sema.name_res.defs[t.ctor].kind {
@@ -3648,12 +3693,65 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
         let field = e.field.to_string();
 
-        let Some(def_id) = self
-            .ctx
-            .sema
-            .name_res
-            .try_resolve_local(scope_id, Ns::Var, &field)
-        else {
+        let ty_id = if let Some(def_id) =
+            self.ctx
+                .sema
+                .name_res
+                .try_resolve_local(scope_id, Ns::Var, &field)
+        {
+            let def_id = self.ctx.sema.name_res.resolve_import(def_id);
+            let ty_id = self.ctx.sema.tyck.def_tys[def_id];
+            let ty_id = self.ctx.sema.tyck.subst(ty_id, &param_map);
+            let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, ty_id);
+
+            self.ctx.sema.tyck.field_exprs.insert(
+                expr.id,
+                ResolvedFieldExpr {
+                    target: FieldExprTarget::Field(def_id),
+                    base_scope_id: scope_id,
+                    base: match base {
+                        Base::MemberScope(base_def_id) => FieldExprBase::MemberScopeOf(base_def_id),
+                        Base::InstanceScope(base_def_id, _) => {
+                            FieldExprBase::InstanceScopeOf(base_def_id)
+                        }
+                    },
+                },
+            );
+
+            ty_id
+        } else if let Base::MemberScope(base_def_id) = base
+            && ctx.allow_scope_expr
+            && let Some(def_id) = self.ctx.sema.name_res.try_resolve_local(
+                self.ctx.sema.name_res.def_member_scopes[base_def_id],
+                Ns::Ty,
+                &field,
+            )
+            && let def_id = self.ctx.sema.name_res.resolve_import(def_id)
+            && let Some(&target_scope_id) = self.ctx.sema.name_res.def_member_scopes.get(def_id)
+        {
+            // this is a scope expression.
+            self.ctx.sema.tyck.field_exprs.insert(
+                expr.id,
+                ResolvedFieldExpr {
+                    target: FieldExprTarget::Scope(target_scope_id),
+                    base_scope_id: scope_id,
+                    base: match base {
+                        Base::MemberScope(base_def_id) => FieldExprBase::MemberScopeOf(base_def_id),
+                        Base::InstanceScope(base_def_id, _) => {
+                            FieldExprBase::InstanceScopeOf(base_def_id)
+                        }
+                    },
+                },
+            );
+
+            self.ctx
+                .sema
+                .tyck
+                .scope_exprs
+                .insert(expr.id, target_scope_id);
+
+            self.ctx.sema.tyck.builtin.any
+        } else {
             self.result = Err(SemaError);
             self.diag.emit(match base {
                 Base::MemberScope(def_id) => Diag::err()
@@ -3686,25 +3784,6 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
             return;
         };
-
-        let def_id = self.ctx.sema.name_res.resolve_import(def_id);
-        let ty_id = self.ctx.sema.tyck.def_tys[def_id];
-        let ty_id = self.ctx.sema.tyck.subst(ty_id, &param_map);
-        let ty_id = self.check_ty(ConstrProvenance::Expr(expr.id), ctx.expected, ty_id);
-
-        self.ctx.sema.tyck.field_exprs.insert(
-            expr.id,
-            ResolvedFieldExpr {
-                field_def_id: def_id,
-                base_scope_id: scope_id,
-                base: match base {
-                    Base::MemberScope(base_def_id) => FieldExprBase::MemberScopeOf(base_def_id),
-                    Base::InstanceScope(base_def_id, _) => {
-                        FieldExprBase::InstanceScopeOf(base_def_id)
-                    }
-                },
-            },
-        );
 
         self.ctx.sema.tyck.exprs.insert(expr.id, ty_id);
     }

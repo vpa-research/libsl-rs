@@ -881,6 +881,11 @@ pub struct DeclProc {
     #[no_walk]
     pub is_pure: bool,
 
+    /// Whether the function has a `static` modifier.
+    #[cfg_attr(feature = "serde", no_wrap)]
+    #[no_walk]
+    pub is_static: bool,
+
     /// Whether the procedure is a method (uses `*.` in its name).
     #[cfg_attr(feature = "serde", no_wrap)]
     #[no_walk]
@@ -1810,14 +1815,14 @@ pub struct ExprCall {
     /// The receiver expression.
     pub recv: Option<ExprId>,
 
-    /// The procedure called in this expression.
+    /// The name of the functional entity called in this expression.
     #[no_walk]
     pub name: Name,
 
     /// A list of type arguments for the callee.
     pub generics: Option<Vec<TyArg>>,
 
-    /// A list of arguments to the procedure call.
+    /// A list of call arguments.
     pub args: Vec<ExprId>,
 }
 

@@ -897,6 +897,18 @@ fn enter_ProcModifierPure(&mut self, _ctx: &ProcModifierPureContext<'input>) { }
  */
 fn exit_ProcModifierPure(&mut self, _ctx: &ProcModifierPureContext<'input>) { }
 /**
+ * Enter a parse tree produced by the {@code ProcModifierStatic}
+ * labeled alternative in {@link LibSLParser#procModifier}.
+ * @param ctx the parse tree
+ */
+fn enter_ProcModifierStatic(&mut self, _ctx: &ProcModifierStaticContext<'input>) { }
+/**
+ * Exit a parse tree produced by the {@code ProcModifierStatic}
+ * labeled alternative in {@link LibSLParser#procModifier}.
+ * @param ctx the parse tree
+ */
+fn exit_ProcModifierStatic(&mut self, _ctx: &ProcModifierStaticContext<'input>) { }
+/**
  * Enter a parse tree produced by {@link LibSLParser#functionParamList}.
  * @param ctx the parse tree
  */

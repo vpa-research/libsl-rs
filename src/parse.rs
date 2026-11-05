@@ -2164,8 +2164,8 @@ impl<'a> AstConstructor<'a> {
                 self.process_set_lit_expr(&ctx.setLitExpr().unwrap())
             }
 
-            ExprContextAll::ExprProcCallUnqualifiedContext(ctx) => {
-                self.process_expr_proc_call_unqualified(ctx)
+            ExprContextAll::ExprCallUnqualifiedContext(ctx) => {
+                self.process_expr_call_unqualified(ctx)
             }
 
             ExprContextAll::ExprActionCallContext(ctx) => {
@@ -2180,8 +2180,8 @@ impl<'a> AstConstructor<'a> {
 
             ExprContextAll::ExprPrevContext(ctx) => self.process_expr_prev(ctx),
 
-            ExprContextAll::ExprProcCallQualifiedContext(ctx) => {
-                self.process_expr_proc_call_qualified(ctx)
+            ExprContextAll::ExprCallQualifiedContext(ctx) => {
+                self.process_expr_call_qualified(ctx)
             }
 
             ExprContextAll::ExprFieldContext(ctx) => self.process_expr_field(ctx),
@@ -2425,9 +2425,9 @@ impl<'a> AstConstructor<'a> {
         }))
     }
 
-    fn process_expr_proc_call_unqualified(
+    fn process_expr_call_unqualified(
         &mut self,
-        ctx: &ExprProcCallUnqualifiedContext<'_>,
+        ctx: &ExprCallUnqualifiedContext<'_>,
     ) -> Result<ExprId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
         let name = self.process_name(ctx.name.as_ref().unwrap());
@@ -2453,7 +2453,7 @@ impl<'a> AstConstructor<'a> {
         Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
             id,
             loc,
-            kind: ast::ExprProcCall {
+            kind: ast::ExprCall {
                 recv: None,
                 name,
                 generics,
@@ -2580,9 +2580,9 @@ impl<'a> AstConstructor<'a> {
         }))
     }
 
-    fn process_expr_proc_call_qualified(
+    fn process_expr_call_qualified(
         &mut self,
-        ctx: &ExprProcCallQualifiedContext<'_>,
+        ctx: &ExprCallQualifiedContext<'_>,
     ) -> Result<ExprId> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
         let recv = self.process_expr(ctx.base.as_ref().unwrap())?;
@@ -2609,7 +2609,7 @@ impl<'a> AstConstructor<'a> {
         Ok(self.libsl.exprs.insert_with_key(|id| ast::Expr {
             id,
             loc,
-            kind: ast::ExprProcCall {
+            kind: ast::ExprCall {
                 recv: Some(recv),
                 name,
                 generics,

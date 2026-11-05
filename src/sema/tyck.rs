@@ -2225,7 +2225,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             ast::ExprKind::PrimitiveLit(e) => self.tyck_expr_primitive_lit(expr, e, ctx),
             ast::ExprKind::ArrayLit(e) => self.tyck_expr_array_lit(expr, e, ctx),
             ast::ExprKind::SetLit(e) => self.tyck_expr_set_lit(expr, e, ctx),
-            ast::ExprKind::ProcCall(e) => self.tyck_expr_proc_call(expr, e, ctx),
+            ast::ExprKind::Call(e) => self.tyck_expr_call(expr, e, ctx),
             ast::ExprKind::ActionCall(e) => self.tyck_expr_action_call(expr, e, ctx),
             ast::ExprKind::Instantiate(e) => self.tyck_expr_instantiate(expr, e, ctx),
             ast::ExprKind::Name(e) => self.tyck_expr_name(expr, e, ctx),
@@ -3213,10 +3213,10 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         self.ctx.sema.tyck.exprs.insert(expr.id, ty_id);
     }
 
-    fn tyck_expr_proc_call(
+    fn tyck_expr_call(
         &mut self,
         expr: &'ast ast::Expr,
-        e: &'ast ast::ExprProcCall,
+        e: &'ast ast::ExprCall,
         ctx: ExprCkCtx,
     ) {
         self.ctx
@@ -3277,7 +3277,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
             &e.name.to_string(),
             &args,
             &ty_args,
-            &ApplicabilityCriteria::for_proc_call(ctx.is_predicate_top_level),
+            &ApplicabilityCriteria::for_call(ctx.is_predicate_top_level),
         ) else {
             self.ctx
                 .sema

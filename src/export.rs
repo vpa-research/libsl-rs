@@ -2019,7 +2019,7 @@ make_display_struct!(
         ast::ExprKind::PrimitiveLit(e) => e.precedence(),
         ast::ExprKind::ArrayLit(e) => e.precedence(),
         ast::ExprKind::SetLit(e) => e.precedence(),
-        ast::ExprKind::ProcCall(e) => e.precedence(),
+        ast::ExprKind::Call(e) => e.precedence(),
         ast::ExprKind::ActionCall(e) => e.precedence(),
         ast::ExprKind::Instantiate(e) => e.precedence(),
         ast::ExprKind::Name(e) => e.precedence(),
@@ -2044,7 +2044,7 @@ impl Display for ExprDisplay<'_> {
             }
             ast::ExprKind::ArrayLit(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
             ast::ExprKind::SetLit(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
-            ast::ExprKind::ProcCall(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
+            ast::ExprKind::Call(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
             ast::ExprKind::ActionCall(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
             ast::ExprKind::Instantiate(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
             ast::ExprKind::Name(e) => write!(f, "{}", e.display_prec(self.libsl, self.prec)),
@@ -2121,11 +2121,11 @@ impl Display for ExprSetLitDisplay<'_> {
 }
 
 make_display_struct!(
-    ExprProcCallDisplay { e } for ast::ExprProcCall
+    ExprCallDisplay { e } for ast::ExprCall
     where precedence: ExprPrec = ExprPrec::Atomic,
 );
 
-impl Display for ExprProcCallDisplay<'_> {
+impl Display for ExprCallDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         display_parens(f, self.e.precedence(), self.prec, |f| {
             if let Some(recv) = self.e.recv {

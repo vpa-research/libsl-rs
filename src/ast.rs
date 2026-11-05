@@ -1636,8 +1636,8 @@ pub enum ExprKind {
     /// A set literal expression.
     SetLit(ExprSetLit),
 
-    /// A procedure call expression.
-    ProcCall(ExprProcCall),
+    /// A call expression.
+    Call(ExprCall),
 
     /// An action invocation expression.
     ActionCall(ExprActionCall),
@@ -1694,9 +1694,9 @@ impl From<ExprSetLit> for ExprKind {
     }
 }
 
-impl From<ExprProcCall> for ExprKind {
-    fn from(expr: ExprProcCall) -> Self {
-        Self::ProcCall(expr)
+impl From<ExprCall> for ExprKind {
+    fn from(expr: ExprCall) -> Self {
+        Self::Call(expr)
     }
 }
 
@@ -1803,10 +1803,10 @@ pub struct ExprSetLit {
     pub elems: Vec<ExprId>,
 }
 
-/// A procedure call expression.
+/// A call expression.
 #[derive(Walkable, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
-pub struct ExprProcCall {
+pub struct ExprCall {
     /// The receiver expression.
     pub recv: Option<ExprId>,
 
@@ -1821,7 +1821,7 @@ pub struct ExprProcCall {
     pub args: Vec<ExprId>,
 }
 
-impl WithLibSl for ExprProcCall {}
+impl WithLibSl for ExprCall {}
 
 /// An action invocation expression.
 #[derive(Walkable, Debug, Clone)]

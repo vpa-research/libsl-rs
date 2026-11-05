@@ -111,7 +111,7 @@ struct BodyChecker<'ast, 'diag, 'ctx, D> {
 }
 
 impl<'ast, D: DiagCtx> BodyChecker<'ast, '_, '_, D> {
-    fn check_proc_call(&mut self, expr: &'ast ast::Expr) {
+    fn check_call(&mut self, expr: &'ast ast::Expr) {
         let (_, call_target) = self.pass.sema.tyck.call_targets[expr.id];
 
         if let FunctionKind::Proc { pure: true, .. } =
@@ -193,8 +193,8 @@ impl<'ast, D: DiagCtx> Visitor<'ast, AccessMode> for BodyChecker<'ast, '_, '_, D
                     .record_err(make_err(expr.loc.clone(), "previous-value expressions"));
             }
 
-            ast::ExprKind::ProcCall(_) => {
-                self.check_proc_call(expr);
+            ast::ExprKind::Call(_) => {
+                self.check_call(expr);
             }
 
             ast::ExprKind::ActionCall(_) => {

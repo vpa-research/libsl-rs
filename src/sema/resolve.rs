@@ -2885,7 +2885,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
 
             ast::ExprKind::SetLit(expr) => self.process_expr_set_lit(ctx, expr_id, expr),
 
-            ast::ExprKind::ProcCall(expr) => self.process_expr_proc_call(ctx, expr_id, expr),
+            ast::ExprKind::Call(expr) => self.process_expr_call(ctx, expr_id, expr),
 
             ast::ExprKind::ActionCall(expr) => self.process_expr_action_call(ctx, expr_id, expr),
 
@@ -2944,12 +2944,7 @@ impl<'ast, 's, D: DiagCtx> Pass<'ast, 's, D> {
         }
     }
 
-    fn process_expr_proc_call(
-        &mut self,
-        ctx: ExprCtx,
-        _expr_id: ExprId,
-        expr: &'ast ast::ExprProcCall,
-    ) {
+    fn process_expr_call(&mut self, ctx: ExprCtx, _expr_id: ExprId, expr: &'ast ast::ExprCall) {
         if let Some(recv) = expr.recv {
             self.process_expr(ctx.clone(), recv);
         }

@@ -43,7 +43,7 @@ pub struct ApplicabilityCriteria {
 }
 
 impl ApplicabilityCriteria {
-    pub fn for_proc_call(allow_pred: bool) -> Self {
+    pub fn for_call(allow_pred: bool) -> Self {
         Self {
             allowed_kinds: if allow_pred {
                 AllowedFnKinds::ProcPred

@@ -76,8 +76,8 @@ fn parse_string_lit(token: &CommonToken<'_>) -> String {
     strip_surrounding(&token.text, '"', '"').replace("\\\'", "\'")
 }
 
-fn parse_ident(ctx: &IdentContextAll<'_>) -> String {
-    strip_surrounding(&ctx.get_text(), '`', '`').into()
+fn parse_ident(text: &str) -> String {
+    strip_surrounding(text, '`', '`').into()
 }
 
 /// The radix of an integer literal.
@@ -402,7 +402,7 @@ impl<'a> AstConstructor<'a> {
     fn process_header(&mut self, ctx: &HeaderContextAll<'_>) -> Result<ast::Header> {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
         let libsl_version = parse_string_lit(ctx.libslVersion.as_ref().unwrap());
-        let library_name = parse_ident(ctx.libraryName.as_ref().unwrap());
+        let library_name = parse_ident(&ctx.libraryName.as_ref().unwrap().get_text());
         let version = ctx.version.as_ref().map(|t| parse_string_lit(t));
         let language = ctx.language.as_ref().map(|t| parse_string_lit(t));
         let url = ctx.url.as_ref().map(|t| parse_string_lit(t));
@@ -1081,7 +1081,7 @@ impl<'a> AstConstructor<'a> {
             .names
             .iter()
             .map(move |ctx| {
-                let name = self.process_name(ctx);
+                let name = self.process_state_name(ctx);
 
                 self.libsl.decls.insert_with_key(|id| ast::Decl {
                     id,
@@ -1097,19 +1097,41 @@ impl<'a> AstConstructor<'a> {
 
         let from = match &**ctx.from.as_ref().unwrap() {
             ShiftSourceStateContextAll::ShiftSourceStateShorthandContext(ctx) => {
-                vec![self.process_name(&ctx.ident().unwrap())]
+                ast::SourceState::Named(vec![self.process_state_name(&ctx.stateName().unwrap())])
             }
 
-            ShiftSourceStateContextAll::ShiftSourceStateListContext(ctx) => ctx
-                .states
-                .as_ref()
-                .map(|ctx| ctx.names.iter().map(|ctx| self.process_name(ctx)).collect())
-                .unwrap_or_default(),
+            ShiftSourceStateContextAll::ShiftSourceStateListContext(ctx) => {
+                ast::SourceState::Named(
+                    ctx.states
+                        .as_ref()
+                        .map(|ctx| {
+                            ctx.names
+                                .iter()
+                                .map(|ctx| self.process_state_name(ctx))
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                )
+            }
+
+            ShiftSourceStateContextAll::ShiftSourceStateAnyContext(ctx) => {
+                ast::SourceState::Any(self.get_loc(&ctx.start(), &ctx.stop()))
+            }
 
             ShiftSourceStateContextAll::Error(_) => unreachable!(),
         };
 
-        let to = self.process_name(ctx.to.as_ref().unwrap());
+        let to = match &**ctx.to.as_ref().unwrap() {
+            ShiftTargetStateContextAll::ShiftTargetStateNamedContext(ctx) => {
+                ast::TargetState::Named(self.process_state_name(&ctx.stateName().unwrap()))
+            }
+
+            ShiftTargetStateContextAll::ShiftTargetStateSelfContext(ctx) => {
+                ast::TargetState::Same(self.get_loc(&ctx.start(), &ctx.stop()))
+            }
+
+            ShiftTargetStateContextAll::Error(_) => unreachable!(),
+        };
 
         let by = match &**ctx.by.as_ref().unwrap() {
             ShiftByContextAll::ShiftByShorthandContext(ctx) => {
@@ -1136,6 +1158,13 @@ impl<'a> AstConstructor<'a> {
             loc,
             kind: ast::DeclShift { from, to, by }.into(),
         }))
+    }
+
+    fn process_state_name(&mut self, ctx: &StateNameContextAll<'_>) -> ast::Name {
+        let loc = self.get_loc(&ctx.start(), &ctx.stop());
+        let name = parse_ident(&ctx.get_text());
+
+        ast::Name { loc, name }
     }
 
     fn process_function_signature(
@@ -1699,7 +1728,7 @@ impl<'a> AstConstructor<'a> {
 
     fn process_name(&mut self, ctx: &IdentContextAll<'_>) -> ast::Name {
         let loc = self.get_loc(&ctx.start(), &ctx.stop());
-        let name = parse_ident(ctx);
+        let name = parse_ident(&ctx.get_text());
 
         ast::Name { loc, name }
     }
@@ -2186,9 +2215,7 @@ impl<'a> AstConstructor<'a> {
 
             ExprContextAll::ExprPrevContext(ctx) => self.process_expr_prev(ctx),
 
-            ExprContextAll::ExprCallQualifiedContext(ctx) => {
-                self.process_expr_call_qualified(ctx)
-            }
+            ExprContextAll::ExprCallQualifiedContext(ctx) => self.process_expr_call_qualified(ctx),
 
             ExprContextAll::ExprFieldContext(ctx) => self.process_expr_field(ctx),
 

@@ -753,15 +753,15 @@ fn enter_StateKindFinal(&mut self, _ctx: &StateKindFinalContext<'input>) { }
  */
 fn exit_StateKindFinal(&mut self, _ctx: &StateKindFinalContext<'input>) { }
 /**
- * Enter a parse tree produced by {@link LibSLParser#identList}.
+ * Enter a parse tree produced by {@link LibSLParser#stateNameList}.
  * @param ctx the parse tree
  */
-fn enter_identList(&mut self, _ctx: &IdentListContext<'input>) { }
+fn enter_stateNameList(&mut self, _ctx: &StateNameListContext<'input>) { }
 /**
- * Exit a parse tree produced by {@link LibSLParser#identList}.
+ * Exit a parse tree produced by {@link LibSLParser#stateNameList}.
  * @param ctx the parse tree
  */
-fn exit_identList(&mut self, _ctx: &IdentListContext<'input>) { }
+fn exit_stateNameList(&mut self, _ctx: &StateNameListContext<'input>) { }
 /**
  * Enter a parse tree produced by {@link LibSLParser#shiftDecl}.
  * @param ctx the parse tree
@@ -796,6 +796,42 @@ fn enter_ShiftSourceStateList(&mut self, _ctx: &ShiftSourceStateListContext<'inp
  * @param ctx the parse tree
  */
 fn exit_ShiftSourceStateList(&mut self, _ctx: &ShiftSourceStateListContext<'input>) { }
+/**
+ * Enter a parse tree produced by the {@code ShiftSourceStateAny}
+ * labeled alternative in {@link LibSLParser#shiftSourceState}.
+ * @param ctx the parse tree
+ */
+fn enter_ShiftSourceStateAny(&mut self, _ctx: &ShiftSourceStateAnyContext<'input>) { }
+/**
+ * Exit a parse tree produced by the {@code ShiftSourceStateAny}
+ * labeled alternative in {@link LibSLParser#shiftSourceState}.
+ * @param ctx the parse tree
+ */
+fn exit_ShiftSourceStateAny(&mut self, _ctx: &ShiftSourceStateAnyContext<'input>) { }
+/**
+ * Enter a parse tree produced by the {@code ShiftTargetStateNamed}
+ * labeled alternative in {@link LibSLParser#shiftTargetState}.
+ * @param ctx the parse tree
+ */
+fn enter_ShiftTargetStateNamed(&mut self, _ctx: &ShiftTargetStateNamedContext<'input>) { }
+/**
+ * Exit a parse tree produced by the {@code ShiftTargetStateNamed}
+ * labeled alternative in {@link LibSLParser#shiftTargetState}.
+ * @param ctx the parse tree
+ */
+fn exit_ShiftTargetStateNamed(&mut self, _ctx: &ShiftTargetStateNamedContext<'input>) { }
+/**
+ * Enter a parse tree produced by the {@code ShiftTargetStateSelf}
+ * labeled alternative in {@link LibSLParser#shiftTargetState}.
+ * @param ctx the parse tree
+ */
+fn enter_ShiftTargetStateSelf(&mut self, _ctx: &ShiftTargetStateSelfContext<'input>) { }
+/**
+ * Exit a parse tree produced by the {@code ShiftTargetStateSelf}
+ * labeled alternative in {@link LibSLParser#shiftTargetState}.
+ * @param ctx the parse tree
+ */
+fn exit_ShiftTargetStateSelf(&mut self, _ctx: &ShiftTargetStateSelfContext<'input>) { }
 /**
  * Enter a parse tree produced by the {@code ShiftByShorthand}
  * labeled alternative in {@link LibSLParser#shiftBy}.
@@ -2546,6 +2582,16 @@ fn enter_ident(&mut self, _ctx: &IdentContext<'input>) { }
  * @param ctx the parse tree
  */
 fn exit_ident(&mut self, _ctx: &IdentContext<'input>) { }
+/**
+ * Enter a parse tree produced by {@link LibSLParser#stateName}.
+ * @param ctx the parse tree
+ */
+fn enter_stateName(&mut self, _ctx: &StateNameContext<'input>) { }
+/**
+ * Exit a parse tree produced by {@link LibSLParser#stateName}.
+ * @param ctx the parse tree
+ */
+fn exit_stateName(&mut self, _ctx: &StateNameContext<'input>) { }
 
 }
 

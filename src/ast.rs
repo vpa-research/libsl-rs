@@ -130,7 +130,7 @@ pub enum DeclKind {
     /// An automaton state declaration.
     State(#[no_walk] DeclState),
 
-    /// An automaton state transfer function declaration.
+    /// An automaton state transition declaration.
     Shift(DeclShift),
 
     /// An automaton constructor declaration.
@@ -773,23 +773,52 @@ pub enum StateKind {
 
 impl WithLibSl for StateKind {}
 
-/// An automaton state transfer function declaration.
+/// An automaton state transition declaration.
 #[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
 #[derive(Walkable, Debug, Clone)]
 pub struct DeclShift {
     /// A list of previous states covered by this declaration.
     #[no_walk]
-    pub from: Vec<Name>,
+    pub from: SourceState,
 
     /// A target state for this declaration.
     #[no_walk]
-    pub to: Name,
+    pub to: TargetState,
 
     /// A list of functions that trigger this transition.
     pub by: Vec<QualifiedFunctionName>,
 }
 
 impl WithLibSl for DeclShift {}
+
+/// A source state specification of a [state transition declaration][DeclShift].
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
+#[derive(Debug, Clone)]
+pub enum SourceState {
+    /// Matches specifically listed states.
+    Named(Vec<Name>),
+
+    /// Matches any state.
+    Any(Loc),
+}
+
+impl WithLibSl for SourceState {}
+
+/// A target state specification of a [state transition declaration][DeclShift].
+#[cfg_attr(feature = "serde", derive(libsl_derive::Serialize))]
+#[derive(Debug, Clone)]
+pub enum TargetState {
+    /// Sets a target state identified by its name.
+    Named(Name),
+
+    /// Remains in the same state.
+    ///
+    /// In LibSL, it's written as `self`. It's spelled differently here because in Rust `Self` is
+    /// a keyword.
+    Same(Loc),
+}
+
+impl WithLibSl for TargetState {}
 
 /// A function name or its specific overload.
 #[derive(Walkable, Debug, Clone)]

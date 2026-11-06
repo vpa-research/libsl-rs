@@ -1140,25 +1140,7 @@ make_display_struct!(DeclShiftDisplay { d } for ast::DeclShift);
 
 impl Display for DeclShiftDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "shift ")?;
-
-        if self.d.from.len() == 1 {
-            write!(f, "{}", self.d.from[0])?;
-        } else {
-            write!(f, "(")?;
-
-            for (idx, state) in self.d.from.iter().enumerate() {
-                if idx > 0 {
-                    write!(f, ", ")?;
-                }
-
-                write!(f, "{state}")?;
-            }
-
-            write!(f, ")")?;
-        }
-
-        write!(f, " -> {} by ", self.d.to)?;
+        write!(f, "shift {} -> {} by ", self.d.from, self.d.to)?;
 
         if self.d.by.len() == 1 {
             write!(f, "{}", self.d.by[0].display(self.libsl))?;
@@ -1175,6 +1157,41 @@ impl Display for DeclShiftDisplay<'_> {
         }
 
         write!(f, ";")
+    }
+}
+
+impl Display for ast::SourceState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ast::SourceState::Named(names) => {
+                if let [name] = &names[..] {
+                    write!(f, "{name}")
+                } else {
+                    write!(f, "(")?;
+
+                    for (idx, state) in names.iter().enumerate() {
+                        if idx > 0 {
+                            write!(f, ", ")?;
+                        }
+
+                        write!(f, "{state}")?;
+                    }
+
+                    write!(f, ")")
+                }
+            }
+
+            ast::SourceState::Any(_) => write!(f, "any"),
+        }
+    }
+}
+
+impl Display for ast::TargetState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ast::TargetState::Named(name) => write!(f, "{name}"),
+            ast::TargetState::Same(_) => write!(f, "self"),
+        }
     }
 }
 
